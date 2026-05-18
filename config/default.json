@@ -1,0 +1,23 @@
+{
+  "exchange": {
+    "network": "testnet",
+    "coin": "BTC",
+    "leverage": 3
+  },
+  "strategy": {
+    "type": "rsi",
+    "interval": "1m",
+    "rsiPeriod": 14,
+    "overbought": 70,
+    "oversold": 30
+  },
+  "risk": {
+    "maxPositionSizeUsd": 500,
+    "maxDailyLossPercent": 5,
+    "maxLeverage": 5,
+    "stopLossPercent": 2
+  },
+  "dashboard": {
+    "port": 3000
+  }
+}

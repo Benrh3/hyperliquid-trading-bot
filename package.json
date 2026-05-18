@@ -1,0 +1,47 @@
+{
+  "name": "hyperliquid-trading-bot",
+  "version": "0.1.0",
+  "description": "A modular, event-driven trading bot for Hyperliquid perpetual futures",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/"
+  },
+  "keywords": [
+    "hyperliquid",
+    "trading-bot",
+    "crypto",
+    "perpetual-futures",
+    "defi",
+    "typescript"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@nktkas/hyperliquid": "^0.32.1",
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.7",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "technicalindicators": "^3.1.0",
+    "viem": "^2.23.0",
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.1",
+    "eslint": "^9.16.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

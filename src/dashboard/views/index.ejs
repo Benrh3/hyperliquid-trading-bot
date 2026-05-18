@@ -1,0 +1,141 @@
+<%- include('_head', { title: 'Dashboard' }) %>
+
+<nav class="nav">
+  <a href="/" class="nav-brand">HL Bot</a>
+  <a href="/" class="nav-link active">Overview</a>
+  <a href="/trades" class="nav-link">Trades</a>
+  <div class="nav-right">
+    <span class="dot"></span>
+    <span class="badge badge-net"><%= network %></span>
+    <span class="text-muted"><%= coin %> &middot; <%= strategy %> &middot; <%= interval %></span>
+  </div>
+</nav>
+
+<div class="container">
+
+  <!-- Stat cards -->
+  <div class="grid">
+    <div class="card">
+      <div class="card-label"><%= coin %> Price</div>
+      <div class="card-value mono" id="stat-price">
+        <% if (state.lastPrice > 0) { %>
+          $<%= state.lastPrice.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
+        <% } else { %>
+          <span class="text-muted">—</span>
+        <% } %>
+      </div>
+      <div class="card-sub">
+        <% if (state.lastBid > 0) { %>
+          bid $<%= state.lastBid.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
+          &nbsp;/&nbsp;
+          ask $<%= state.lastAsk.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
+        <% } else { %>
+          awaiting feed…
+        <% } %>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Signals</div>
+      <div class="card-value"><%= state.signalCount %></div>
+      <div class="card-sub">generated this session</div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Trades</div>
+      <div class="card-value"><%= tradeCount %></div>
+      <div class="card-sub">total recorded</div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Uptime</div>
+      <div class="card-value mono" style="font-size:1.2rem;padding-top:4px"><%= uptime %></div>
+      <div class="card-sub">
+        <% if (state.lastUpdate) { %>
+          last tick <%= state.lastUpdate.toLocaleTimeString() %>
+        <% } else { %>
+          no ticks yet
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <!-- Price chart -->
+  <p class="section-title"><%= coin %> Price (last 100 ticks)</p>
+  <div class="table-wrap" style="padding:1rem">
+    <canvas id="priceChart" height="80"></canvas>
+  </div>
+
+  <!-- Recent events -->
+  <p class="section-title">Recent Events</p>
+  <div class="table-wrap">
+    <% if (events.length === 0) { %>
+      <p class="empty">No events yet — start the bot to see activity.</p>
+    <% } else { %>
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Module</th>
+            <th>Level</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (const ev of events) { %>
+            <tr>
+              <td class="mono text-muted" style="white-space:nowrap"><%= ev.created_at %></td>
+              <td><%= ev.module %></td>
+              <td><span class="badge badge-<%= ev.level %>"><%= ev.level %></span></td>
+              <td><%= ev.message %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    <% } %>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+  const ctx = document.getElementById('priceChart').getContext('2d');
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{ data: [], borderColor: '#58a6ff', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true, backgroundColor: 'rgba(88,166,255,0.06)' }] },
+    options: {
+      animation: false,
+      responsive: true,
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => '$' + ctx.parsed.y.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }
+      }},
+      scales: {
+        x: { ticks: { color: '#8b949e', maxTicksLimit: 6, maxRotation: 0 }, grid: { color: '#21262d' } },
+        y: { ticks: { color: '#8b949e', callback: v => '$' + Number(v).toLocaleString() }, grid: { color: '#21262d' } }
+      }
+    }
+  });
+
+  function fmt(ts) {
+    const d = new Date(ts);
+    return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0') + ':' + d.getSeconds().toString().padStart(2,'0');
+  }
+
+  async function refresh() {
+    try {
+      const data = await fetch('/api/prices').then(r => r.json());
+      chart.data.labels = data.map(p => fmt(p.t));
+      chart.data.datasets[0].data = data.map(p => p.price);
+      chart.update('none');
+    } catch (_) {}
+  }
+
+  refresh();
+  setInterval(refresh, 5000);
+
+  // Reload page for stats/events on the same cadence
+  setInterval(() => location.reload(), 5000);
+</script>
+</body>
+</html>
