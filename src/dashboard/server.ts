@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { bus } from "../events.js";
 import { config } from "../config.js";
+import type { Candle } from "../events.js";
 import type { Logger } from "../logger.js";
 import { createRouter } from "./routes.js";
 
@@ -14,6 +15,7 @@ export interface BotState {
   signalCount: number;
   startedAt: Date;
   priceHistory: { t: number; price: number }[];
+  candleHistory: Candle[];
 }
 
 export function startDashboard(logger: Logger): void {
@@ -25,9 +27,11 @@ export function startDashboard(logger: Logger): void {
     signalCount: 0,
     startedAt: new Date(),
     priceHistory: [],
+    candleHistory: [],
   };
 
   const MAX_PRICE_HISTORY = 100;
+  const MAX_CANDLE_HISTORY = 200;
 
   // Keep live state in sync with bus events
   bus.on("tick", (tick) => {
@@ -40,6 +44,13 @@ export function startDashboard(logger: Logger): void {
       if (state.priceHistory.length > MAX_PRICE_HISTORY) {
         state.priceHistory.shift();
       }
+    }
+  });
+
+  bus.on("candle", (candle: Candle) => {
+    state.candleHistory.push(candle);
+    if (state.candleHistory.length > MAX_CANDLE_HISTORY) {
+      state.candleHistory.shift();
     }
   });
 

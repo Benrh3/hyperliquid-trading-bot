@@ -1,4 +1,64 @@
 <%- include('_head', { title: 'Dashboard' }) %>
+<style>
+  .chart-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .chart-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .chart-toolbar-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-right: 0.25rem;
+  }
+  .tf-group { display: flex; gap: 3px; }
+  .tf {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+    font-family: inherit;
+    padding: 2px 7px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color .1s, border-color .1s;
+  }
+  .tf:hover:not(.active) { color: var(--text); border-color: #8b949e; }
+  .tf.active { background: rgba(88,166,255,0.12); border-color: var(--blue); color: var(--blue); }
+  .chart-updated { margin-left: auto; font-size: 11px; color: var(--muted); }
+
+  .chart-row { position: relative; }
+  .chart-row-label {
+    position: absolute;
+    top: 5px;
+    left: 10px;
+    font-size: 10px;
+    color: var(--muted);
+    pointer-events: none;
+    z-index: 2;
+    letter-spacing: .04em;
+  }
+  #chart-candles { height: 320px; }
+  #chart-volume  { height: 80px;  border-top: 1px solid var(--border); }
+  #chart-rsi     { height: 110px; border-top: 1px solid var(--border); }
+  .chart-empty {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>
 
 <nav class="nav">
   <a href="/" class="nav-brand">HL Bot</a>
@@ -17,7 +77,7 @@
   <div class="grid">
     <div class="card">
       <div class="card-label"><%= coin %> Price</div>
-      <div class="card-value mono" id="stat-price">
+      <div class="card-value mono">
         <% if (state.lastPrice > 0) { %>
           $<%= state.lastPrice.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
         <% } else { %>
@@ -60,10 +120,32 @@
     </div>
   </div>
 
-  <!-- Price chart -->
-  <p class="section-title"><%= coin %> Price (last 100 ticks)</p>
-  <div class="table-wrap" style="padding:1rem">
-    <canvas id="priceChart" height="80"></canvas>
+  <!-- Chart panel -->
+  <div class="chart-panel">
+    <div class="chart-toolbar">
+      <span class="chart-toolbar-title"><%= coin %>/USDT</span>
+      <div class="tf-group">
+        <button class="tf active" data-tf="1m">1m</button>
+        <button class="tf" data-tf="5m">5m</button>
+        <button class="tf" data-tf="15m">15m</button>
+      </div>
+      <span class="chart-updated" id="chart-updated"></span>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-row-label">Candles</div>
+      <div id="chart-candles"></div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-row-label">Volume</div>
+      <div id="chart-volume"></div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-row-label">RSI 14</div>
+      <div id="chart-rsi"></div>
+    </div>
   </div>
 
   <!-- Recent events -->
@@ -97,45 +179,137 @@
 
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 <script>
-  const ctx = document.getElementById('priceChart').getContext('2d');
+(function () {
+  const LC = LightweightCharts;
 
-  const chart = new Chart(ctx, {
-    type: 'line',
-    data: { labels: [], datasets: [{ data: [], borderColor: '#58a6ff', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true, backgroundColor: 'rgba(88,166,255,0.06)' }] },
-    options: {
-      animation: false,
-      responsive: true,
-      plugins: { legend: { display: false }, tooltip: {
-        callbacks: { label: ctx => '$' + ctx.parsed.y.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }
-      }},
-      scales: {
-        x: { ticks: { color: '#8b949e', maxTicksLimit: 6, maxRotation: 0 }, grid: { color: '#21262d' } },
-        y: { ticks: { color: '#8b949e', callback: v => '$' + Number(v).toLocaleString() }, grid: { color: '#21262d' } }
-      }
-    }
+  // ── Shared chart options ────────────────────────────────────────────────
+  const commonOpts = {
+    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e' },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    crosshair: { mode: 1 },
+    rightPriceScale: { borderColor: '#30363d' },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true },
+    handleScale: { mouseWheel: true, pinch: true },
+  };
+
+  const timeScaleOpts = { borderColor: '#30363d', timeVisible: true, secondsVisible: false };
+
+  // ── Create three chart instances ────────────────────────────────────────
+  const candleChart = LC.createChart(document.getElementById('chart-candles'), {
+    ...commonOpts,
+    height: 320,
+    timeScale: { ...timeScaleOpts, visible: false },
   });
 
-  function fmt(ts) {
-    const d = new Date(ts);
-    return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0') + ':' + d.getSeconds().toString().padStart(2,'0');
+  const volChart = LC.createChart(document.getElementById('chart-volume'), {
+    ...commonOpts,
+    height: 80,
+    timeScale: { ...timeScaleOpts, visible: false },
+  });
+
+  const rsiChart = LC.createChart(document.getElementById('chart-rsi'), {
+    ...commonOpts,
+    height: 110,
+    timeScale: timeScaleOpts,
+  });
+
+  // ── Candlestick series ──────────────────────────────────────────────────
+  const candleSeries = candleChart.addCandlestickSeries({
+    upColor:        '#3fb950',
+    downColor:      '#f85149',
+    borderUpColor:  '#3fb950',
+    borderDownColor:'#f85149',
+    wickUpColor:    '#3fb950',
+    wickDownColor:  '#f85149',
+  });
+
+  // ── Volume histogram ────────────────────────────────────────────────────
+  const volSeries = volChart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    priceScaleId: '',
+  });
+  volChart.priceScale('').applyOptions({ scaleMargins: { top: 0.05, bottom: 0 } });
+
+  // ── RSI line ────────────────────────────────────────────────────────────
+  const rsiSeries = rsiChart.addLineSeries({
+    color: '#58a6ff',
+    lineWidth: 1,
+  });
+  rsiChart.priceScale('right').applyOptions({
+    scaleMargins: { top: 0.1, bottom: 0.1 },
+  });
+
+  // Overbought / oversold reference lines
+  rsiSeries.createPriceLine({ price: 70, color: '#f85149', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70' });
+  rsiSeries.createPriceLine({ price: 30, color: '#3fb950', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30' });
+
+  // ── Sync time scales across all three charts ────────────────────────────
+  let syncing = false;
+  function syncFrom(src, targets) {
+    src.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (syncing || !range) return;
+      syncing = true;
+      targets.forEach((t) => t.timeScale().setVisibleLogicalRange(range));
+      syncing = false;
+    });
   }
+  syncFrom(candleChart, [volChart, rsiChart]);
+  syncFrom(volChart,    [candleChart, rsiChart]);
+  syncFrom(rsiChart,    [candleChart, volChart]);
+
+  // ── Fit all charts together ─────────────────────────────────────────────
+  function fitAll() {
+    candleChart.timeScale().fitContent();
+    // volume and RSI follow via sync
+  }
+
+  // ── Fetch and render ────────────────────────────────────────────────────
+  let firstLoad = true;
 
   async function refresh() {
     try {
-      const data = await fetch('/api/prices').then(r => r.json());
-      chart.data.labels = data.map(p => fmt(p.t));
-      chart.data.datasets[0].data = data.map(p => p.price);
-      chart.update('none');
-    } catch (_) {}
+      const data = await fetch('/api/candles').then((r) => r.json());
+
+      if (data.candles.length > 0) {
+        candleSeries.setData(data.candles);
+        candleSeries.setMarkers(data.markers);
+        volSeries.setData(data.volume);
+        if (data.rsi.length > 0) rsiSeries.setData(data.rsi);
+
+        if (firstLoad) { fitAll(); firstLoad = false; }
+      }
+
+      const el = document.getElementById('chart-updated');
+      if (el) el.textContent = 'updated ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      console.warn('Chart refresh failed:', e);
+    }
   }
 
   refresh();
-  setInterval(refresh, 5000);
+  setInterval(refresh, 10000);
 
-  // Reload page for stats/events on the same cadence
-  setInterval(() => location.reload(), 5000);
+  // ── Resize observer keeps charts filling their containers ───────────────
+  if (typeof ResizeObserver !== 'undefined') {
+    const ro = new ResizeObserver(() => {
+      [candleChart, volChart, rsiChart].forEach((c) => c.applyOptions({ width: 0 }));
+    });
+    ro.observe(document.querySelector('.chart-panel'));
+  }
+
+  // ── Timeframe buttons (UI state only — interval switching comes later) ──
+  document.querySelectorAll('.tf').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tf').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // ── Page reload for stats cards and events table ────────────────────────
+  setInterval(() => location.reload(), 10000);
+})();
 </script>
 </body>
 </html>
