@@ -5,8 +5,10 @@ import { startDashboard } from "./dashboard/server.js";
 import { Executor } from "./executor.js";
 import { Feed } from "./feed.js";
 import { RsiStrategy } from "./strategy/rsi.js";
+import { ConfluenceStrategy } from "./strategy/confluence.js";
 import { RiskManager } from "./risk.js";
 import type { Candle, Signal } from "./events.js";
+import type { Strategy } from "./strategy/base.js";
 
 // ─── Startup banner ───────────────────────────────────────
 console.log(`
@@ -37,7 +39,16 @@ if (keyReady) {
 }
 
 // 4. Strategy
-const strategy = new RsiStrategy();
+function createStrategy(): Strategy {
+  switch (config.strategy.type) {
+    case "rsi":         return new RsiStrategy();
+    case "confluence":  return new ConfluenceStrategy();
+    default:
+      console.warn(`[init] Unknown strategy "${config.strategy.type}", defaulting to confluence`);
+      return new ConfluenceStrategy();
+  }
+}
+const strategy = createStrategy();
 console.log(`[init] Strategy: ${strategy.name}`);
 
 // 5. Risk manager (starting with placeholder balance — will be fetched from exchange)

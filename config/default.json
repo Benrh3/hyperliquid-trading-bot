@@ -5,7 +5,7 @@
     "leverage": 3
   },
   "strategy": {
-    "type": "rsi",
+    "type": "confluence",
     "interval": "1m",
     "rsiPeriod": 14,
     "overbought": 70,
