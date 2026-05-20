@@ -13,9 +13,26 @@ const MIN_CANDLES = 36;
 export class ConfluenceStrategy implements Strategy {
   name = "confluence";
   private readonly coin: string;
+  private lastRsi: number | null = null;
+  private lastMacdAboveSignal: boolean | null = null;
+  private lastBbPctB: number | null = null;
+  private lastVolumeRatio: number | null = null;
+  private lastVotes: Vote[] = [];
+  private signalCount = 0;
 
   constructor() {
     this.coin = config.exchange.coin;
+  }
+
+  getState(): Record<string, unknown> {
+    return {
+      signalCount: this.signalCount,
+      lastRsi: this.lastRsi,
+      macdAboveSignal: this.lastMacdAboveSignal,
+      bbPctB: this.lastBbPctB,
+      volumeRatio: this.lastVolumeRatio,
+      votes: this.lastVotes,
+    };
   }
 
   onCandle(_candle: Candle, history: Candle[]): Signal | null {
@@ -25,17 +42,19 @@ export class ConfluenceStrategy implements Strategy {
     const volumes = history.map((c) => c.volume);
     const current = history[history.length - 1];
 
-    const votes: IndicatorVote[] = [
-      this.voteRsi(closes),
-      this.voteMacd(closes),
-      this.voteBollinger(closes, current.close),
-      this.voteVolume(volumes, current),
-    ];
+    const rsiVote  = this.voteRsi(closes);
+    const macdVote = this.voteMacd(closes);
+    const bbVote   = this.voteBollinger(closes, current.close);
+    const volVote  = this.voteVolume(volumes, current);
+    const votes: IndicatorVote[] = [rsiVote, macdVote, bbVote, volVote];
+
+    this.lastVotes = votes.map((v) => v.vote);
 
     const longs  = votes.filter((v) => v.vote === "long");
     const shorts = votes.filter((v) => v.vote === "short");
 
     if (longs.length >= 3) {
+      this.signalCount++;
       return {
         side: "long",
         coin: this.coin,
@@ -45,6 +64,7 @@ export class ConfluenceStrategy implements Strategy {
     }
 
     if (shorts.length >= 3) {
+      this.signalCount++;
       return {
         side: "short",
         coin: this.coin,
@@ -62,6 +82,7 @@ export class ConfluenceStrategy implements Strategy {
     if (results.length === 0) return { label: "RSI", vote: "neutral" };
 
     const rsi = results[results.length - 1];
+    this.lastRsi = rsi;
     if (rsi <= 30) return { label: `RSI ${rsi.toFixed(1)}`, vote: "long" };
     if (rsi >= 70) return { label: `RSI ${rsi.toFixed(1)}`, vote: "short" };
     return { label: "RSI", vote: "neutral" };
@@ -89,6 +110,8 @@ export class ConfluenceStrategy implements Strategy {
       return { label: "MACD", vote: "neutral" };
     }
 
+    this.lastMacdAboveSignal = curr.MACD > curr.signal;
+
     if (prev.MACD <= prev.signal && curr.MACD > curr.signal) {
       return { label: "MACD cross↑", vote: "long" };
     }
@@ -103,9 +126,14 @@ export class ConfluenceStrategy implements Strategy {
     const results = BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
     if (results.length === 0) return { label: "BB", vote: "neutral" };
 
-    const { lower, upper } = results[results.length - 1];
+    const { lower, upper, middle } = results[results.length - 1];
+    // %B = (price - lower) / (upper - lower)
+    const bandwidth = upper - lower;
+    this.lastBbPctB = bandwidth > 0 ? (close - lower) / bandwidth : 0.5;
+
     if (close <= lower) return { label: `BB lower ${lower.toFixed(1)}`, vote: "long" };
     if (close >= upper) return { label: `BB upper ${upper.toFixed(1)}`, vote: "short" };
+    void middle;
     return { label: "BB", vote: "neutral" };
   }
 
@@ -114,10 +142,10 @@ export class ConfluenceStrategy implements Strategy {
     const period = 20;
     if (volumes.length < period + 1) return { label: "Vol", vote: "neutral" };
 
-    // Average of the 20 candles preceding the current one
     const prior = volumes.slice(-(period + 1), -1);
     const avg = prior.reduce((a, b) => a + b, 0) / period;
     const ratio = candle.volume / avg;
+    this.lastVolumeRatio = ratio;
 
     if (ratio < 1.5) return { label: "Vol", vote: "neutral" };
 

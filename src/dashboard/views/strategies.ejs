@@ -1,0 +1,165 @@
+<%- include('_head', { title: 'Strategies' }) %>
+
+<nav class="nav">
+  <a href="/" class="nav-brand">HL Bot</a>
+  <a href="/" class="nav-link">Overview</a>
+  <a href="/strategies" class="nav-link active">Strategies</a>
+  <a href="/trades" class="nav-link">Trades</a>
+  <div class="nav-right">
+    <span class="dot"></span>
+    <span class="badge badge-net"><%= network %></span>
+    <span class="text-muted"><%= coin %></span>
+  </div>
+</nav>
+
+<div class="container">
+
+<% for (const s of strategies) { %>
+  <p class="section-title"><%= s.name %></p>
+
+  <% if (s.name === 'confluence') { %>
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">Signals</div>
+      <div class="card-value"><%= s.state.signalCount ?? 0 %></div>
+      <div class="card-sub">generated this session</div>
+    </div>
+    <div class="card">
+      <div class="card-label">RSI (14)</div>
+      <div class="card-value mono">
+        <% if (s.state.lastRsi !== null && s.state.lastRsi !== undefined) { %>
+          <span class="<%= s.state.lastRsi <= 30 ? 'text-green' : s.state.lastRsi >= 70 ? 'text-red' : '' %>">
+            <%= Number(s.state.lastRsi).toFixed(1) %>
+          </span>
+        <% } else { %>
+          <span class="text-muted">—</span>
+        <% } %>
+      </div>
+      <div class="card-sub">
+        <% if (s.state.lastRsi !== null && s.state.lastRsi !== undefined) { %>
+          <%= Number(s.state.lastRsi) <= 30 ? 'oversold' : Number(s.state.lastRsi) >= 70 ? 'overbought' : 'neutral' %>
+        <% } %>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">MACD</div>
+      <div class="card-value">
+        <% if (s.state.macdAboveSignal !== null && s.state.macdAboveSignal !== undefined) { %>
+          <span class="<%= s.state.macdAboveSignal ? 'text-green' : 'text-red' %>">
+            <%= s.state.macdAboveSignal ? 'above signal' : 'below signal' %>
+          </span>
+        <% } else { %>
+          <span class="text-muted">—</span>
+        <% } %>
+      </div>
+      <div class="card-sub">vs signal line</div>
+    </div>
+    <div class="card">
+      <div class="card-label">BB %B</div>
+      <div class="card-value mono">
+        <% if (s.state.bbPctB !== null && s.state.bbPctB !== undefined) { %>
+          <%= (Number(s.state.bbPctB) * 100).toFixed(0) %>%
+        <% } else { %>
+          <span class="text-muted">—</span>
+        <% } %>
+      </div>
+      <div class="card-sub">
+        <% if (s.state.bbPctB !== null && s.state.bbPctB !== undefined) { %>
+          <%= Number(s.state.bbPctB) <= 0 ? 'at lower band' : Number(s.state.bbPctB) >= 1 ? 'at upper band' : 'within bands' %>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <p class="section-title" style="margin-top:1rem">Vote breakdown</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Indicator</th><th>Vote</th></tr>
+      </thead>
+      <tbody>
+        <% const labels = ['RSI', 'MACD', 'Bollinger Bands', 'Volume']; %>
+        <% const votes = Array.isArray(s.state.votes) ? s.state.votes : []; %>
+        <% for (let i = 0; i < labels.length; i++) { %>
+          <tr>
+            <td><%= labels[i] %></td>
+            <td>
+              <% const v = votes[i] || 'neutral'; %>
+              <span class="badge badge-<%= v === 'long' ? 'info' : v === 'short' ? 'error' : 'warn' %>">
+                <%= v %>
+              </span>
+            </td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+
+  <% } else if (s.name === 'funding-rate') { %>
+  <div class="grid">
+    <div class="card">
+      <div class="card-label">Signals</div>
+      <div class="card-value"><%= s.state.signalCount ?? 0 %></div>
+      <div class="card-sub">generated this session</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Current Rate</div>
+      <div class="card-value mono">
+        <% if (s.state.currentRate !== null && s.state.currentRate !== undefined) { %>
+          <span class="<%= Number(s.state.currentRate) > 0.0003 ? 'text-red' : Number(s.state.currentRate) < 0 ? 'text-green' : '' %>">
+            <%= (Number(s.state.currentRate) * 100).toFixed(4) %>%
+          </span>
+        <% } else { %>
+          <span class="text-muted">—</span>
+        <% } %>
+      </div>
+      <div class="card-sub">per hour</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Predicted Rate</div>
+      <div class="card-value mono">
+        <% if (s.state.predictedRate !== null && s.state.predictedRate !== undefined) { %>
+          <span class="<%= Number(s.state.predictedRate) > 0.0003 ? 'text-red' : Number(s.state.predictedRate) < 0 ? 'text-green' : '' %>">
+            <%= (Number(s.state.predictedRate) * 100).toFixed(4) %>%
+          </span>
+        <% } else { %>
+          <span class="text-muted">—</span>
+        <% } %>
+      </div>
+      <div class="card-sub">next payment</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Annualized</div>
+      <div class="card-value mono">
+        <% if (s.state.annualizedPct !== null && s.state.annualizedPct !== undefined) { %>
+          <%= Number(s.state.annualizedPct).toFixed(1) %>%
+        <% } else { %>
+          <span class="text-muted">—</span>
+        <% } %>
+      </div>
+      <div class="card-sub">per year</div>
+    </div>
+  </div>
+
+  <% if (s.state.nextFundingTime) { %>
+  <p class="text-muted" style="font-size:12px;margin-top:0.75rem">
+    Next funding: <%= new Date(Number(s.state.nextFundingTime)).toLocaleTimeString() %>
+    &nbsp;·&nbsp;
+    Updated: <%= s.state.lastUpdated ? new Date(s.state.lastUpdated).toLocaleTimeString() : '—' %>
+  </p>
+  <% } %>
+
+  <% } else { %>
+  <div class="card">
+    <div class="card-label"><%= s.name %></div>
+    <div class="card-sub">No state available</div>
+  </div>
+  <% } %>
+
+<% } %>
+
+</div>
+
+<script>setTimeout(() => location.reload(), 15000)</script>
+</body>
+</html>

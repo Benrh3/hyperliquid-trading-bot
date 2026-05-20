@@ -25,5 +25,10 @@ export interface Strategy {
    * Optional: called once when the bot starts.
    * Use for pre-loading indicator buffers, etc.
    */
-  init?(history: Candle[]): void;
+  init?(history: Candle[]): void | Promise<void>;
+
+  /**
+   * Optional: return current strategy state for the dashboard.
+   */
+  getState?(): Record<string, unknown>;
 }

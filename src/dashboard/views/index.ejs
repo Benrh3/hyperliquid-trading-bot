@@ -1,5 +1,6 @@
 <%- include('_head', { title: 'Dashboard' }) %>
 <style>
+  /* ── Chart panel ── */
   .chart-panel {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -32,24 +33,53 @@
     cursor: pointer;
     transition: color .1s, border-color .1s;
   }
-  .tf:hover:not(.active) { color: var(--text); border-color: #8b949e; }
+  .tf:hover:not(.active):not(:disabled) { color: var(--text); border-color: #8b949e; }
   .tf.active { background: rgba(88,166,255,0.12); border-color: var(--blue); color: var(--blue); }
+  .tf:disabled { opacity: 0.4; cursor: default; }
   .chart-updated { margin-left: auto; font-size: 11px; color: var(--muted); }
 
+  /* ── Chart rows ── */
   .chart-row { position: relative; }
   .chart-row-label {
     position: absolute;
-    top: 5px;
-    left: 10px;
+    top: 5px; left: 10px;
     font-size: 10px;
     color: var(--muted);
     pointer-events: none;
     z-index: 2;
     letter-spacing: .04em;
   }
-  #chart-candles { height: 320px; }
-  #chart-volume  { height: 80px;  border-top: 1px solid var(--border); }
-  #chart-rsi     { height: 110px; border-top: 1px solid var(--border); }
+  #chart-candles { height: 450px; }
+  #chart-volume  { height: 120px; border-top: 1px solid var(--border); }
+  #chart-rsi     { height: 150px; border-top: 1px solid var(--border); }
+
+  /* ── OHLC legend ── */
+  #ohlc-legend {
+    position: absolute;
+    top: 8px; left: 10px;
+    z-index: 3;
+    font-size: 11px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    color: var(--text);
+    background: rgba(22,27,34,0.85);
+    padding: 5px 10px;
+    border-radius: 4px;
+    pointer-events: none;
+    line-height: 1.7;
+    backdrop-filter: blur(2px);
+  }
+  #ohlc-legend .lbl { color: var(--muted); margin-right: 2px; }
+
+  /* Hide TradingView attribution */
+  .tv-lightweight-charts > table > tbody > tr:last-child { display: none !important; }
+
+  /* ── Funding rate card ── */
+  .card-funding { grid-column: span 2; }
+  .funding-row { display: flex; gap: 1.5rem; margin-top: 0.35rem; flex-wrap: wrap; }
+  .funding-item { display: flex; flex-direction: column; }
+  .funding-item .fi-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .funding-item .fi-value { font-size: 13px; font-family: 'SFMono-Regular', Consolas, monospace; font-variant-numeric: tabular-nums; margin-top: 1px; }
+
   .chart-empty {
     height: 100%;
     display: flex;
@@ -63,11 +93,12 @@
 <nav class="nav">
   <a href="/" class="nav-brand">HL Bot</a>
   <a href="/" class="nav-link active">Overview</a>
+  <a href="/strategies" class="nav-link">Strategies</a>
   <a href="/trades" class="nav-link">Trades</a>
   <div class="nav-right">
     <span class="dot"></span>
     <span class="badge badge-net"><%= network %></span>
-    <span class="text-muted"><%= coin %> &middot; <%= strategy %> &middot; <%= interval %></span>
+    <span class="text-muted"><%= coin %> &middot; <%= strategy %> &middot; <span id="nav-interval"><%= interval %></span></span>
   </div>
 </nav>
 
@@ -77,45 +108,69 @@
   <div class="grid">
     <div class="card">
       <div class="card-label"><%= coin %> Price</div>
-      <div class="card-value mono">
+      <div class="card-value mono" id="stat-price">
         <% if (state.lastPrice > 0) { %>
           $<%= state.lastPrice.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
-        <% } else { %>
-          <span class="text-muted">—</span>
-        <% } %>
+        <% } else { %><span class="text-muted">—</span><% } %>
       </div>
-      <div class="card-sub">
+      <div class="card-sub" id="stat-bid-ask">
         <% if (state.lastBid > 0) { %>
-          bid $<%= state.lastBid.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
-          &nbsp;/&nbsp;
+          bid $<%= state.lastBid.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %> &nbsp;/&nbsp;
           ask $<%= state.lastAsk.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
-        <% } else { %>
-          awaiting feed…
+        <% } else { %>awaiting feed…<% } %>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Spread</div>
+      <div class="card-value mono" style="font-size:1.3rem" id="stat-spread">
+        <% if (state.lastBid > 0) { %>
+          $<%= (state.lastAsk - state.lastBid).toFixed(2) %>
+        <% } else { %><span class="text-muted">—</span><% } %>
+      </div>
+      <div class="card-sub" id="stat-spread-pct">
+        <% if (state.lastBid > 0) { %>
+          <%= ((state.lastAsk - state.lastBid) / state.lastBid * 100).toFixed(4) %>%
         <% } %>
       </div>
     </div>
 
     <div class="card">
       <div class="card-label">Signals</div>
-      <div class="card-value"><%= state.signalCount %></div>
+      <div class="card-value" id="stat-signals"><%= state.signalCount %></div>
       <div class="card-sub">generated this session</div>
     </div>
 
     <div class="card">
       <div class="card-label">Trades</div>
-      <div class="card-value"><%= tradeCount %></div>
+      <div class="card-value" id="stat-trades"><%= tradeCount %></div>
       <div class="card-sub">total recorded</div>
     </div>
 
     <div class="card">
       <div class="card-label">Uptime</div>
-      <div class="card-value mono" style="font-size:1.2rem;padding-top:4px"><%= uptime %></div>
-      <div class="card-sub">
-        <% if (state.lastUpdate) { %>
-          last tick <%= state.lastUpdate.toLocaleTimeString() %>
-        <% } else { %>
-          no ticks yet
-        <% } %>
+      <div class="card-value mono" style="font-size:1.2rem;padding-top:4px" id="stat-uptime"><%= uptime %></div>
+      <div class="card-sub" id="stat-lastupdate">
+        <% if (state.lastUpdate) { %>last tick <%= state.lastUpdate.toLocaleTimeString() %><% } else { %>no ticks yet<% } %>
+      </div>
+    </div>
+
+    <!-- Funding rate card — wider -->
+    <div class="card card-funding">
+      <div class="card-label">Funding Rate &nbsp;<span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0" id="fr-countdown"></span></div>
+      <div class="funding-row">
+        <div class="funding-item">
+          <span class="fi-label">Current</span>
+          <span class="fi-value" id="fr-current"><span class="text-muted">—</span></span>
+        </div>
+        <div class="funding-item">
+          <span class="fi-label">Predicted</span>
+          <span class="fi-value" id="fr-predicted"><span class="text-muted">—</span></span>
+        </div>
+        <div class="funding-item">
+          <span class="fi-label">Annualized</span>
+          <span class="fi-value" id="fr-annualized"><span class="text-muted">—</span></span>
+        </div>
       </div>
     </div>
   </div>
@@ -125,20 +180,24 @@
     <div class="chart-toolbar">
       <span class="chart-toolbar-title"><%= coin %>/USDT</span>
       <div class="tf-group">
-        <button class="tf active" data-tf="1m">1m</button>
-        <button class="tf" data-tf="5m">5m</button>
-        <button class="tf" data-tf="15m">15m</button>
+        <button class="tf <%= interval === '1m'  ? 'active' : '' %>" data-tf="1m">1m</button>
+        <button class="tf <%= interval === '5m'  ? 'active' : '' %>" data-tf="5m">5m</button>
+        <button class="tf <%= interval === '15m' ? 'active' : '' %>" data-tf="15m">15m</button>
+        <button class="tf <%= interval === '1h'  ? 'active' : '' %>" data-tf="1h">1h</button>
+        <button class="tf <%= interval === '4h'  ? 'active' : '' %>" data-tf="4h">4h</button>
       </div>
       <span class="chart-updated" id="chart-updated"></span>
     </div>
 
     <div class="chart-row">
       <div class="chart-row-label">Candles</div>
-      <div id="chart-candles"></div>
+      <div id="chart-candles">
+        <div id="ohlc-legend"></div>
+      </div>
     </div>
 
     <div class="chart-row">
-      <div class="chart-row-label">Volume</div>
+      <div class="chart-row-label">Volume &nbsp;<span style="color:#d29922;font-size:9px">· spread</span></div>
       <div id="chart-volume"></div>
     </div>
 
@@ -152,18 +211,13 @@
   <p class="section-title">Recent Events</p>
   <div class="table-wrap">
     <% if (events.length === 0) { %>
-      <p class="empty">No events yet — start the bot to see activity.</p>
+      <p class="empty" id="events-empty">No events yet — start the bot to see activity.</p>
     <% } else { %>
       <table>
         <thead>
-          <tr>
-            <th>Time</th>
-            <th>Module</th>
-            <th>Level</th>
-            <th>Message</th>
-          </tr>
+          <tr><th>Time</th><th>Module</th><th>Level</th><th>Message</th></tr>
         </thead>
-        <tbody>
+        <tbody id="events-tbody">
           <% for (const ev of events) { %>
             <tr>
               <td class="mono text-muted" style="white-space:nowrap"><%= ev.created_at %></td>
@@ -186,7 +240,11 @@
 
   // ── Shared chart options ────────────────────────────────────────────────
   const commonOpts = {
-    layout: { background: { type: 'solid', color: '#161b22' }, textColor: '#8b949e' },
+    layout: {
+      background: { type: 'solid', color: '#161b22' },
+      textColor: '#8b949e',
+      attributionLogo: false,
+    },
     grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
     crosshair: { mode: 1 },
     rightPriceScale: { borderColor: '#30363d' },
@@ -196,56 +254,60 @@
 
   const timeScaleOpts = { borderColor: '#30363d', timeVisible: true, secondsVisible: false };
 
-  // ── Create three chart instances ────────────────────────────────────────
+  // ── Three chart instances ───────────────────────────────────────────────
   const candleChart = LC.createChart(document.getElementById('chart-candles'), {
     ...commonOpts,
-    height: 320,
+    height: 450,
     timeScale: { ...timeScaleOpts, visible: false },
   });
 
   const volChart = LC.createChart(document.getElementById('chart-volume'), {
     ...commonOpts,
-    height: 80,
+    height: 120,
     timeScale: { ...timeScaleOpts, visible: false },
   });
 
   const rsiChart = LC.createChart(document.getElementById('chart-rsi'), {
     ...commonOpts,
-    height: 110,
+    height: 150,
     timeScale: timeScaleOpts,
   });
 
   // ── Candlestick series ──────────────────────────────────────────────────
   const candleSeries = candleChart.addCandlestickSeries({
-    upColor:        '#3fb950',
-    downColor:      '#f85149',
-    borderUpColor:  '#3fb950',
-    borderDownColor:'#f85149',
-    wickUpColor:    '#3fb950',
-    wickDownColor:  '#f85149',
+    upColor:         '#3fb950',
+    downColor:       '#f85149',
+    borderUpColor:   '#3fb950',
+    borderDownColor: '#f85149',
+    wickUpColor:     '#3fb950',
+    wickDownColor:   '#f85149',
   });
 
   // ── Volume histogram ────────────────────────────────────────────────────
   const volSeries = volChart.addHistogramSeries({
-    priceFormat: { type: 'volume' },
+    priceFormat:  { type: 'volume' },
     priceScaleId: '',
   });
-  volChart.priceScale('').applyOptions({ scaleMargins: { top: 0.05, bottom: 0 } });
+  volChart.priceScale('').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.2 } });
+
+  // ── Spread line (secondary, hidden scale) ───────────────────────────────
+  const spreadSeries = volChart.addLineSeries({
+    color:        '#d29922',
+    lineWidth:    1,
+    priceScaleId: 'spread',
+  });
+  volChart.priceScale('spread').applyOptions({
+    scaleMargins: { top: 0.6, bottom: 0 },
+    visible: false,
+  });
 
   // ── RSI line ────────────────────────────────────────────────────────────
-  const rsiSeries = rsiChart.addLineSeries({
-    color: '#58a6ff',
-    lineWidth: 1,
-  });
-  rsiChart.priceScale('right').applyOptions({
-    scaleMargins: { top: 0.1, bottom: 0.1 },
-  });
-
-  // Overbought / oversold reference lines
+  const rsiSeries = rsiChart.addLineSeries({ color: '#58a6ff', lineWidth: 1 });
+  rsiChart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
   rsiSeries.createPriceLine({ price: 70, color: '#f85149', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70' });
   rsiSeries.createPriceLine({ price: 30, color: '#3fb950', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30' });
 
-  // ── Sync time scales across all three charts ────────────────────────────
+  // ── Time-scale sync ─────────────────────────────────────────────────────
   let syncing = false;
   function syncFrom(src, targets) {
     src.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -259,27 +321,107 @@
   syncFrom(volChart,    [candleChart, rsiChart]);
   syncFrom(rsiChart,    [candleChart, volChart]);
 
-  // ── Fit all charts together ─────────────────────────────────────────────
-  function fitAll() {
-    candleChart.timeScale().fitContent();
-    // volume and RSI follow via sync
+  // ── Crosshair sync ──────────────────────────────────────────────────────
+  // Maps from time (seconds) → data value, for look-up in crosshair handlers
+  const volMap = new Map();
+  const rsiMap = new Map();
+
+  let crossSyncing = false;
+
+  candleChart.subscribeCrosshairMove((param) => {
+    if (crossSyncing) return;
+    crossSyncing = true;
+    if (!param.point || !param.time) {
+      volChart.clearCrosshairPosition();
+      rsiChart.clearCrosshairPosition();
+    } else {
+      const t = param.time;
+      volChart.setCrosshairPosition(volMap.get(t) ?? 0, t, volSeries);
+      rsiChart.setCrosshairPosition(rsiMap.get(t) ?? 50, t, rsiSeries);
+    }
+    crossSyncing = false;
+  });
+
+  volChart.subscribeCrosshairMove((param) => {
+    if (crossSyncing) return;
+    crossSyncing = true;
+    if (!param.point || !param.time) {
+      candleChart.clearCrosshairPosition();
+      rsiChart.clearCrosshairPosition();
+    } else {
+      rsiChart.setCrosshairPosition(rsiMap.get(param.time) ?? 50, param.time, rsiSeries);
+    }
+    crossSyncing = false;
+  });
+
+  rsiChart.subscribeCrosshairMove((param) => {
+    if (crossSyncing) return;
+    crossSyncing = true;
+    if (!param.point || !param.time) {
+      candleChart.clearCrosshairPosition();
+      volChart.clearCrosshairPosition();
+    } else {
+      volChart.setCrosshairPosition(volMap.get(param.time) ?? 0, param.time, volSeries);
+    }
+    crossSyncing = false;
+  });
+
+  // ── OHLC legend ─────────────────────────────────────────────────────────
+  const legend = document.getElementById('ohlc-legend');
+  let latestCandle = null;
+
+  function renderLegend(bar) {
+    if (!bar || !legend) return;
+    const pct = ((bar.close - bar.open) / bar.open * 100);
+    const col = pct >= 0 ? '#3fb950' : '#f85149';
+    legend.innerHTML =
+      '<span class="lbl">O</span>' + bar.open.toFixed(1) + '&nbsp;&nbsp;' +
+      '<span class="lbl">H</span>' + bar.high.toFixed(1) + '&nbsp;&nbsp;' +
+      '<span class="lbl">L</span>' + bar.low.toFixed(1)  + '&nbsp;&nbsp;' +
+      '<span class="lbl">C</span>' + bar.close.toFixed(1) + '&nbsp;&nbsp;' +
+      '<span style="color:' + col + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</span>';
   }
 
-  // ── Fetch and render ────────────────────────────────────────────────────
+  candleChart.subscribeCrosshairMove((param) => {
+    if (param.time && param.seriesData && param.seriesData.size > 0) {
+      const bar = param.seriesData.get(candleSeries);
+      if (bar) renderLegend(bar);
+    } else if (latestCandle) {
+      renderLegend(latestCandle);
+    }
+  });
+
+  // ── fitAll ──────────────────────────────────────────────────────────────
+  function fitAll() {
+    candleChart.timeScale().fitContent();
+    // volChart and rsiChart follow via sync
+  }
+
+  // ── Chart data refresh ──────────────────────────────────────────────────
   let firstLoad = true;
 
-  async function refresh() {
+  async function refreshChart() {
     try {
       const data = await fetch('/api/candles').then((r) => r.json());
+      if (!data.candles || data.candles.length === 0) return;
 
-      if (data.candles.length > 0) {
-        candleSeries.setData(data.candles);
-        candleSeries.setMarkers(data.markers);
-        volSeries.setData(data.volume);
-        if (data.rsi.length > 0) rsiSeries.setData(data.rsi);
+      candleSeries.setData(data.candles);
+      candleSeries.setMarkers(data.markers || []);
+      volSeries.setData(data.volume);
+      if (data.rsi && data.rsi.length > 0) rsiSeries.setData(data.rsi);
+      if (data.spread && data.spread.length > 0) spreadSeries.setData(data.spread);
 
-        if (firstLoad) { fitAll(); firstLoad = false; }
-      }
+      // Rebuild lookup maps for crosshair sync
+      volMap.clear();
+      (data.volume || []).forEach((d) => volMap.set(d.time, d.value));
+      rsiMap.clear();
+      (data.rsi || []).forEach((d) => rsiMap.set(d.time, d.value));
+
+      if (firstLoad) { fitAll(); firstLoad = false; }
+
+      // Update OHLC legend with latest candle
+      latestCandle = data.candles[data.candles.length - 1];
+      renderLegend(latestCandle);
 
       const el = document.getElementById('chart-updated');
       if (el) el.textContent = 'updated ' + new Date().toLocaleTimeString();
@@ -288,10 +430,155 @@
     }
   }
 
-  refresh();
-  setInterval(refresh, 10000);
+  refreshChart();
+  setInterval(refreshChart, 10000);
 
-  // ── Resize observer keeps charts filling their containers ───────────────
+  // ── Stats refresh (no page reload) ─────────────────────────────────────
+  function fmtPrice(p) {
+    return '$' + p.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  }
+
+  async function refreshStatus() {
+    try {
+      const d = await fetch('/api/status').then((r) => r.json());
+
+      if (d.price > 0) {
+        const el = document.getElementById('stat-price');
+        if (el) el.textContent = fmtPrice(d.price);
+
+        const baEl = document.getElementById('stat-bid-ask');
+        if (baEl) baEl.textContent = 'bid ' + fmtPrice(d.bid) + ' / ask ' + fmtPrice(d.ask);
+      }
+
+      if (d.bid > 0) {
+        const sEl = document.getElementById('stat-spread');
+        if (sEl) sEl.textContent = '$' + d.spread.toFixed(2);
+        const spEl = document.getElementById('stat-spread-pct');
+        if (spEl) spEl.textContent = d.spreadPct.toFixed(4) + '%';
+      }
+
+      const sigEl = document.getElementById('stat-signals');
+      if (sigEl) sigEl.textContent = d.signalCount;
+      const trEl = document.getElementById('stat-trades');
+      if (trEl) trEl.textContent = d.tradeCount;
+      const upEl = document.getElementById('stat-uptime');
+      if (upEl) upEl.textContent = d.uptime;
+      const luEl = document.getElementById('stat-lastupdate');
+      if (luEl) luEl.textContent = d.lastUpdate ? 'last tick ' + new Date(d.lastUpdate).toLocaleTimeString() : 'no ticks yet';
+
+      // Update nav interval label
+      const navEl = document.getElementById('nav-interval');
+      if (navEl && d.interval) navEl.textContent = d.interval;
+    } catch (_) {}
+  }
+
+  refreshStatus();
+  setInterval(refreshStatus, 3000);
+
+  // ── Events table refresh ────────────────────────────────────────────────
+  const badgeClass = { info: 'badge-info', warn: 'badge-warn', error: 'badge-error', debug: 'badge-info' };
+
+  async function refreshEvents() {
+    try {
+      const events = await fetch('/api/events').then((r) => r.json());
+      const tbody = document.getElementById('events-tbody');
+      if (!tbody) {
+        // First load rendered a static empty state — create table dynamically if needed
+        return;
+      }
+      tbody.innerHTML = events.map((ev) =>
+        '<tr>' +
+        '<td class="mono text-muted" style="white-space:nowrap">' + ev.created_at + '</td>' +
+        '<td>' + ev.module + '</td>' +
+        '<td><span class="badge ' + (badgeClass[ev.level] || 'badge-info') + '">' + ev.level + '</span></td>' +
+        '<td>' + ev.message + '</td>' +
+        '</tr>'
+      ).join('');
+    } catch (_) {}
+  }
+
+  refreshEvents();
+  setInterval(refreshEvents, 10000);
+
+  // ── Funding rate card ───────────────────────────────────────────────────
+  let nextFundingTs = null;
+
+  async function refreshFunding() {
+    try {
+      const d = await fetch('/api/funding-rate').then((r) => r.json());
+      if (d.error) return;
+
+      function rateHtml(rate) {
+        if (rate === null || rate === undefined) return '<span class="text-muted">—</span>';
+        const pct = (rate * 100).toFixed(4);
+        const col = rate > 0.0003 ? '#f85149' : rate < 0 ? '#3fb950' : '#e6edf3';
+        return '<span style="color:' + col + '">' + pct + '%/hr</span>';
+      }
+
+      const curEl = document.getElementById('fr-current');
+      if (curEl) curEl.innerHTML = rateHtml(d.currentRate);
+
+      const predEl = document.getElementById('fr-predicted');
+      if (predEl) predEl.innerHTML = rateHtml(d.predictedRate);
+
+      const annEl = document.getElementById('fr-annualized');
+      if (annEl && d.annualizedPct !== null) {
+        const col = d.annualizedPct > 10 ? '#f85149' : d.annualizedPct < 0 ? '#3fb950' : '#e6edf3';
+        annEl.innerHTML = '<span style="color:' + col + '">' + Number(d.annualizedPct).toFixed(1) + '%/yr</span>';
+      }
+
+      if (d.nextFundingTime) nextFundingTs = d.nextFundingTime;
+    } catch (_) {}
+  }
+
+  refreshFunding();
+  setInterval(refreshFunding, 60000);
+
+  // Countdown timer (1s resolution)
+  function tickFundingCountdown() {
+    const el = document.getElementById('fr-countdown');
+    if (!el) return;
+    if (!nextFundingTs) { el.textContent = ''; return; }
+    const diff = nextFundingTs - Date.now();
+    if (diff <= 0) { el.textContent = 'settling…'; refreshFunding(); return; }
+    const h = Math.floor(diff / 3_600_000);
+    const m = Math.floor((diff % 3_600_000) / 60_000);
+    const s = Math.floor((diff % 60_000) / 1_000);
+    el.textContent = 'next in ' + h + 'h ' + m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+  }
+  setInterval(tickFundingCountdown, 1000);
+
+  // ── Timeframe buttons ───────────────────────────────────────────────────
+  document.querySelectorAll('.tf').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const interval = btn.dataset.tf;
+      if (!interval) return;
+
+      document.querySelectorAll('.tf').forEach((b) => { b.classList.remove('active'); b.disabled = false; });
+      btn.classList.add('active');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/interval', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ interval }),
+        });
+        if (res.ok) {
+          firstLoad = true; // re-fit after new data loads
+          await refreshChart();
+        } else {
+          console.warn('Interval change failed:', await res.text());
+        }
+      } catch (e) {
+        console.warn('Interval change error:', e);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // ── Resize observer ─────────────────────────────────────────────────────
   if (typeof ResizeObserver !== 'undefined') {
     const ro = new ResizeObserver(() => {
       [candleChart, volChart, rsiChart].forEach((c) => c.applyOptions({ width: 0 }));
@@ -299,16 +586,6 @@
     ro.observe(document.querySelector('.chart-panel'));
   }
 
-  // ── Timeframe buttons (UI state only — interval switching comes later) ──
-  document.querySelectorAll('.tf').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tf').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-    });
-  });
-
-  // ── Page reload for stats cards and events table ────────────────────────
-  setInterval(() => location.reload(), 10000);
 })();
 </script>
 </body>
