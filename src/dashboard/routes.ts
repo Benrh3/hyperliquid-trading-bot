@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { RSI } from "technicalindicators";
-import { config } from "../config.js";
+import { config, coins } from "../config.js";
+import { runBacktest, fetchCandles } from "../backtest.js";
+import { ConfluenceStrategy } from "../strategy/confluence.js";
 import type { Logger } from "../logger.js";
 import type { BotState } from "./server.js";
 import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
+import type { Executor } from "../executor.js";
 
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -18,6 +21,7 @@ export function createRouter(
   state: BotState,
   strategies: Strategy[] = [],
   feed?: Feed,
+  executor?: Executor,
 ): Router {
   const router = Router();
 
@@ -26,15 +30,19 @@ export function createRouter(
   router.get("/", (_req, res) => {
     const trades = logger.getRecentTrades(1000);
     const events = logger.getEventLog(20);
+    const primaryCoin  = coins[0];
+    const primaryPrice = state.lastPrices[primaryCoin] ?? { mid: 0, bid: 0, ask: 0 };
     res.render("index", {
       state,
       events,
-      tradeCount: trades.length,
-      uptime: formatUptime(process.uptime()),
-      coin:     config.exchange.coin,
-      network:  config.exchange.network,
-      strategy: config.strategy.type,
-      interval: state.currentInterval,
+      tradeCount:  trades.length,
+      uptime:      formatUptime(process.uptime()),
+      coins,
+      coin:        primaryCoin,
+      network:     config.exchange.network,
+      strategy:    config.strategy.type,
+      interval:    state.currentInterval,
+      primaryPrice,
     });
   });
 
@@ -43,6 +51,13 @@ export function createRouter(
     res.render("trades", {
       trades,
       coin: config.exchange.coin,
+    });
+  });
+
+  router.get("/backtest", (_req, res) => {
+    res.render("backtest", {
+      coin:    config.exchange.coin,
+      network: config.exchange.network,
     });
   });
 
@@ -60,8 +75,9 @@ export function createRouter(
 
   // ── JSON API ─────────────────────────────────────────────────────────────
 
-  router.get("/api/candles", (_req, res) => {
-    const candles = state.candleHistory;
+  router.get("/api/candles", (req, res) => {
+    const coinParam = typeof req.query.coin === "string" ? req.query.coin : coins[0];
+    const candles   = state.candleHistory[coinParam] ?? [];
 
     if (candles.length === 0) {
       res.json({ candles: [], volume: [], rsi: [], markers: [], spread: [] });
@@ -91,7 +107,7 @@ export function createRouter(
     }));
 
     // Spread line — align with candle timestamps
-    const spreadData = state.spreadHistory.map((s) => ({
+    const spreadData = (state.spreadHistory[coinParam] ?? []).map((s) => ({
       time:  Math.floor(s.t / 1000),
       value: s.value,
     }));
@@ -131,21 +147,25 @@ export function createRouter(
   });
 
   router.get("/api/status", (_req, res) => {
-    const trades = logger.getRecentTrades(1000);
-    const spread = state.lastAsk - state.lastBid;
-    const spreadPct = state.lastBid > 0 ? (spread / state.lastBid) * 100 : 0;
+    const trades       = logger.getRecentTrades(1000);
+    const primaryCoin  = coins[0];
+    const pp           = state.lastPrices[primaryCoin] ?? { mid: 0, bid: 0, ask: 0 };
+    const spread       = pp.ask - pp.bid;
+    const spreadPct    = pp.bid > 0 ? (spread / pp.bid) * 100 : 0;
     res.json({
-      price:       state.lastPrice,
-      bid:         state.lastBid,
-      ask:         state.lastAsk,
+      price:       pp.mid,
+      bid:         pp.bid,
+      ask:         pp.ask,
       spread,
       spreadPct,
+      prices:      state.lastPrices,
       lastUpdate:  state.lastUpdate,
       signalCount: state.signalCount,
       tradeCount:  trades.length,
       uptime:      formatUptime(process.uptime()),
       network:     config.exchange.network,
-      coin:        config.exchange.coin,
+      coin:        primaryCoin,
+      coins,
       strategy:    config.strategy.type,
       interval:    state.currentInterval,
     });
@@ -165,7 +185,46 @@ export function createRouter(
   });
 
   router.get("/api/prices", (_req, res) => {
-    res.json(state.priceHistory);
+    res.json(state.lastPrices);
+  });
+
+  router.get("/api/backtest", async (req, res) => {
+    try {
+      const interval = (typeof req.query.interval === "string" ? req.query.interval : null) ?? "1h";
+      const limit    = Math.min(parseInt(typeof req.query.limit === "string" ? req.query.limit : "1000") || 1000, 2000);
+      const coin     = coins[0];
+
+      const candles  = await fetchCandles(coin, interval, limit);
+      if (candles.length === 0) {
+        res.status(400).json({ error: "No candle data returned from exchange" });
+        return;
+      }
+
+      const strategy = new ConfluenceStrategy();
+      const result   = runBacktest(strategy, candles, {
+        initialEquity:   1000,
+        positionSizeUsd: config.risk.maxPositionSizeUsd,
+        stopLossPct:     config.risk.stopLossPercent,
+      });
+
+      res.json({ ...result, interval, limit, coin, fetchedCandles: candles.length });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("[backtest] API error:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.get("/api/pnl", (_req, res) => {
+    const position = executor?.getPosition() ?? null;
+    const realisedPnl = logger.getSumPnl();
+    res.json({
+      position,
+      unrealisedPnl: position?.unrealisedPnl ?? null,
+      unrealisedPnlPercent: position?.unrealisedPnlPercent ?? null,
+      realisedPnl,
+      equityHistory: state.equityHistory,
+    });
   });
 
   router.post("/api/interval", async (req, res) => {
@@ -180,8 +239,10 @@ export function createRouter(
     }
 
     // Clear chart history — will be repopulated via bus events from changeInterval
-    state.candleHistory = [];
-    state.spreadHistory = [];
+    for (const c of coins) {
+      state.candleHistory[c] = [];
+      state.spreadHistory[c] = [];
+    }
 
     await feed.changeInterval(interval);
     state.currentInterval = feed.getInterval();

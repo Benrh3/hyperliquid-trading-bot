@@ -1,6 +1,6 @@
 import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
 import { bus } from "../events.js";
-import { config } from "../config.js";
+import { config, coins } from "../config.js";
 import type { Strategy } from "./base.js";
 import type { Candle, Signal } from "../events.js";
 
@@ -36,7 +36,7 @@ export class FundingRateStrategy implements Strategy {
   };
 
   constructor() {
-    this.coin = config.exchange.coin;
+    this.coin = coins[0];
     const isTestnet = config.exchange.network === "testnet";
     this.info = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
   }

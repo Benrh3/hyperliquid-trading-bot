@@ -80,6 +80,9 @@
   .funding-item .fi-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
   .funding-item .fi-value { font-size: 13px; font-family: 'SFMono-Regular', Consolas, monospace; font-variant-numeric: tabular-nums; margin-top: 1px; }
 
+  /* ── Equity chart panel ── */
+  #chart-equity { height: 100px; border-top: 1px solid var(--border); }
+
   .chart-empty {
     height: 100%;
     display: flex;
@@ -92,13 +95,18 @@
 
 <nav class="nav">
   <a href="/" class="nav-brand">HL Bot</a>
-  <a href="/" class="nav-link active">Overview</a>
-  <a href="/strategies" class="nav-link">Strategies</a>
-  <a href="/trades" class="nav-link">Trades</a>
+  <button class="hamburger" id="nav-hamburger" aria-label="Menu">&#9776;</button>
+  <div class="nav-links" id="nav-links">
+    <a href="/" class="nav-link active">Overview</a>
+    <a href="/strategies" class="nav-link">Strategies</a>
+    <a href="/trades" class="nav-link">Trades</a>
+    <a href="/backtest" class="nav-link">Backtest</a>
+  </div>
   <div class="nav-right">
     <span class="dot"></span>
     <span class="badge badge-net"><%= network %></span>
     <span class="text-muted"><%= coin %> &middot; <%= strategy %> &middot; <span id="nav-interval"><%= interval %></span></span>
+    <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
   </div>
 </nav>
 
@@ -106,31 +114,34 @@
 
   <!-- Stat cards -->
   <div class="grid">
-    <div class="card">
-      <div class="card-label"><%= coin %> Price</div>
-      <div class="card-value mono" id="stat-price">
-        <% if (state.lastPrice > 0) { %>
-          $<%= state.lastPrice.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
+    <!-- Per-coin price cards -->
+    <% for (const c of coins) { %>
+    <% const cp = state.lastPrices[c] || { mid: 0, bid: 0, ask: 0 }; %>
+    <div class="card" id="card-<%= c %>">
+      <div class="card-label"><%= c %> Price</div>
+      <div class="card-value mono" id="stat-price-<%= c %>" style="font-size:1.3rem">
+        <% if (cp.mid > 0) { %>
+          $<%= cp.mid.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
         <% } else { %><span class="text-muted">—</span><% } %>
       </div>
-      <div class="card-sub" id="stat-bid-ask">
-        <% if (state.lastBid > 0) { %>
-          bid $<%= state.lastBid.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %> &nbsp;/&nbsp;
-          ask $<%= state.lastAsk.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
+      <div class="card-sub" id="stat-bidask-<%= c %>">
+        <% if (cp.bid > 0) { %>
+          bid $<%= cp.bid.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %> / ask $<%= cp.ask.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
         <% } else { %>awaiting feed…<% } %>
       </div>
     </div>
+    <% } %>
 
     <div class="card">
-      <div class="card-label">Spread</div>
+      <div class="card-label">Spread (<%= coin %>)</div>
       <div class="card-value mono" style="font-size:1.3rem" id="stat-spread">
-        <% if (state.lastBid > 0) { %>
-          $<%= (state.lastAsk - state.lastBid).toFixed(2) %>
+        <% if (primaryPrice.bid > 0) { %>
+          $<%= (primaryPrice.ask - primaryPrice.bid).toFixed(2) %>
         <% } else { %><span class="text-muted">—</span><% } %>
       </div>
       <div class="card-sub" id="stat-spread-pct">
-        <% if (state.lastBid > 0) { %>
-          <%= ((state.lastAsk - state.lastBid) / state.lastBid * 100).toFixed(4) %>%
+        <% if (primaryPrice.bid > 0) { %>
+          <%= ((primaryPrice.ask - primaryPrice.bid) / primaryPrice.bid * 100).toFixed(4) %>%
         <% } %>
       </div>
     </div>
@@ -153,6 +164,12 @@
       <div class="card-sub" id="stat-lastupdate">
         <% if (state.lastUpdate) { %>last tick <%= state.lastUpdate.toLocaleTimeString() %><% } else { %>no ticks yet<% } %>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">P&amp;L</div>
+      <div class="card-value mono" style="font-size:1.2rem" id="stat-upnl"><span class="text-muted">—</span></div>
+      <div class="card-sub mono" id="stat-rpnl"><span class="text-muted">Realised: —</span></div>
     </div>
 
     <!-- Funding rate card — wider -->
@@ -178,7 +195,12 @@
   <!-- Chart panel -->
   <div class="chart-panel">
     <div class="chart-toolbar">
-      <span class="chart-toolbar-title"><%= coin %>/USDT</span>
+      <span class="chart-toolbar-title" id="chart-coin-label"><%= coin %>/USDT</span>
+      <select id="chart-coin-select" style="background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:11px;padding:3px 6px;border-radius:3px;cursor:pointer;margin-right:4px">
+        <% for (const c of coins) { %>
+          <option value="<%= c %>" <%= c === coin ? 'selected' : '' %>><%= c %></option>
+        <% } %>
+      </select>
       <div class="tf-group">
         <button class="tf <%= interval === '1m'  ? 'active' : '' %>" data-tf="1m">1m</button>
         <button class="tf <%= interval === '5m'  ? 'active' : '' %>" data-tf="5m">5m</button>
@@ -204,6 +226,11 @@
     <div class="chart-row">
       <div class="chart-row-label">RSI 14</div>
       <div id="chart-rsi"></div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-row-label">Equity</div>
+      <div id="chart-equity"></div>
     </div>
   </div>
 
@@ -239,18 +266,27 @@
   const LC = LightweightCharts;
 
   // ── Shared chart options ────────────────────────────────────────────────
-  const commonOpts = {
-    layout: {
-      background: { type: 'solid', color: '#161b22' },
-      textColor: '#8b949e',
-      attributionLogo: false,
-    },
-    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
-    crosshair: { mode: 1 },
-    rightPriceScale: { borderColor: '#30363d' },
-    handleScroll: { mouseWheel: true, pressedMouseMove: true },
-    handleScale: { mouseWheel: true, pinch: true },
-  };
+  function getCssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function chartOpts() {
+    return {
+      layout: {
+        background: { type: 'solid', color: getCssVar('--surface') || '#161b22' },
+        textColor:  getCssVar('--muted')  || '#8b949e',
+        attributionLogo: false,
+      },
+      grid: {
+        vertLines: { color: getCssVar('--border') || '#21262d' },
+        horzLines: { color: getCssVar('--border') || '#21262d' },
+      },
+      crosshair: { mode: 1 },
+      rightPriceScale: { borderColor: getCssVar('--border') || '#30363d' },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true },
+      handleScale: { mouseWheel: true, pinch: true },
+    };
+  }
+  const commonOpts = chartOpts();
 
   const timeScaleOpts = { borderColor: '#30363d', timeVisible: true, secondsVisible: false };
 
@@ -270,6 +306,12 @@
   const rsiChart = LC.createChart(document.getElementById('chart-rsi'), {
     ...commonOpts,
     height: 150,
+    timeScale: { ...timeScaleOpts, visible: false },
+  });
+
+  const equityChart = LC.createChart(document.getElementById('chart-equity'), {
+    ...commonOpts,
+    height: 100,
     timeScale: timeScaleOpts,
   });
 
@@ -306,6 +348,16 @@
   rsiChart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
   rsiSeries.createPriceLine({ price: 70, color: '#f85149', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70' });
   rsiSeries.createPriceLine({ price: 30, color: '#3fb950', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30' });
+
+  // ── Equity curve line ───────────────────────────────────────────────────
+  const equitySeries = equityChart.addAreaSeries({
+    lineColor:      '#58a6ff',
+    topColor:       'rgba(88,166,255,0.2)',
+    bottomColor:    'rgba(88,166,255,0)',
+    lineWidth:      1,
+    priceFormat:    { type: 'price', precision: 2, minMove: 0.01 },
+  });
+  equityChart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
 
   // ── Time-scale sync ─────────────────────────────────────────────────────
   let syncing = false;
@@ -399,10 +451,12 @@
 
   // ── Chart data refresh ──────────────────────────────────────────────────
   let firstLoad = true;
+  let chartCoin = document.getElementById('chart-coin-select')?.value || '';
 
   async function refreshChart() {
+    const coinParam = document.getElementById('chart-coin-select')?.value || chartCoin;
     try {
-      const data = await fetch('/api/candles').then((r) => r.json());
+      const data = await fetch('/api/candles?coin=' + coinParam).then((r) => r.json());
       if (!data.candles || data.candles.length === 0) return;
 
       candleSeries.setData(data.candles);
@@ -433,6 +487,15 @@
   refreshChart();
   setInterval(refreshChart, 10000);
 
+  // Coin selector → reload chart
+  document.getElementById('chart-coin-select')?.addEventListener('change', (e) => {
+    chartCoin = e.target.value;
+    const labelEl = document.getElementById('chart-coin-label');
+    if (labelEl) labelEl.textContent = chartCoin + '/USDT';
+    firstLoad = true;
+    refreshChart();
+  });
+
   // ── Stats refresh (no page reload) ─────────────────────────────────────
   function fmtPrice(p) {
     return '$' + p.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -442,12 +505,14 @@
     try {
       const d = await fetch('/api/status').then((r) => r.json());
 
-      if (d.price > 0) {
-        const el = document.getElementById('stat-price');
-        if (el) el.textContent = fmtPrice(d.price);
-
-        const baEl = document.getElementById('stat-bid-ask');
-        if (baEl) baEl.textContent = 'bid ' + fmtPrice(d.bid) + ' / ask ' + fmtPrice(d.ask);
+      // Per-coin price cards
+      if (d.prices) {
+        for (const [c, cp] of Object.entries(d.prices)) {
+          const priceEl = document.getElementById('stat-price-' + c);
+          if (priceEl && cp.mid > 0) priceEl.textContent = fmtPrice(cp.mid);
+          const baEl = document.getElementById('stat-bidask-' + c);
+          if (baEl && cp.bid > 0) baEl.textContent = 'bid ' + fmtPrice(cp.bid) + ' / ask ' + fmtPrice(cp.ask);
+        }
       }
 
       if (d.bid > 0) {
@@ -548,6 +613,44 @@
   }
   setInterval(tickFundingCountdown, 1000);
 
+  // ── P&L and equity refresh ──────────────────────────────────────────────
+  let equityFirstLoad = true;
+
+  async function refreshPnl() {
+    try {
+      const d = await fetch('/api/pnl').then((r) => r.json());
+
+      const upnlEl = document.getElementById('stat-upnl');
+      if (upnlEl) {
+        if (d.unrealisedPnl !== null && d.unrealisedPnl !== undefined) {
+          const pct = d.unrealisedPnlPercent != null ? ' (' + (d.unrealisedPnlPercent >= 0 ? '+' : '') + d.unrealisedPnlPercent.toFixed(2) + '%)' : '';
+          const col = d.unrealisedPnl >= 0 ? '#3fb950' : '#f85149';
+          upnlEl.innerHTML = '<span style="color:' + col + '">' + (d.unrealisedPnl >= 0 ? '+' : '') + '$' + Math.abs(d.unrealisedPnl).toFixed(2) + pct + '</span>';
+        } else {
+          upnlEl.innerHTML = '<span class="text-muted">No position</span>';
+        }
+      }
+
+      const rpnlEl = document.getElementById('stat-rpnl');
+      if (rpnlEl && d.realisedPnl !== null && d.realisedPnl !== undefined) {
+        const col = d.realisedPnl >= 0 ? '#3fb950' : '#f85149';
+        rpnlEl.innerHTML = 'Realised: <span style="color:' + col + '">' + (d.realisedPnl >= 0 ? '+' : '') + '$' + d.realisedPnl.toFixed(2) + '</span>';
+      }
+
+      if (d.equityHistory && d.equityHistory.length > 0) {
+        const eq = d.equityHistory.map((p) => ({
+          time:  Math.floor(p.time / 1000),
+          value: p.equity,
+        }));
+        equitySeries.setData(eq);
+        if (equityFirstLoad) { equityChart.timeScale().fitContent(); equityFirstLoad = false; }
+      }
+    } catch (_) {}
+  }
+
+  refreshPnl();
+  setInterval(refreshPnl, 10000);
+
   // ── Timeframe buttons ───────────────────────────────────────────────────
   document.querySelectorAll('.tf').forEach((btn) => {
     btn.addEventListener('click', async () => {
@@ -581,7 +684,7 @@
   // ── Resize observer ─────────────────────────────────────────────────────
   if (typeof ResizeObserver !== 'undefined') {
     const ro = new ResizeObserver(() => {
-      [candleChart, volChart, rsiChart].forEach((c) => c.applyOptions({ width: 0 }));
+      [candleChart, volChart, rsiChart, equityChart].forEach((c) => c.applyOptions({ width: 0 }));
     });
     ro.observe(document.querySelector('.chart-panel'));
   }

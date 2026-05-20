@@ -2,71 +2,89 @@ import express from "express";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { bus } from "../events.js";
-import { config } from "../config.js";
+import { config, coins } from "../config.js";
 import type { Candle } from "../events.js";
 import type { Logger } from "../logger.js";
 import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
+import type { Executor } from "../executor.js";
 import { createRouter } from "./routes.js";
 
 export interface BotState {
-  lastPrice: number;
-  lastBid: number;
-  lastAsk: number;
+  lastPrices: Record<string, { mid: number; bid: number; ask: number }>;
   lastUpdate: Date | null;
   signalCount: number;
   startedAt: Date;
-  priceHistory: { t: number; price: number }[];
-  candleHistory: Candle[];
-  spreadHistory: { t: number; value: number }[];
+  candleHistory: Record<string, Candle[]>;
+  spreadHistory: Record<string, { t: number; value: number }[]>;
   currentInterval: string;
+  equityHistory: { time: number; equity: number }[];
 }
 
-export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed?: Feed): void {
+const INITIAL_EQUITY = 1000;
+const MAX_EQUITY_HISTORY = 1440; // 24h at 1-minute recording
+
+export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed?: Feed, executor?: Executor): void {
   const state: BotState = {
-    lastPrice: 0,
-    lastBid:   0,
-    lastAsk:   0,
+    lastPrices: Object.fromEntries(coins.map((c) => [c, { mid: 0, bid: 0, ask: 0 }])),
     lastUpdate: null,
     signalCount: 0,
     startedAt: new Date(),
-    priceHistory:  [],
-    candleHistory: [],
-    spreadHistory: [],
+    candleHistory: Object.fromEntries(coins.map((c) => [c, []])),
+    spreadHistory: Object.fromEntries(coins.map((c) => [c, []])),
     currentInterval: config.strategy.interval,
+    equityHistory: [],
   };
 
-  const MAX_PRICE_HISTORY  = 100;
+  // Track realised PnL locally so equity recording doesn't need a DB query
+  let realisedPnl = 0;
+  bus.on("trade", (result) => {
+    if (result.success && result.pnl != null) {
+      realisedPnl += result.pnl;
+    }
+  });
+
+  // Record equity snapshot every 60 seconds
+  setInterval(() => {
+    const pos = executor?.getPosition();
+    const unrealisedPnl = pos?.unrealisedPnl ?? 0;
+    state.equityHistory.push({ time: Date.now(), equity: INITIAL_EQUITY + realisedPnl + unrealisedPnl });
+    if (state.equityHistory.length > MAX_EQUITY_HISTORY) state.equityHistory.shift();
+  }, 60_000);
+
   const MAX_CANDLE_HISTORY = 500;
   const MAX_SPREAD_HISTORY = 500;
 
-  let lastSpread = 0;
+  // Per-coin last spread tracker
+  const lastSpreads: Record<string, number> = {};
 
   bus.on("tick", (tick) => {
     if (tick.bid > 0) {
-      state.lastPrice = tick.mid;
-      state.lastBid   = tick.bid;
-      state.lastAsk   = tick.ask;
-      lastSpread      = tick.ask - tick.bid;
+      state.lastPrices[tick.coin] = { mid: tick.mid, bid: tick.bid, ask: tick.ask };
+      lastSpreads[tick.coin]      = tick.ask - tick.bid;
       state.lastUpdate = new Date();
-      state.priceHistory.push({ t: tick.timestamp, price: tick.mid });
-      if (state.priceHistory.length > MAX_PRICE_HISTORY) state.priceHistory.shift();
     }
   });
 
   bus.on("candle", (candle: Candle) => {
+    const coin = candle.coin ?? coins[0];
+    if (!state.candleHistory[coin]) state.candleHistory[coin] = [];
+    const hist = state.candleHistory[coin];
+
     // Upsert: live WebSocket resends the current candle as it builds
-    const idx = state.candleHistory.findIndex((c) => c.timestamp === candle.timestamp);
+    const idx = hist.findIndex((c) => c.timestamp === candle.timestamp);
     if (idx >= 0) {
-      state.candleHistory[idx] = candle;
+      hist[idx] = candle;
     } else {
-      state.candleHistory.push(candle);
-      if (state.candleHistory.length > MAX_CANDLE_HISTORY) state.candleHistory.shift();
+      hist.push(candle);
+      if (hist.length > MAX_CANDLE_HISTORY) hist.shift();
 
       // Record spread at this candle's open time (only for new bars)
-      if (lastSpread > 0) {
-        state.spreadHistory.push({ t: candle.timestamp, value: lastSpread });
-        if (state.spreadHistory.length > MAX_SPREAD_HISTORY) state.spreadHistory.shift();
+      const spread = lastSpreads[coin] ?? 0;
+      if (spread > 0) {
+        if (!state.spreadHistory[coin]) state.spreadHistory[coin] = [];
+        state.spreadHistory[coin].push({ t: candle.timestamp, value: spread });
+        if (state.spreadHistory[coin].length > MAX_SPREAD_HISTORY) state.spreadHistory[coin].shift();
       }
     }
   });
@@ -82,7 +100,7 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
   app.set("views", join(__dirname, "views"));
   app.use(express.json());
 
-  app.use("/", createRouter(logger, state, strategies, feed));
+  app.use("/", createRouter(logger, state, strategies, feed, executor));
 
   const port = config.dashboard.port;
   app.listen(port, () => {

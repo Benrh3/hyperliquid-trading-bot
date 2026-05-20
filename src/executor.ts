@@ -7,20 +7,37 @@ import type { Signal } from "./events.js";
 // Market order via limit-IOC with a slippage cushion so it always crosses the spread.
 const SLIPPAGE = 0.02;
 
+interface Position {
+  coin:       string;
+  side:       "long" | "short";
+  size:       number;
+  entryPrice: number;
+}
+
+interface AssetInfo {
+  index:      number;
+  szDecimals: number;
+}
+
 export class Executor {
   private readonly exchange: ExchangeClient;
-  private readonly info: InfoClient;
+  private readonly info:     InfoClient;
   private readonly walletAddress: string;
-  private assetIndex = -1;
-  private szDecimals = 5;
-  private currentPrice = 0;
   private readonly dryRun: boolean;
+
+  private readonly assetCache = new Map<string, AssetInfo>();
+  private currentPrices = new Map<string, number>(); // per-coin live prices
+
+  private position: Position | null = null;
+  // Guard: prevents a second close attempt while one is already in flight
+  // (e.g. stop-loss tick fires again before the REST call returns).
+  private closing = false;
 
   constructor(dryRun = true) {
     this.dryRun = dryRun;
 
     const isTestnet = config.exchange.network === "testnet";
-    const key = getPrivateKey();
+    const key    = getPrivateKey();
     const wallet = privateKeyToAccount(key);
     this.walletAddress = wallet.address;
 
@@ -39,84 +56,161 @@ export class Executor {
     console.log(`[executor] Wallet: ${this.walletAddress}`);
 
     bus.on("tick", (tick) => {
-      if (tick.bid > 0) this.currentPrice = tick.mid;
+      if (tick.bid > 0) {
+        this.currentPrices.set(tick.coin, tick.mid);
+        this.checkStopLoss();
+      }
     });
 
     bus.on("signal:approved", (signal) => {
-      this.execute(signal).catch((err: Error) => {
-        // Safety net — execute() handles its own errors; this only fires
-        // if something truly unexpected escapes.
-        console.error("[executor] Unhandled error in execute():", err);
+      this.handleSignal(signal).catch((err: Error) => {
+        console.error("[executor] Unhandled error in handleSignal:", err);
         bus.emit("error", "executor", err);
       });
     });
   }
 
-  private async resolveAssetIndex(): Promise<void> {
-    if (this.assetIndex >= 0) return;
-    const { universe } = await this.info.meta();
-    const idx = universe.findIndex(
-      (u) => u.name.toUpperCase() === config.exchange.coin.toUpperCase(),
-    );
-    if (idx === -1) {
-      throw new Error(`Coin "${config.exchange.coin}" not found in perpetuals universe`);
-    }
-    this.assetIndex = idx;
-    this.szDecimals = universe[idx].szDecimals;
-    console.log(
-      `[executor] ${config.exchange.coin} → asset index ${idx} (szDecimals=${this.szDecimals})`,
-    );
+  // ── Public API ────────────────────────────────────────────────────────
+
+  getPosition(): {
+    coin: string;
+    side: "long" | "short";
+    size: number;
+    entryPrice: number;
+    unrealisedPnl: number;
+    unrealisedPnlPercent: number;
+  } | null {
+    if (!this.position) return null;
+    const { coin, side, size, entryPrice } = this.position;
+    const currentPrice = this.currentPrices.get(coin) ?? 0;
+    if (currentPrice === 0) return null;
+    const unrealisedPnl = side === "long"
+      ? (currentPrice - entryPrice) * size
+      : (entryPrice - currentPrice) * size;
+    const unrealisedPnlPercent = entryPrice > 0
+      ? (unrealisedPnl / (entryPrice * size)) * 100
+      : 0;
+    return { coin, side, size, entryPrice, unrealisedPnl, unrealisedPnlPercent };
   }
 
-  private async execute(signal: Signal): Promise<void> {
-    // Single try-catch covers the whole flow — including resolveAssetIndex —
-    // so no error path can silently escape.
+  // ── Signal routing ────────────────────────────────────────────────────
+
+  private async handleSignal(signal: Signal): Promise<void> {
+    if (signal.side === "close") {
+      await this.closePosition("Close signal from strategy");
+      return;
+    }
+
+    // Duplicate direction — already in this trade, nothing to do
+    if (this.position?.side === signal.side) {
+      console.log(`[executor] Already in ${signal.side} — ignoring duplicate signal`);
+      return;
+    }
+
+    // Opposite direction — close existing position first, then reverse
+    if (this.position) {
+      console.log(`[executor] Reversing ${this.position.side} → ${signal.side}`);
+      await this.closePosition(`Reversing to ${signal.side}`);
+      // If close failed the position reference is still set; abort the reversal
+      if (this.position) {
+        console.warn("[executor] Close failed — aborting reversal");
+        return;
+      }
+    }
+
+    await this.openPosition(signal);
+  }
+
+  // ── Stop-loss (called on every tick with valid bid/ask) ───────────────
+
+  private checkStopLoss(): void {
+    if (!this.position || this.closing) return;
+    const { coin, side, entryPrice } = this.position;
+    const currentPrice = this.currentPrices.get(coin) ?? 0;
+    if (currentPrice === 0) return;
+
+    const loss = side === "long"
+      ? (entryPrice - currentPrice) / entryPrice * 100
+      : (currentPrice - entryPrice) / entryPrice * 100;
+
+    if (loss >= config.risk.stopLossPercent) {
+      console.warn(
+        `[executor] Stop-loss triggered: ${loss.toFixed(2)}% loss on ` +
+        `${side} ${coin} entered @ $${entryPrice} (now $${currentPrice.toFixed(1)})`,
+      );
+      this.closePosition(`Stop-loss ${loss.toFixed(2)}%`).catch((err: Error) => {
+        bus.emit("error", "executor", err);
+      });
+    }
+  }
+
+  // ── Asset resolution (per-coin cache) ────────────────────────────────
+
+  private async resolveAsset(coin: string): Promise<AssetInfo> {
+    const cached = this.assetCache.get(coin);
+    if (cached) return cached;
+
+    const { universe } = await this.info.meta();
+    const idx = universe.findIndex((u) => u.name.toUpperCase() === coin.toUpperCase());
+    if (idx === -1) throw new Error(`Coin "${coin}" not found in perpetuals universe`);
+
+    const asset: AssetInfo = { index: idx, szDecimals: universe[idx].szDecimals };
+    this.assetCache.set(coin, asset);
+    console.log(`[executor] ${coin} → asset index ${idx} (szDecimals=${asset.szDecimals})`);
+    return asset;
+  }
+
+  // ── Open a new position ───────────────────────────────────────────────
+
+  private async openPosition(signal: Signal): Promise<void> {
+    if (signal.side === "close") return; // narrowing guard; should never reach here
+    const coin         = signal.coin;
+    const currentPrice = this.currentPrices.get(coin) ?? 0;
     try {
-      if (this.currentPrice === 0) {
-        console.warn("[executor] No price available yet — skipping signal");
+      if (currentPrice === 0) {
+        console.warn(`[executor] No price for ${coin} yet — skipping signal`);
         return;
       }
 
-      await this.resolveAssetIndex();
+      const { index: assetIndex, szDecimals } = await this.resolveAsset(coin);
 
       const isLong  = signal.side === "long";
-      const rawSize = config.risk.maxPositionSizeUsd / this.currentPrice;
-      const size    = parseFloat(rawSize.toFixed(this.szDecimals));
+      const rawSize = config.risk.maxPositionSizeUsd / currentPrice;
+      const size    = parseFloat(rawSize.toFixed(szDecimals));
 
       const limitPrice = isLong
-        ? this.currentPrice * (1 + SLIPPAGE)
-        : this.currentPrice * (1 - SLIPPAGE);
-
-      // Hyperliquid rejects prices with more than 5 significant figures.
+        ? currentPrice * (1 + SLIPPAGE)
+        : currentPrice * (1 - SLIPPAGE);
       const priceStr = limitPrice.toPrecision(5);
       const sizeStr  = size.toString();
 
       console.log(
-        `[executor] ${this.dryRun ? "DRY-RUN " : ""}${signal.side.toUpperCase()} ` +
-        `${sizeStr} ${config.exchange.coin} @ ~$${priceStr} (${signal.reason})`,
+        `[executor] ${this.dryRun ? "DRY-RUN " : ""}OPEN ${signal.side.toUpperCase()} ` +
+        `${sizeStr} ${coin} @ ~$${priceStr} (${signal.reason})`,
       );
 
       if (this.dryRun) {
+        this.position = { coin, side: signal.side, size, entryPrice: currentPrice };
         bus.emit("trade", {
           orderId:   `dry-${Date.now()}`,
-          coin:      config.exchange.coin,
+          coin,
           side:      signal.side,
           size,
-          price:     this.currentPrice,
+          price:     currentPrice,
           timestamp: Date.now(),
           success:   true,
+          reason:    signal.reason,
         });
         return;
       }
 
-      // ── Place order via HTTP REST ────────────────────────────────────────
-      console.log(`[executor] POST order → ${config.exchange.network} REST`);
+      console.log(`[executor] POST open order → ${config.exchange.network} REST`);
 
       let resp: Awaited<ReturnType<typeof this.exchange.order>>;
       try {
         resp = await this.exchange.order({
           orders: [{
-            a: this.assetIndex,
+            a: assetIndex,
             b: isLong,
             p: priceStr,
             s: sizeStr,
@@ -125,35 +219,28 @@ export class Executor {
           }],
           grouping: "na",
         });
-
-        // Log the full response — critical for diagnosing partial fills,
-        // rejected orders, or unexpected statuses.
-        console.log("[executor] Exchange response:", JSON.stringify(resp, null, 2));
+        console.log("[executor] Open response:", JSON.stringify(resp, null, 2));
       } catch (orderErr) {
-        // ApiRequestError carries a .response field with the raw exchange
-        // payload (e.g. {"status":"err","response":"Insufficient margin"}).
         if (orderErr !== null && typeof orderErr === "object" && "response" in orderErr) {
           console.error(
-            "[executor] Exchange API error response:\n" +
+            "[executor] Exchange API error:\n" +
             JSON.stringify((orderErr as { response: unknown }).response, null, 2),
           );
         }
         throw orderErr;
       }
 
-      // ── Parse status ─────────────────────────────────────────────────────
       const status = resp.response.data.statuses[0];
 
       if (typeof status === "string") {
-        // "waitingForFill" or "waitingForTrigger" — should not occur for IOC
-        // but handle defensively.
-        console.log(`[executor] Unexpected pending status: ${status}`);
+        console.log(`[executor] Open order pending: ${status}`);
+        this.position = { coin, side: signal.side, size, entryPrice: currentPrice };
         bus.emit("trade", {
           orderId:   `pending-${Date.now()}`,
-          coin:      config.exchange.coin,
+          coin,
           side:      signal.side,
           size,
-          price:     this.currentPrice,
+          price:     currentPrice,
           timestamp: Date.now(),
           success:   true,
         });
@@ -161,24 +248,22 @@ export class Executor {
       }
 
       if ("error" in status) {
-        // Individual order error inside a top-level "ok" envelope.
-        // The SDK may already have thrown for this; guard defensively.
-        throw new Error(`Order status error: ${status.error}`);
+        throw new Error(`Open order rejected: ${status.error}`);
       }
 
-      const filled  = "filled" in status ? status.filled : null;
-      const orderId = filled?.oid.toString() ??
+      const filled    = "filled" in status ? status.filled : null;
+      const orderId   = filled?.oid.toString() ??
         ("resting" in status ? status.resting.oid.toString() : `oid-${Date.now()}`);
-      const fillPrice = filled ? parseFloat(filled.avgPx) : this.currentPrice;
+      const fillPrice = filled ? parseFloat(filled.avgPx)   : currentPrice;
       const fillSize  = filled ? parseFloat(filled.totalSz) : size;
 
-      console.log(
-        `[executor] Filled oid=${orderId} sz=${fillSize} avgPx=${fillPrice}`,
-      );
+      console.log(`[executor] Opened ${signal.side} ${coin} oid=${orderId} sz=${fillSize} avgPx=${fillPrice}`);
+
+      this.position = { coin, side: signal.side, size: fillSize, entryPrice: fillPrice };
 
       bus.emit("trade", {
         orderId,
-        coin:      config.exchange.coin,
+        coin,
         side:      signal.side,
         size:      fillSize,
         price:     fillPrice,
@@ -187,26 +272,161 @@ export class Executor {
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      console.error(`[executor] Order failed: ${error.message}`);
-
-      // Emit error so the logger records it as an event.
+      console.error(`[executor] Open failed: ${error.message}`);
       bus.emit("error", "executor", error);
-
-      // Emit a failed trade so the dashboard and DB reflect the attempt.
-      const fallbackSize = this.currentPrice > 0
-        ? parseFloat((config.risk.maxPositionSizeUsd / this.currentPrice).toFixed(this.szDecimals))
+      const asset      = this.assetCache.get(coin);
+      const szDecimals = asset?.szDecimals ?? 5;
+      const fallbackSize = currentPrice > 0
+        ? parseFloat((config.risk.maxPositionSizeUsd / currentPrice).toFixed(szDecimals))
         : 0;
-
       bus.emit("trade", {
         orderId:   `failed-${Date.now()}`,
-        coin:      config.exchange.coin,
+        coin,
         side:      signal.side,
         size:      fallbackSize,
-        price:     this.currentPrice,
+        price:     currentPrice,
         timestamp: Date.now(),
         success:   false,
         error:     error.message,
       });
+    }
+  }
+
+  // ── Close the current position ────────────────────────────────────────
+
+  private async closePosition(reason: string): Promise<void> {
+    if (!this.position) {
+      console.log("[executor] closePosition called with no open position — ignoring");
+      return;
+    }
+    if (this.closing) {
+      console.log("[executor] Close already in progress — skipping");
+      return;
+    }
+    this.closing = true;
+
+    const { coin, side, size, entryPrice } = this.position;
+    const currentPrice = this.currentPrices.get(coin) ?? 0;
+
+    // To close a long we sell (b: false); to close a short we buy (b: true)
+    const closeIsLong = side === "short";
+    const limitPrice  = closeIsLong
+      ? currentPrice * (1 + SLIPPAGE)   // buy back to close short
+      : currentPrice * (1 - SLIPPAGE);  // sell to close long
+    const priceStr = limitPrice.toPrecision(5);
+    const sizeStr  = size.toString();
+
+    console.log(
+      `[executor] ${this.dryRun ? "DRY-RUN " : ""}CLOSE ${side.toUpperCase()} ` +
+      `${sizeStr} ${coin} @ ~$${priceStr} (${reason})`,
+    );
+
+    try {
+      if (this.dryRun) {
+        const pnl = side === "long"
+          ? (currentPrice - entryPrice) * size
+          : (entryPrice - currentPrice) * size;
+        console.log(`[executor] DRY-RUN close — est. PnL: $${pnl.toFixed(2)}`);
+        this.position = null;
+        bus.emit("trade", {
+          orderId:   `dry-close-${Date.now()}`,
+          coin,
+          side,
+          size,
+          price:     currentPrice,
+          timestamp: Date.now(),
+          success:   true,
+          pnl,
+          reason,
+        });
+        return;
+      }
+
+      const { index: assetIndex } = await this.resolveAsset(coin);
+
+      console.log(`[executor] POST close order → ${config.exchange.network} REST`);
+
+      let resp: Awaited<ReturnType<typeof this.exchange.order>>;
+      try {
+        resp = await this.exchange.order({
+          orders: [{
+            a: assetIndex,
+            b: closeIsLong,
+            p: priceStr,
+            s: sizeStr,
+            r: true,   // reduce-only — never accidentally opens a new position
+            t: { limit: { tif: "Ioc" } },
+          }],
+          grouping: "na",
+        });
+        console.log("[executor] Close response:", JSON.stringify(resp, null, 2));
+      } catch (orderErr) {
+        if (orderErr !== null && typeof orderErr === "object" && "response" in orderErr) {
+          console.error(
+            "[executor] Close API error:\n" +
+            JSON.stringify((orderErr as { response: unknown }).response, null, 2),
+          );
+        }
+        throw orderErr;
+      }
+
+      const status = resp.response.data.statuses[0];
+
+      if (typeof status === "string") {
+        console.log(`[executor] Close order pending: ${status}`);
+        // Treat pending as closed — IOC should not rest
+        this.position = null;
+        bus.emit("trade", {
+          orderId:   `close-pending-${Date.now()}`,
+          coin,
+          side,
+          size,
+          price:     currentPrice,
+          timestamp: Date.now(),
+          success:   true,
+        });
+        return;
+      }
+
+      if ("error" in status) {
+        throw new Error(`Close order rejected: ${status.error}`);
+      }
+
+      const filled    = "filled" in status ? status.filled : null;
+      const orderId   = filled?.oid.toString() ??
+        ("resting" in status ? status.resting.oid.toString() : `close-${Date.now()}`);
+      const fillPrice = filled ? parseFloat(filled.avgPx)   : currentPrice;
+      const fillSize  = filled ? parseFloat(filled.totalSz) : size;
+
+      const pnl = side === "long"
+        ? (fillPrice - entryPrice) * fillSize
+        : (entryPrice - fillPrice) * fillSize;
+
+      console.log(
+        `[executor] Closed ${side} ${coin} oid=${orderId} sz=${fillSize} avgPx=${fillPrice} ` +
+        `PnL=$${pnl.toFixed(2)}`,
+      );
+
+      this.position = null;
+
+      bus.emit("trade", {
+        orderId,
+        coin,
+        side,
+        size:      fillSize,
+        price:     fillPrice,
+        timestamp: Date.now(),
+        success:   true,
+        pnl,
+        reason,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(`[executor] Close failed: ${error.message}`);
+      bus.emit("error", "executor", error);
+      // Do NOT clear this.position on failure — the position may still be open
+    } finally {
+      this.closing = false;
     }
   }
 }

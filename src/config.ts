@@ -7,12 +7,13 @@ loadEnv();
 export interface BotConfig {
   exchange: {
     network: "testnet" | "mainnet";
-    coin: string;
+    coin: string | string[];
     leverage: number;
   };
   strategy: {
     type: string;
     interval: string;
+    minConfluence?: number;
     [key: string]: unknown;
   };
   risk: {
@@ -68,6 +69,16 @@ export const config = deepMerge(
   defaults as unknown as Record<string, unknown>,
   networkOverrides as Record<string, unknown>,
 ) as unknown as BotConfig;
+
+// Normalise to array; keep config.exchange.coin as the primary string
+export const coins: string[] = Array.isArray(config.exchange.coin)
+  ? (config.exchange.coin as string[])
+  : [config.exchange.coin as string];
+
+// Ensure config.exchange.coin is always the primary coin string for existing code
+if (Array.isArray(config.exchange.coin)) {
+  (config.exchange as unknown as { coin: string }).coin = coins[0];
+}
 
 // Validate critical env vars
 export function getPrivateKey(): `0x${string}` {

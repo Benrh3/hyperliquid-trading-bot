@@ -9,6 +9,7 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+  coin?: string; // populated by Feed for multi-coin routing
 }
 
 export interface Tick {
@@ -20,7 +21,7 @@ export interface Tick {
 }
 
 export interface Signal {
-  side: "long" | "short";
+  side: "long" | "short" | "close";
   coin: string;
   reason: string;
   timestamp: number;
@@ -35,6 +36,8 @@ export interface TradeResult {
   timestamp: number;
   success: boolean;
   error?: string;
+  pnl?: number;    // realised PnL — only set on close trades
+  reason?: string; // e.g. "Stop-loss 2.10%" or signal reason
 }
 
 export interface BotEvents {

@@ -29,6 +29,12 @@ export class RiskManager {
   }
 
   private evaluate(signal: Signal): void {
+    // Close signals bypass all risk checks — never block an exit
+    if (signal.side === "close") {
+      bus.emit("signal:approved", signal);
+      return;
+    }
+
     const { maxPositionSizeUsd, maxDailyLossPercent, maxLeverage } =
       config.risk;
 

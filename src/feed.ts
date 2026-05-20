@@ -10,7 +10,7 @@ import {
   type ISubscription,
 } from "@nktkas/hyperliquid";
 import { bus } from "./events.js";
-import { config } from "./config.js";
+import { config, coins } from "./config.js";
 
 type CandleInterval = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "12h" | "1d" | "3d" | "1w" | "1M";
 
@@ -45,11 +45,14 @@ function resolveInterval(raw: string): CandleInterval {
 
 export class Feed {
   private readonly client: SubscriptionClient;
-  private readonly info: InfoClient;
-  private readonly coin: string;
-  private interval: CandleInterval;
-  private candleSub: ISubscription | null = null;
-  private otherSubs: ISubscription[] = [];
+  private readonly info:   InfoClient;
+  private readonly coins:  string[];
+  private interval:       CandleInterval;
+
+  // Per-coin subscriptions
+  private candleSubs = new Map<string, ISubscription>();
+  private bboSubs:    ISubscription[] = [];
+  private midsSub:    ISubscription | null = null;
 
   constructor() {
     const isTestnet = config.exchange.network === "testnet";
@@ -59,38 +62,55 @@ export class Feed {
         WebSocket: WebSocket as unknown as typeof globalThis.WebSocket,
       },
     });
-    this.client = new SubscriptionClient({ transport });
-    this.info = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
-    this.coin = config.exchange.coin;
+    this.client   = new SubscriptionClient({ transport });
+    this.info     = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+    this.coins    = coins;
     this.interval = resolveInterval(config.strategy.interval);
   }
 
-  getInterval(): string {
-    return this.interval;
-  }
+  getInterval(): string { return this.interval; }
 
   async start(): Promise<void> {
-    console.log(`[feed] Connecting to ${config.exchange.network} — ${this.coin} candles (${this.interval})`);
+    console.log(`[feed] Connecting to ${config.exchange.network} — coins: ${this.coins.join(", ")} (${this.interval})`);
 
-    // Prefill history before subscribing so the chart has immediate context
-    await this.fetchAndEmitHistory(this.interval);
+    // Prefill history for all coins before subscribing
+    await Promise.all(this.coins.map((c) => this.fetchAndEmitHistory(c, this.interval)));
 
-    const [candleSub, midsSub, bboSub] = await Promise.all([
-      this.client.candle({ coin: this.coin, interval: this.interval }, this.onCandle),
-      this.client.allMids(this.onAllMids),
-      this.client.bbo({ coin: this.coin }, this.onBbo),
-    ]);
+    // Subscribe to candles for every coin in parallel
+    const candleSubEntries = await Promise.all(
+      this.coins.map(async (coin) => {
+        const sub = await this.client.candle(
+          { coin, interval: this.interval },
+          (evt) => this.onCandle(coin, evt),
+        );
+        return [coin, sub] as [string, ISubscription];
+      }),
+    );
+    this.candleSubs = new Map(candleSubEntries);
 
-    this.candleSub = candleSub;
-    this.otherSubs = [midsSub, bboSub];
+    // Subscribe to BBO (bid/ask) for every coin
+    this.bboSubs = await Promise.all(
+      this.coins.map((coin) =>
+        this.client.bbo({ coin }, (evt) => this.onBbo(coin, evt)),
+      ),
+    );
+
+    // Single allMids subscription covers all coins
+    this.midsSub = await this.client.allMids(this.onAllMids);
+
     console.log("[feed] Subscriptions active");
   }
 
   async stop(): Promise<void> {
-    const all = [this.candleSub, ...this.otherSubs].filter(Boolean) as ISubscription[];
+    const all = [
+      ...this.candleSubs.values(),
+      ...this.bboSubs,
+      this.midsSub,
+    ].filter(Boolean) as ISubscription[];
     await Promise.all(all.map((s) => s.unsubscribe()));
-    this.candleSub = null;
-    this.otherSubs = [];
+    this.candleSubs.clear();
+    this.bboSubs  = [];
+    this.midsSub  = null;
     console.log("[feed] Subscriptions closed");
   }
 
@@ -98,38 +118,40 @@ export class Feed {
     const resolved = resolveInterval(newInterval);
     if (resolved === this.interval) return;
 
-    if (this.candleSub) {
-      await this.candleSub.unsubscribe();
-      this.candleSub = null;
-    }
+    // Unsubscribe all candle subs
+    await Promise.all([...this.candleSubs.values()].map((s) => s.unsubscribe()));
+    this.candleSubs.clear();
 
     this.interval = resolved;
-    await this.fetchAndEmitHistory(resolved);
 
-    this.candleSub = await this.client.candle(
-      { coin: this.coin, interval: this.interval },
-      this.onCandle,
+    // Re-fetch history and re-subscribe for all coins
+    await Promise.all(this.coins.map((c) => this.fetchAndEmitHistory(c, resolved)));
+
+    const candleSubEntries = await Promise.all(
+      this.coins.map(async (coin) => {
+        const sub = await this.client.candle(
+          { coin, interval: this.interval },
+          (evt) => this.onCandle(coin, evt),
+        );
+        return [coin, sub] as [string, ISubscription];
+      }),
     );
+    this.candleSubs = new Map(candleSubEntries);
 
     console.log(`[feed] Interval changed to ${this.interval}`);
   }
 
-  private async fetchAndEmitHistory(interval: CandleInterval): Promise<void> {
+  private async fetchAndEmitHistory(coin: string, interval: CandleInterval): Promise<void> {
     try {
-      const endTime = Date.now();
+      const endTime   = Date.now();
       const startTime = endTime - INTERVAL_MS[interval] * HISTORY_CANDLES;
+      const candles   = await this.info.candleSnapshot({ coin, interval, startTime, endTime });
 
-      const candles = await this.info.candleSnapshot({
-        coin: this.coin,
-        interval,
-        startTime,
-        endTime,
-      });
-
-      console.log(`[feed] Fetched ${candles.length} historical ${interval} candles`);
+      console.log(`[feed] Fetched ${candles.length} historical ${interval} candles for ${coin}`);
 
       for (const c of candles) {
         bus.emit("candle", {
+          coin,
           timestamp: c.t,
           open:   Number(c.o),
           high:   Number(c.h),
@@ -139,13 +161,13 @@ export class Feed {
         });
       }
     } catch (e) {
-      console.error("[feed] History fetch failed:", (e as Error).message);
+      console.error(`[feed] History fetch failed for ${coin}:`, (e as Error).message);
     }
   }
 
-  private onCandle = (evt: CandleWsEvent): void => {
-    console.log(`[feed] candle  ${evt.s} o=${evt.o} h=${evt.h} l=${evt.l} c=${evt.c} v=${evt.v}`);
+  private onCandle = (coin: string, evt: CandleWsEvent): void => {
     bus.emit("candle", {
+      coin,
       timestamp: evt.t,
       open:   Number(evt.o),
       high:   Number(evt.h),
@@ -156,22 +178,24 @@ export class Feed {
   };
 
   private onAllMids = (evt: AllMidsWsEvent): void => {
-    const mid = (evt.mids as Record<string, string>)[this.coin];
-    if (!mid) return;
-    bus.emit("tick", {
-      coin:      this.coin,
-      mid:       Number(mid),
-      bid:       0,
-      ask:       0,
-      timestamp: Date.now(),
-    });
+    const midsMap = evt.mids as Record<string, string>;
+    for (const coin of this.coins) {
+      const mid = midsMap[coin];
+      if (!mid) continue;
+      bus.emit("tick", {
+        coin,
+        mid:       Number(mid),
+        bid:       0,
+        ask:       0,
+        timestamp: Date.now(),
+      });
+    }
   };
 
-  private onBbo = (evt: BboWsEvent): void => {
+  private onBbo = (coin: string, evt: BboWsEvent): void => {
     const [bid, ask] = evt.bbo;
-    console.log(`[feed] tick    ${evt.coin} bid=${bid.px} ask=${ask.px}`);
     bus.emit("tick", {
-      coin:      this.coin,
+      coin,
       mid:       (Number(bid.px) + Number(ask.px)) / 2,
       bid:       Number(bid.px),
       ask:       Number(ask.px),

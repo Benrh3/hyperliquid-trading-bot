@@ -73,7 +73,7 @@ export class Logger {
         side: result.side,
         size: result.size,
         price: result.price,
-        pnl: null,
+        pnl: result.pnl ?? null,
         strategy: config.strategy.type,
         success: result.success ? 1 : 0,
         error: result.error ?? null,
@@ -121,6 +121,13 @@ export class Logger {
     return this.db
       .prepare("SELECT * FROM trades ORDER BY created_at DESC LIMIT ?")
       .all(limit) as TradeRow[];
+  }
+
+  getSumPnl(): number {
+    const row = this.db
+      .prepare("SELECT COALESCE(SUM(pnl), 0) as total FROM trades WHERE pnl IS NOT NULL AND success = 1")
+      .get() as { total: number };
+    return row.total;
   }
 
   getDailyPnl(): DailyPnlRow[] {

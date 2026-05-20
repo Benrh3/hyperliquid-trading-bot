@@ -1,7 +1,7 @@
 import { RSI } from "technicalindicators";
 import type { Strategy } from "./base.js";
 import type { Candle, Signal } from "../events.js";
-import { config } from "../config.js";
+import { config, coins } from "../config.js";
 
 export class RsiStrategy implements Strategy {
   name = "rsi";
@@ -16,20 +16,15 @@ export class RsiStrategy implements Strategy {
     this.period = (s.rsiPeriod as number) ?? 14;
     this.overbought = (s.overbought as number) ?? 70;
     this.oversold = (s.oversold as number) ?? 30;
-    this.coin = config.exchange.coin;
+    this.coin = coins[0];
   }
 
-  onCandle(_candle: Candle, history: Candle[]): Signal | null {
-    // Need enough history to calculate RSI
-    if (history.length < this.period + 1) {
-      return null;
-    }
+  onCandle(candle: Candle, history: Candle[]): Signal | null {
+    if (history.length < this.period + 1) return null;
 
-    const closes = history.map((c) => c.close);
-    const rsiValues = RSI.calculate({
-      values: closes,
-      period: this.period,
-    });
+    const coin      = candle.coin ?? this.coin;
+    const closes    = history.map((c) => c.close);
+    const rsiValues = RSI.calculate({ values: closes, period: this.period });
 
     if (rsiValues.length === 0) return null;
 
@@ -37,18 +32,18 @@ export class RsiStrategy implements Strategy {
 
     if (currentRsi <= this.oversold) {
       return {
-        side: "long",
-        coin: this.coin,
-        reason: `RSI ${currentRsi.toFixed(1)} below oversold (${this.oversold})`,
+        side:      "long",
+        coin,
+        reason:    `RSI ${currentRsi.toFixed(1)} below oversold (${this.oversold})`,
         timestamp: Date.now(),
       };
     }
 
     if (currentRsi >= this.overbought) {
       return {
-        side: "short",
-        coin: this.coin,
-        reason: `RSI ${currentRsi.toFixed(1)} above overbought (${this.overbought})`,
+        side:      "short",
+        coin,
+        reason:    `RSI ${currentRsi.toFixed(1)} above overbought (${this.overbought})`,
         timestamp: Date.now(),
       };
     }

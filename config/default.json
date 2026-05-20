@@ -1,7 +1,7 @@
 {
   "exchange": {
     "network": "testnet",
-    "coin": "BTC",
+    "coin": ["BTC", "ETH", "SOL"],
     "leverage": 3
   },
   "strategy": {
@@ -9,7 +9,8 @@
     "interval": "1m",
     "rsiPeriod": 14,
     "overbought": 70,
-    "oversold": 30
+    "oversold": 30,
+    "minConfluence": 2
   },
   "risk": {
     "maxPositionSizeUsd": 500,

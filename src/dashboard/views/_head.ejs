@@ -7,6 +7,7 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ── Dark theme (default) ── */
     :root {
       --bg:      #0d1117;
       --surface: #161b22;
@@ -17,6 +18,21 @@
       --red:     #f85149;
       --blue:    #58a6ff;
       --yellow:  #d29922;
+      --chart-bg: #161b22;
+    }
+
+    /* ── Light theme ── */
+    body.light {
+      --bg:      #ffffff;
+      --surface: #f6f8fa;
+      --border:  #d0d7de;
+      --text:    #24292f;
+      --muted:   #656d76;
+      --green:   #1a7f37;
+      --red:     #cf222e;
+      --blue:    #0969da;
+      --yellow:  #9a6700;
+      --chart-bg: #f6f8fa;
     }
 
     body {
@@ -25,6 +41,7 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 14px;
       line-height: 1.5;
+      transition: background .15s, color .15s;
     }
 
     /* ── Nav ── */
@@ -36,6 +53,7 @@
       align-items: center;
       gap: 0;
       height: 48px;
+      position: relative;
     }
     .nav-brand {
       font-weight: 600;
@@ -43,6 +61,12 @@
       color: var(--text);
       margin-right: 1.5rem;
       text-decoration: none;
+      flex-shrink: 0;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0;
     }
     .nav-link {
       color: var(--muted);
@@ -54,6 +78,7 @@
       border-bottom: 2px solid transparent;
       font-size: 13px;
       transition: color 0.15s;
+      white-space: nowrap;
     }
     .nav-link:hover { color: var(--text); }
     .nav-link.active { color: var(--blue); border-bottom-color: var(--blue); }
@@ -64,6 +89,7 @@
       gap: 0.5rem;
       font-size: 12px;
       color: var(--muted);
+      flex-shrink: 0;
     }
     .dot {
       width: 7px; height: 7px;
@@ -76,6 +102,33 @@
       0%, 100% { opacity: 1; }
       50%       { opacity: 0.4; }
     }
+
+    /* ── Theme toggle ── */
+    .theme-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1;
+      padding: 3px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color .1s, border-color .1s;
+    }
+    .theme-btn:hover { color: var(--text); border-color: var(--muted); }
+
+    /* ── Hamburger (mobile) ── */
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 6px;
+      margin-left: 0.25rem;
+    }
+    .nav-links.open { display: flex; }
 
     /* ── Layout ── */
     .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
@@ -129,8 +182,9 @@
       border-radius: 6px;
       overflow: hidden;
       margin-bottom: 1.5rem;
+      overflow-x: auto;
     }
-    table { width: 100%; border-collapse: collapse; }
+    table { width: 100%; border-collapse: collapse; min-width: 500px; }
     th {
       padding: 0.5rem 0.875rem;
       text-align: left;
@@ -141,6 +195,7 @@
       color: var(--muted);
       background: var(--surface);
       border-bottom: 1px solid var(--border);
+      white-space: nowrap;
     }
     td {
       padding: 0.5rem 0.875rem;
@@ -149,7 +204,7 @@
       font-variant-numeric: tabular-nums;
     }
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255,255,255,0.02); }
+    tr:hover td { background: rgba(128,128,128,0.04); }
     .empty { padding: 2rem; text-align: center; color: var(--muted); }
 
     /* ── Badges ── */
@@ -172,6 +227,89 @@
     .text-muted { color: var(--muted); }
     .text-green { color: var(--green); }
     .text-red   { color: var(--red);   }
+
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {
+      .container { padding: 1rem 0.75rem; }
+
+      /* Hamburger visible, links hidden by default */
+      .hamburger { display: block; }
+      .nav-links {
+        display: none;
+        position: absolute;
+        top: 48px;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        z-index: 100;
+        padding: 0.5rem 0;
+      }
+      .nav-links.open { display: flex; }
+      .nav-link {
+        height: auto;
+        padding: 0.6rem 1.25rem;
+        border-bottom: none;
+        border-left: 2px solid transparent;
+        width: 100%;
+      }
+      .nav-link.active { border-left-color: var(--blue); border-bottom: none; }
+
+      /* Cards: single column */
+      .grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .card-funding { grid-column: span 2; }
+      .card-value { font-size: 1.3rem; }
+
+      /* Nav right: compact */
+      .nav-right { gap: 0.25rem; font-size: 11px; }
+      .nav-right .text-muted { display: none; }
+    }
+
+    @media (max-width: 480px) {
+      .grid { grid-template-columns: 1fr; }
+      .card-funding { grid-column: span 1; }
+    }
   </style>
 </head>
 <body>
+<script>
+(function () {
+  // Apply saved theme before paint to avoid flash
+  const saved = document.cookie.split(';').map((s) => s.trim()).find((s) => s.startsWith('theme='));
+  if (saved && saved.split('=')[1] === 'light') document.body.classList.add('light');
+
+  // Wire up theme toggle and hamburger after DOM is ready
+  document.addEventListener('DOMContentLoaded', function () {
+    // Theme toggle
+    const themeBtn = document.getElementById('theme-toggle');
+    if (themeBtn) {
+      function updateThemeIcon() {
+        themeBtn.textContent = document.body.classList.contains('light') ? '☀' : '☽';
+      }
+      updateThemeIcon();
+      themeBtn.addEventListener('click', function () {
+        document.body.classList.toggle('light');
+        const isLight = document.body.classList.contains('light');
+        document.cookie = 'theme=' + (isLight ? 'light' : 'dark') + ';path=/;max-age=31536000';
+        updateThemeIcon();
+      });
+    }
+
+    // Hamburger menu
+    const hamburger = document.getElementById('nav-hamburger');
+    const navLinks  = document.getElementById('nav-links');
+    if (hamburger && navLinks) {
+      hamburger.addEventListener('click', function () {
+        navLinks.classList.toggle('open');
+      });
+      // Close menu when a link is clicked
+      navLinks.querySelectorAll('.nav-link').forEach(function (link) {
+        link.addEventListener('click', function () { navLinks.classList.remove('open'); });
+      });
+    }
+  });
+})();
+</script>

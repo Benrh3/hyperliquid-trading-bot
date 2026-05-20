@@ -1,0 +1,265 @@
+<%- include('_head', { title: 'Backtest' }) %>
+<style>
+  .backtest-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .backtest-controls label { font-size: 12px; color: var(--muted); margin-right: 2px; }
+  .backtest-controls select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-run {
+    background: var(--blue);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn-run:disabled { opacity: 0.5; cursor: default; }
+  .btn-run:hover:not(:disabled) { opacity: 0.85; }
+  .backtest-status { font-size: 12px; color: var(--muted); margin-left: 0.5rem; }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .chart-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .chart-toolbar {
+    padding: 0.5rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  #bt-equity-chart { height: 250px; }
+
+  .pnl-pos { color: var(--green); }
+  .pnl-neg { color: var(--red); }
+</style>
+
+<nav class="nav">
+  <a href="/" class="nav-brand">HL Bot</a>
+  <button class="hamburger" id="nav-hamburger" aria-label="Menu">&#9776;</button>
+  <div class="nav-links" id="nav-links">
+    <a href="/" class="nav-link">Overview</a>
+    <a href="/strategies" class="nav-link">Strategies</a>
+    <a href="/trades" class="nav-link">Trades</a>
+    <a href="/backtest" class="nav-link active">Backtest</a>
+  </div>
+  <div class="nav-right">
+    <span class="badge badge-net"><%= network %></span>
+    <span class="text-muted"><%= coin %></span>
+    <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
+  </div>
+</nav>
+
+<div class="container">
+
+  <div class="backtest-controls">
+    <div>
+      <label>Interval</label>
+      <select id="bt-interval">
+        <option value="1m">1m</option>
+        <option value="5m">5m</option>
+        <option value="15m">15m</option>
+        <option value="1h" selected>1h</option>
+        <option value="4h">4h</option>
+        <option value="1d">1d</option>
+      </select>
+    </div>
+    <div>
+      <label>Candles</label>
+      <select id="bt-limit">
+        <option value="500">500</option>
+        <option value="1000" selected>1000</option>
+        <option value="2000">2000</option>
+      </select>
+    </div>
+    <button class="btn-run" id="bt-run">Run Backtest</button>
+    <span class="backtest-status" id="bt-status"></span>
+  </div>
+
+  <!-- Stats cards — hidden until first run -->
+  <div class="stats-row" id="bt-stats" style="display:none">
+    <div class="card">
+      <div class="card-label">Total P&amp;L</div>
+      <div class="card-value mono" style="font-size:1.3rem" id="bt-total-pnl">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Win Rate</div>
+      <div class="card-value" id="bt-win-rate">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Trades</div>
+      <div class="card-value" id="bt-trade-count">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Max Drawdown</div>
+      <div class="card-value mono" style="font-size:1.3rem" id="bt-drawdown">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Sharpe Ratio</div>
+      <div class="card-value mono" style="font-size:1.3rem" id="bt-sharpe">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Profit Factor</div>
+      <div class="card-value mono" style="font-size:1.3rem" id="bt-pf">—</div>
+    </div>
+  </div>
+
+  <!-- Equity chart -->
+  <div class="chart-panel" id="bt-chart-panel" style="display:none">
+    <div class="chart-toolbar">Equity Curve</div>
+    <div id="bt-equity-chart"></div>
+  </div>
+
+  <!-- Trades table -->
+  <p class="section-title" id="bt-trades-title" style="display:none">Simulated Trades</p>
+  <div class="table-wrap" id="bt-trades-wrap" style="display:none">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Side</th><th>Entry Time</th><th>Entry $</th>
+          <th>Exit Time</th><th>Exit $</th><th>Size</th><th>P&amp;L</th><th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="bt-trades-tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+(function () {
+  const LC = LightweightCharts;
+  let equityChart = null;
+  let equitySeries = null;
+
+  function initChart() {
+    if (equityChart) return;
+    equityChart = LC.createChart(document.getElementById('bt-equity-chart'), {
+      layout: {
+        background: { type: 'solid', color: '#161b22' },
+        textColor:  '#8b949e',
+        attributionLogo: false,
+      },
+      grid:  { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+      crosshair: { mode: 1 },
+      rightPriceScale: { borderColor: '#30363d' },
+      timeScale: { borderColor: '#30363d', timeVisible: true },
+      height: 250,
+    });
+    equitySeries = equityChart.addAreaSeries({
+      lineColor:   '#58a6ff',
+      topColor:    'rgba(88,166,255,0.2)',
+      bottomColor: 'rgba(88,166,255,0)',
+      lineWidth: 1,
+      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+    });
+  }
+
+  function fmtTime(ms) {
+    return new Date(ms).toLocaleString();
+  }
+
+  function fmtPnl(pnl) {
+    const sign  = pnl >= 0 ? '+' : '';
+    const cls   = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    return '<span class="' + cls + '">' + sign + '$' + Math.abs(pnl).toFixed(2) + '</span>';
+  }
+
+  document.getElementById('bt-run').addEventListener('click', async () => {
+    const btn      = document.getElementById('bt-run');
+    const status   = document.getElementById('bt-status');
+    const interval = document.getElementById('bt-interval').value;
+    const limit    = document.getElementById('bt-limit').value;
+
+    btn.disabled = true;
+    status.textContent = 'Fetching candles & running…';
+
+    try {
+      const res  = await fetch('/api/backtest?interval=' + interval + '&limit=' + limit);
+      const data = await res.json();
+
+      if (data.error) { status.textContent = 'Error: ' + data.error; return; }
+
+      status.textContent = data.fetchedCandles + ' candles · ' + interval;
+
+      // Stats
+      document.getElementById('bt-stats').style.display = '';
+      const pnlSign  = data.totalPnl >= 0 ? '+' : '';
+      const pnlCls   = data.totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+      document.getElementById('bt-total-pnl').innerHTML =
+        '<span class="' + pnlCls + '">' + pnlSign + '$' + Math.abs(data.totalPnl).toFixed(2) + '</span>';
+      document.getElementById('bt-win-rate').textContent = (data.winRate * 100).toFixed(1) + '%';
+      document.getElementById('bt-trade-count').textContent = data.tradeCount;
+      document.getElementById('bt-drawdown').innerHTML =
+        '<span class="pnl-neg">' + data.maxDrawdownPct.toFixed(2) + '%</span>';
+      document.getElementById('bt-sharpe').textContent = data.sharpeRatio.toFixed(2);
+      document.getElementById('bt-pf').textContent =
+        data.profitFactor === 999 ? '∞' : data.profitFactor.toFixed(2);
+
+      // Equity chart
+      document.getElementById('bt-chart-panel').style.display = '';
+      initChart();
+      equitySeries.setData(
+        data.equityCurve.map((p) => ({ time: Math.floor(p.time / 1000), value: p.equity })),
+      );
+      equityChart.timeScale().fitContent();
+
+      // Trades table
+      document.getElementById('bt-trades-title').style.display = '';
+      document.getElementById('bt-trades-wrap').style.display = '';
+      const tbody = document.getElementById('bt-trades-tbody');
+      tbody.innerHTML = data.trades.map((t) =>
+        '<tr>' +
+        '<td class="text-muted">' + (t.index + 1) + '</td>' +
+        '<td><span class="badge badge-' + t.side + '">' + t.side.toUpperCase() + '</span></td>' +
+        '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.entryTime) + '</td>' +
+        '<td class="mono">$' + t.entryPrice.toFixed(2) + '</td>' +
+        '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.exitTime) + '</td>' +
+        '<td class="mono">$' + t.exitPrice.toFixed(2) + '</td>' +
+        '<td class="mono text-muted">' + t.size.toFixed(5) + '</td>' +
+        '<td class="mono">' + fmtPnl(t.pnl) + '</td>' +
+        '<td class="text-muted" style="font-size:12px">' + t.reason + '</td>' +
+        '</tr>'
+      ).join('');
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Resize chart on window resize
+  if (typeof ResizeObserver !== 'undefined' && equityChart) {
+    const ro = new ResizeObserver(() => { if (equityChart) equityChart.applyOptions({ width: 0 }); });
+    ro.observe(document.querySelector('.chart-panel'));
+  }
+})();
+</script>
+</body>
+</html>
