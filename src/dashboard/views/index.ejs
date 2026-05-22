@@ -91,6 +91,54 @@
     color: var(--muted);
     font-size: 13px;
   }
+
+  /* ── Depth chart + order book ── */
+  .ob-panel {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  @media (max-width: 768px) {
+    .ob-panel { grid-template-columns: 1fr; }
+  }
+  .depth-card, .ob-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .ob-header {
+    padding: 0.4rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  #depth-canvas { display: block; width: 100%; height: 180px; }
+  #ob-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+  }
+  #ob-table th {
+    padding: 3px 8px;
+    font-size: 10px;
+    color: var(--muted);
+    font-weight: 500;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+  }
+  #ob-table th:first-child { text-align: left; }
+  #ob-table td { padding: 2px 8px; text-align: right; }
+  #ob-table td:first-child { text-align: left; }
+  .ob-ask { color: #f85149; background: rgba(248,81,73,0.05); }
+  .ob-bid { color: #3fb950; background: rgba(63,185,80,0.05); }
+  .ob-spread { color: var(--muted); text-align: center !important; font-size: 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 </style>
 
 <nav class="nav">
@@ -189,6 +237,30 @@
           <span class="fi-value" id="fr-annualized"><span class="text-muted">—</span></span>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Depth chart + order book -->
+  <div class="ob-panel">
+    <div class="depth-card">
+      <div class="ob-header">
+        Market Depth
+        <span class="text-muted" id="depth-coin-label" style="font-weight:400;font-size:11px"><%= coin %>/USDT</span>
+      </div>
+      <canvas id="depth-canvas"></canvas>
+    </div>
+    <div class="ob-card">
+      <div class="ob-header">Order Book <span class="text-muted" style="font-weight:400;font-size:11px">(top 10)</span></div>
+      <table id="ob-table">
+        <thead>
+          <tr>
+            <th>Price</th>
+            <th>Size</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody id="ob-tbody"></tbody>
+      </table>
     </div>
   </div>
 
@@ -650,6 +722,167 @@
 
   refreshPnl();
   setInterval(refreshPnl, 10000);
+
+  // ── Depth chart + order book ────────────────────────────────────────────
+  const depthCanvas = document.getElementById('depth-canvas');
+
+  function drawDepth(ob) {
+    if (!depthCanvas) return;
+    // Sync canvas buffer size to CSS size
+    const cssW = depthCanvas.offsetWidth;
+    const cssH = depthCanvas.offsetHeight;
+    if (cssW === 0 || cssH === 0) return;
+    if (depthCanvas.width !== cssW || depthCanvas.height !== cssH) {
+      depthCanvas.width  = cssW;
+      depthCanvas.height = cssH;
+    }
+    const ctx = depthCanvas.getContext('2d');
+    if (!ctx) return;
+    const W = cssW, H = cssH;
+    ctx.clearRect(0, 0, W, H);
+
+    const bids = ob.bids || [];
+    const asks = ob.asks || [];
+    if (bids.length === 0 || asks.length === 0) {
+      ctx.fillStyle = getCssVar('--muted') || '#8b949e';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Awaiting order book data…', W / 2, H / 2);
+      return;
+    }
+
+    const minPrice  = bids[bids.length - 1].price;
+    const maxPrice  = asks[asks.length - 1].price;
+    const midPrice  = (bids[0].price + asks[0].price) / 2;
+    const priceSpan = maxPrice - minPrice;
+    if (priceSpan <= 0) return;
+
+    const maxCum = Math.max(bids[bids.length - 1].total, asks[asks.length - 1].total);
+    if (maxCum <= 0) return;
+
+    const PAD_TOP = 0.08, PAD_BOT = 0.15;
+    const toX = (p) => ((p - minPrice) / priceSpan) * W;
+    const toY = (s) => H * (1 - PAD_BOT) - (s / maxCum) * H * (1 - PAD_TOP - PAD_BOT);
+    const midX = toX(midPrice);
+
+    // ── Bids fill ──
+    ctx.beginPath();
+    ctx.moveTo(toX(minPrice), H);
+    ctx.lineTo(toX(minPrice), toY(bids[bids.length - 1].total));
+    for (let i = bids.length - 1; i >= 0; i--) {
+      const nP = i > 0 ? bids[i - 1].price : midPrice;
+      const nT = i > 0 ? bids[i - 1].total : 0;
+      ctx.lineTo(toX(nP), toY(bids[i].total));
+      ctx.lineTo(toX(nP), toY(nT));
+    }
+    ctx.lineTo(midX, H);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(63,185,80,0.15)';
+    ctx.fill();
+
+    // ── Bids outline ──
+    ctx.beginPath();
+    ctx.moveTo(toX(minPrice), toY(bids[bids.length - 1].total));
+    for (let i = bids.length - 1; i >= 0; i--) {
+      const nP = i > 0 ? bids[i - 1].price : midPrice;
+      const nT = i > 0 ? bids[i - 1].total : 0;
+      ctx.lineTo(toX(nP), toY(bids[i].total));
+      ctx.lineTo(toX(nP), toY(nT));
+    }
+    ctx.strokeStyle = '#3fb950';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // ── Asks fill ──
+    ctx.beginPath();
+    ctx.moveTo(midX, H);
+    ctx.lineTo(midX, toY(0));
+    for (let i = 0; i < asks.length; i++) {
+      const pT = i > 0 ? asks[i - 1].total : 0;
+      ctx.lineTo(toX(asks[i].price), toY(pT));
+      ctx.lineTo(toX(asks[i].price), toY(asks[i].total));
+    }
+    ctx.lineTo(W, toY(asks[asks.length - 1].total));
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(248,81,73,0.15)';
+    ctx.fill();
+
+    // ── Asks outline ──
+    ctx.beginPath();
+    ctx.moveTo(midX, toY(0));
+    for (let i = 0; i < asks.length; i++) {
+      const pT = i > 0 ? asks[i - 1].total : 0;
+      ctx.lineTo(toX(asks[i].price), toY(pT));
+      ctx.lineTo(toX(asks[i].price), toY(asks[i].total));
+    }
+    ctx.lineTo(W, toY(asks[asks.length - 1].total));
+    ctx.strokeStyle = '#f85149';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // ── Mid price dashed line ──
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(139,148,158,0.4)';
+    ctx.lineWidth = 1;
+    ctx.moveTo(midX, 0);
+    ctx.lineTo(midX, H * (1 - PAD_BOT));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // ── X axis price labels ──
+    const fmtP = (p) => p >= 10000 ? p.toFixed(0) : p >= 100 ? p.toFixed(1) : p.toFixed(2);
+    ctx.fillStyle = 'rgba(139,148,158,0.8)';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(fmtP(minPrice), 4, H - 3);
+    ctx.textAlign = 'center';
+    ctx.fillText(fmtP(midPrice), midX, H - 3);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtP(maxPrice), W - 4, H - 3);
+  }
+
+  function updateObTable(ob) {
+    const tbody = document.getElementById('ob-tbody');
+    if (!tbody) return;
+    const bids = (ob.bids || []).slice(0, 10);
+    const asks = (ob.asks || []).slice(0, 10);
+    const spread = bids.length > 0 && asks.length > 0 ? asks[0].price - bids[0].price : null;
+    const fmtP = (p) => p >= 10000 ? p.toFixed(1) : p.toFixed(2);
+    const fmtS = (s) => s >= 100 ? s.toFixed(1) : s >= 10 ? s.toFixed(2) : s.toFixed(3);
+    let rows = '';
+    // Asks: worst → best (so best ask sits adjacent to spread row)
+    for (const a of [...asks].reverse()) {
+      rows += `<tr class="ob-ask"><td>${fmtP(a.price)}</td><td>${fmtS(a.size)}</td><td>${fmtS(a.total)}</td></tr>`;
+    }
+    const spreadTxt = spread !== null ? '$' + spread.toFixed(2) + ' spread' : '— spread —';
+    rows += `<tr class="ob-spread"><td colspan="3" style="padding:3px 8px">${spreadTxt}</td></tr>`;
+    // Bids: best → worst
+    for (const b of bids) {
+      rows += `<tr class="ob-bid"><td>${fmtP(b.price)}</td><td>${fmtS(b.size)}</td><td>${fmtS(b.total)}</td></tr>`;
+    }
+    tbody.innerHTML = rows;
+  }
+
+  async function refreshOrderbook() {
+    const coinParam = document.getElementById('chart-coin-select')?.value || '';
+    try {
+      const ob = await fetch('/api/orderbook?coin=' + coinParam).then((r) => r.json());
+      const labelEl = document.getElementById('depth-coin-label');
+      if (labelEl) labelEl.textContent = coinParam + '/USDT';
+      drawDepth(ob);
+      updateObTable(ob);
+    } catch (_) {}
+  }
+
+  refreshOrderbook();
+  setInterval(refreshOrderbook, 2000);
+
+  // Coin selector also clears + refetches order book
+  document.getElementById('chart-coin-select')?.addEventListener('change', () => {
+    void refreshOrderbook();
+  });
 
   // ── Timeframe buttons ───────────────────────────────────────────────────
   document.querySelectorAll('.tf').forEach((btn) => {

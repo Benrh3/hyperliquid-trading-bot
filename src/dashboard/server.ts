@@ -3,7 +3,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { bus } from "../events.js";
 import { config, coins } from "../config.js";
-import type { Candle } from "../events.js";
+import type { Candle, OrderbookSnapshot } from "../events.js";
 import type { Logger } from "../logger.js";
 import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
@@ -19,6 +19,7 @@ export interface BotState {
   spreadHistory: Record<string, { t: number; value: number }[]>;
   currentInterval: string;
   equityHistory: { time: number; equity: number }[];
+  orderbooks: Record<string, OrderbookSnapshot>;
 }
 
 const INITIAL_EQUITY = 1000;
@@ -34,6 +35,9 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
     spreadHistory: Object.fromEntries(coins.map((c) => [c, []])),
     currentInterval: config.strategy.interval,
     equityHistory: [],
+    orderbooks: Object.fromEntries(
+      coins.map((c) => [c, { coin: c, timestamp: 0, bids: [], asks: [] } satisfies OrderbookSnapshot]),
+    ),
   };
 
   // Track realised PnL locally so equity recording doesn't need a DB query
@@ -91,6 +95,10 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
 
   bus.on("signal", () => {
     state.signalCount++;
+  });
+
+  bus.on("orderbook", (snapshot) => {
+    state.orderbooks[snapshot.coin] = snapshot;
   });
 
   const __dirname = dirname(fileURLToPath(import.meta.url));

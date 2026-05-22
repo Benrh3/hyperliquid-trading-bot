@@ -40,6 +40,19 @@ export interface TradeResult {
   reason?: string; // e.g. "Stop-loss 2.10%" or signal reason
 }
 
+export interface OrderbookLevel {
+  price: number;
+  size: number;
+  total: number; // cumulative size from best level outward
+}
+
+export interface OrderbookSnapshot {
+  coin: string;
+  timestamp: number;
+  bids: OrderbookLevel[]; // sorted descending by price (best bid first)
+  asks: OrderbookLevel[]; // sorted ascending by price (best ask first)
+}
+
 export interface BotEvents {
   candle: [candle: Candle];
   tick: [tick: Tick];
@@ -47,6 +60,7 @@ export interface BotEvents {
   "signal:approved": [signal: Signal];
   "signal:rejected": [signal: Signal, reason: string];
   trade: [result: TradeResult];
+  orderbook: [snapshot: OrderbookSnapshot];
   error: [module: string, error: Error];
 }
 

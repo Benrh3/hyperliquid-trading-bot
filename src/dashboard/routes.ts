@@ -3,6 +3,7 @@ import { RSI } from "technicalindicators";
 import { config, coins } from "../config.js";
 import { runBacktest, fetchCandles } from "../backtest.js";
 import { ConfluenceStrategy } from "../strategy/confluence.js";
+import { TrendFollowStrategy } from "../strategy/trend-follow.js";
 import type { Logger } from "../logger.js";
 import type { BotState } from "./server.js";
 import type { Strategy } from "../strategy/base.js";
@@ -194,25 +195,37 @@ export function createRouter(
       const limit    = Math.min(parseInt(typeof req.query.limit === "string" ? req.query.limit : "1000") || 1000, 2000);
       const coin     = coins[0];
 
-      const candles  = await fetchCandles(coin, interval, limit);
+      const candles = await fetchCandles(coin, interval, limit);
       if (candles.length === 0) {
         res.status(400).json({ error: "No candle data returned from exchange" });
         return;
       }
 
-      const strategy = new ConfluenceStrategy();
-      const result   = runBacktest(strategy, candles, {
+      const btOptions = {
         initialEquity:   1000,
         positionSizeUsd: config.risk.maxPositionSizeUsd,
         stopLossPct:     config.risk.stopLossPercent,
-      });
+      };
 
-      res.json({ ...result, interval, limit, coin, fetchedCandles: candles.length });
+      const strategies = [new ConfluenceStrategy(), new TrendFollowStrategy()];
+      const results = strategies.map((s) => ({
+        name: s.name,
+        ...runBacktest(s, candles, btOptions),
+      }));
+
+      // Primary result spread at top level for backward compatibility
+      const primary = results[0];
+      res.json({ ...primary, results, interval, limit, coin, fetchedCandles: candles.length });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[backtest] API error:", error.message);
       res.status(500).json({ error: error.message });
     }
+  });
+
+  router.get("/api/orderbook", (req, res) => {
+    const coinParam = typeof req.query.coin === "string" ? req.query.coin : coins[0];
+    res.json(state.orderbooks[coinParam] ?? { coin: coinParam, timestamp: 0, bids: [], asks: [] });
   });
 
   router.get("/api/pnl", (_req, res) => {

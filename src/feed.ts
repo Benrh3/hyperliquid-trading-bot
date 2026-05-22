@@ -7,9 +7,11 @@ import {
   type CandleWsEvent,
   type AllMidsWsEvent,
   type BboWsEvent,
+  type L2BookWsEvent,
   type ISubscription,
 } from "@nktkas/hyperliquid";
 import { bus } from "./events.js";
+import type { OrderbookSnapshot } from "./events.js";
 import { config, coins } from "./config.js";
 
 type CandleInterval = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "12h" | "1d" | "3d" | "1w" | "1M";
@@ -51,6 +53,7 @@ export class Feed {
 
   // Per-coin subscriptions
   private candleSubs = new Map<string, ISubscription>();
+  private l2Subs     = new Map<string, ISubscription>();
   private bboSubs:    ISubscription[] = [];
   private midsSub:    ISubscription | null = null;
 
@@ -98,17 +101,31 @@ export class Feed {
     // Single allMids subscription covers all coins
     this.midsSub = await this.client.allMids(this.onAllMids);
 
+    // Subscribe to L2 order book for each coin (top 20 levels)
+    const l2SubEntries = await Promise.all(
+      this.coins.map(async (coin) => {
+        const sub = await this.client.l2Book(
+          { coin },
+          (evt) => this.onL2Book(coin, evt),
+        );
+        return [coin, sub] as [string, ISubscription];
+      }),
+    );
+    this.l2Subs = new Map(l2SubEntries);
+
     console.log("[feed] Subscriptions active");
   }
 
   async stop(): Promise<void> {
     const all = [
       ...this.candleSubs.values(),
+      ...this.l2Subs.values(),
       ...this.bboSubs,
       this.midsSub,
     ].filter(Boolean) as ISubscription[];
     await Promise.all(all.map((s) => s.unsubscribe()));
     this.candleSubs.clear();
+    this.l2Subs.clear();
     this.bboSubs  = [];
     this.midsSub  = null;
     console.log("[feed] Subscriptions closed");
@@ -201,5 +218,25 @@ export class Feed {
       ask:       Number(ask.px),
       timestamp: evt.time,
     });
+  };
+
+  private onL2Book = (coin: string, evt: L2BookWsEvent): void => {
+    const rawBids = evt.levels[0].slice(0, 20);
+    const rawAsks = evt.levels[1].slice(0, 20);
+
+    let bidTotal = 0;
+    const bids = rawBids.map((lvl) => {
+      bidTotal += Number(lvl.sz);
+      return { price: Number(lvl.px), size: Number(lvl.sz), total: bidTotal };
+    });
+
+    let askTotal = 0;
+    const asks = rawAsks.map((lvl) => {
+      askTotal += Number(lvl.sz);
+      return { price: Number(lvl.px), size: Number(lvl.sz), total: askTotal };
+    });
+
+    const snapshot: OrderbookSnapshot = { coin, timestamp: evt.time, bids, asks };
+    bus.emit("orderbook", snapshot);
   };
 }

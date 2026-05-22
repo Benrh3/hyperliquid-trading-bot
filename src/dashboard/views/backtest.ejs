@@ -57,6 +57,45 @@
 
   .pnl-pos { color: var(--green); }
   .pnl-neg { color: var(--red); }
+
+  /* ── Comparison table ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .compare-table th {
+    padding: 7px 12px;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .compare-table th:first-child { text-align: left; }
+  .compare-table td {
+    padding: 9px 12px;
+    text-align: right;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .compare-table td:first-child {
+    text-align: left;
+    font-family: inherit;
+    font-weight: 500;
+  }
+  .compare-table tbody tr.row-beats { background: rgba(63,185,80,0.07); }
+  .compare-table tbody tr.row-lags  { background: rgba(248,81,73,0.07); }
+  .compare-table tbody tr:last-child td { border-bottom: none; }
+
+  /* ── Chart legend ── */
+  .chart-legend { display: flex; gap: 1rem; font-size: 11px; color: var(--muted); }
+  .chart-legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-line { display: inline-block; width: 16px; height: 2px; border-radius: 1px; }
+  .legend-line-dashed { border-top: 2px dashed; height: 0; border-radius: 0; }
 </style>
 
 <nav class="nav">
@@ -101,53 +140,48 @@
     <span class="backtest-status" id="bt-status"></span>
   </div>
 
-  <!-- Stats cards — hidden until first run -->
-  <div class="stats-row" id="bt-stats" style="display:none">
-    <div class="card">
-      <div class="card-label">Total P&amp;L</div>
-      <div class="card-value mono" style="font-size:1.3rem" id="bt-total-pnl">—</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Win Rate</div>
-      <div class="card-value" id="bt-win-rate">—</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Trades</div>
-      <div class="card-value" id="bt-trade-count">—</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Max Drawdown</div>
-      <div class="card-value mono" style="font-size:1.3rem" id="bt-drawdown">—</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Sharpe Ratio</div>
-      <div class="card-value mono" style="font-size:1.3rem" id="bt-sharpe">—</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Profit Factor</div>
-      <div class="card-value mono" style="font-size:1.3rem" id="bt-pf">—</div>
+  <!-- "Number to beat" banner — hidden until first run -->
+  <div id="bt-bh-banner" style="display:none;margin-bottom:1.5rem">
+    <div class="card" style="display:flex;align-items:stretch;gap:0;padding:0;overflow:hidden">
+      <div style="padding:0.75rem 1.25rem;border-right:1px solid var(--border);min-width:200px">
+        <div class="card-label" style="color:var(--muted)">Number to beat &ensp;<span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;font-size:10px">buy &amp; hold</span></div>
+        <div class="card-value mono" style="font-size:1.8rem;line-height:1.1;margin-top:4px" id="bt-bh-return">—</div>
+      </div>
+      <div style="padding:0.75rem 1.25rem;border-right:1px solid var(--border)">
+        <div class="card-label">B&amp;H Max Drawdown</div>
+        <div class="card-value mono" style="font-size:1.1rem" id="bt-bh-dd">—</div>
+      </div>
+      <div style="padding:0.75rem 1.25rem">
+        <div class="card-label">Strategy vs. B&amp;H</div>
+        <div class="card-value mono" style="font-size:1.1rem" id="bt-bh-vs">—</div>
+      </div>
     </div>
   </div>
+
+  <!-- Per-strategy stats — hidden until first run, populated by JS -->
+  <div id="bt-stats" style="display:none"></div>
 
   <!-- Equity chart -->
   <div class="chart-panel" id="bt-chart-panel" style="display:none">
-    <div class="chart-toolbar">Equity Curve</div>
+    <div class="chart-toolbar" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Equity Curve</span>
+      <div class="chart-legend" id="bt-chart-legend">
+        <div class="chart-legend-item">
+          <span class="legend-line" style="background:#58a6ff"></span>Confluence
+        </div>
+        <div class="chart-legend-item">
+          <span class="legend-line" style="background:#b197fc"></span>Trend Follow
+        </div>
+        <div class="chart-legend-item">
+          <span class="legend-line legend-line-dashed" style="border-color:rgba(210,153,34,0.7);width:18px"></span>Buy &amp; Hold
+        </div>
+      </div>
+    </div>
     <div id="bt-equity-chart"></div>
   </div>
 
-  <!-- Trades table -->
-  <p class="section-title" id="bt-trades-title" style="display:none">Simulated Trades</p>
-  <div class="table-wrap" id="bt-trades-wrap" style="display:none">
-    <table>
-      <thead>
-        <tr>
-          <th>#</th><th>Side</th><th>Entry Time</th><th>Entry $</th>
-          <th>Exit Time</th><th>Exit $</th><th>Size</th><th>P&amp;L</th><th>Reason</th>
-        </tr>
-      </thead>
-      <tbody id="bt-trades-tbody"></tbody>
-    </table>
-  </div>
+  <!-- Trades tables — populated by JS -->
+  <div id="bt-trades-section" style="display:none"></div>
 
 </div>
 
@@ -155,30 +189,60 @@
 <script>
 (function () {
   const LC = LightweightCharts;
+
+  const STRAT_COLORS = [
+    { line: '#58a6ff', top: 'rgba(88,166,255,0.18)', bottom: 'rgba(88,166,255,0)' },
+    { line: '#b197fc', top: 'rgba(177,151,252,0.15)', bottom: 'rgba(177,151,252,0)' },
+  ];
+  const STRAT_NAMES = { 'confluence': 'Confluence', 'trend-follow': 'Trend Follow' };
+
   let equityChart = null;
-  let equitySeries = null;
+  let stratSeries = [];
+  let bhSeries    = null;
+
+  function getCssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
 
   function initChart() {
     if (equityChart) return;
+    const border = getCssVar('--border') || '#30363d';
     equityChart = LC.createChart(document.getElementById('bt-equity-chart'), {
       layout: {
-        background: { type: 'solid', color: '#161b22' },
-        textColor:  '#8b949e',
+        background: { type: 'solid', color: getCssVar('--surface') || '#161b22' },
+        textColor:  getCssVar('--muted')  || '#8b949e',
         attributionLogo: false,
       },
-      grid:  { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+      grid: {
+        vertLines: { color: border },
+        horzLines: { color: border },
+      },
       crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: '#30363d' },
-      timeScale: { borderColor: '#30363d', timeVisible: true },
+      rightPriceScale: { borderColor: border },
+      timeScale: { borderColor: border, timeVisible: true },
       height: 250,
     });
-    equitySeries = equityChart.addAreaSeries({
-      lineColor:   '#58a6ff',
-      topColor:    'rgba(88,166,255,0.2)',
-      bottomColor: 'rgba(88,166,255,0)',
-      lineWidth: 1,
+    // Buy-and-hold benchmark — drawn first so it sits behind strategy curves
+    bhSeries = equityChart.addLineSeries({
+      color:            'rgba(210,153,34,0.55)',
+      lineWidth:        1,
+      lineStyle:        2,
+      lastValueVisible: false,
+      priceLineVisible: false,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
+    // One area series per strategy (pre-create enough slots)
+    stratSeries = STRAT_COLORS.map((c) => equityChart.addAreaSeries({
+      lineColor:   c.line,
+      topColor:    c.top,
+      bottomColor: c.bottom,
+      lineWidth:   1,
+      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+    }));
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => equityChart.applyOptions({ width: 0 }));
+      ro.observe(document.getElementById('bt-chart-panel'));
+    }
   }
 
   function fmtTime(ms) {
@@ -206,47 +270,115 @@
 
       if (data.error) { status.textContent = 'Error: ' + data.error; return; }
 
+      const results = data.results || [{ name: data.name || 'strategy', ...data }];
       status.textContent = data.fetchedCandles + ' candles · ' + interval;
 
-      // Stats
-      document.getElementById('bt-stats').style.display = '';
-      const pnlSign  = data.totalPnl >= 0 ? '+' : '';
-      const pnlCls   = data.totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg';
-      document.getElementById('bt-total-pnl').innerHTML =
-        '<span class="' + pnlCls + '">' + pnlSign + '$' + Math.abs(data.totalPnl).toFixed(2) + '</span>';
-      document.getElementById('bt-win-rate').textContent = (data.winRate * 100).toFixed(1) + '%';
-      document.getElementById('bt-trade-count').textContent = data.tradeCount;
-      document.getElementById('bt-drawdown').innerHTML =
-        '<span class="pnl-neg">' + data.maxDrawdownPct.toFixed(2) + '%</span>';
-      document.getElementById('bt-sharpe').textContent = data.sharpeRatio.toFixed(2);
-      document.getElementById('bt-pf').textContent =
-        data.profitFactor === 999 ? '∞' : data.profitFactor.toFixed(2);
+      // ── "Number to beat" banner (buy-and-hold from first result) ──────────
+      const bh = results[0].buyHold;
+      document.getElementById('bt-bh-banner').style.display = '';
+      const bhSign = bh.returnPct >= 0 ? '+' : '';
+      const bhCls  = bh.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg';
+      document.getElementById('bt-bh-return').innerHTML =
+        '<span class="' + bhCls + '">' + bhSign + bh.returnPct.toFixed(2) + '%</span>';
+      document.getElementById('bt-bh-dd').innerHTML =
+        '<span class="pnl-neg">' + bh.maxDrawdownPct.toFixed(2) + '%</span>';
+      // Compare best-performing strategy vs benchmark
+      const bestReturnPct = Math.max(...results.map((r) => (r.totalPnl / 1000) * 100));
+      const diff = bestReturnPct - bh.returnPct;
+      const diffSign = diff >= 0 ? '+' : '';
+      const diffCls  = diff >= 0 ? 'pnl-pos' : 'pnl-neg';
+      document.getElementById('bt-bh-vs').innerHTML =
+        '<span class="' + diffCls + '">' + diffSign + diff.toFixed(2) + '%</span>' +
+        '<span class="text-muted" style="font-size:11px"> best strategy vs benchmark</span>';
 
-      // Equity chart
+      // ── Comparison table ──────────────────────────────────────────────────
+      const bhReturnPct = bh.returnPct;
+      const statsEl = document.getElementById('bt-stats');
+      statsEl.style.display = '';
+
+      const bhSign2 = bhReturnPct >= 0 ? '+' : '';
+      const thead = '<thead><tr>' +
+        '<th>Strategy</th><th>Return %</th><th>Buy&amp;Hold %</th>' +
+        '<th>Sharpe</th><th>Max DD %</th><th>Profit Factor</th>' +
+        '<th>Trades</th><th>Win Rate</th>' +
+        '</tr></thead>';
+
+      const tbody = '<tbody>' + results.map((r, i) => {
+        const retPct = (r.totalPnl / 1000) * 100;
+        const beats  = retPct > bhReturnPct;
+        const retCls = retPct >= 0 ? 'pnl-pos' : 'pnl-neg';
+        const bhCls2 = bhReturnPct >= 0 ? 'pnl-pos' : 'pnl-neg';
+        const dot    = (STRAT_COLORS[i] || STRAT_COLORS[0]).line;
+        const label  = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;' +
+                       'background:' + dot + ';margin-right:7px;vertical-align:middle"></span>' +
+                       (STRAT_NAMES[r.name] || r.name);
+        return '<tr class="' + (beats ? 'row-beats' : 'row-lags') + '">' +
+          '<td>' + label + '</td>' +
+          '<td><span class="' + retCls + '">' + (retPct >= 0 ? '+' : '') + retPct.toFixed(2) + '%</span></td>' +
+          '<td><span class="' + bhCls2 + '">' + bhSign2 + bhReturnPct.toFixed(2) + '%</span></td>' +
+          '<td>' + r.sharpeRatio.toFixed(2) + '</td>' +
+          '<td><span class="pnl-neg">' + r.maxDrawdownPct.toFixed(2) + '%</span></td>' +
+          '<td>' + (r.profitFactor >= 999 ? '∞' : r.profitFactor.toFixed(2)) + '</td>' +
+          '<td>' + r.tradeCount + '</td>' +
+          '<td>' + (r.winRate * 100).toFixed(1) + '%</td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+
+      statsEl.innerHTML = '<div class="table-wrap" style="margin-bottom:1.5rem">' +
+        '<table class="compare-table">' + thead + tbody + '</table></div>';
+
+      // ── Equity chart ──────────────────────────────────────────────────────
       document.getElementById('bt-chart-panel').style.display = '';
       initChart();
-      equitySeries.setData(
-        data.equityCurve.map((p) => ({ time: Math.floor(p.time / 1000), value: p.equity })),
-      );
+      bhSeries.setData(bh.equityCurve.map((p) => ({ time: Math.floor(p.time / 1000), value: p.equity })));
+      results.forEach((r, i) => {
+        if (stratSeries[i]) {
+          stratSeries[i].setData(r.equityCurve.map((p) => ({ time: Math.floor(p.time / 1000), value: p.equity })));
+        }
+      });
       equityChart.timeScale().fitContent();
 
-      // Trades table
-      document.getElementById('bt-trades-title').style.display = '';
-      document.getElementById('bt-trades-wrap').style.display = '';
-      const tbody = document.getElementById('bt-trades-tbody');
-      tbody.innerHTML = data.trades.map((t) =>
-        '<tr>' +
-        '<td class="text-muted">' + (t.index + 1) + '</td>' +
-        '<td><span class="badge badge-' + t.side + '">' + t.side.toUpperCase() + '</span></td>' +
-        '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.entryTime) + '</td>' +
-        '<td class="mono">$' + t.entryPrice.toFixed(2) + '</td>' +
-        '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.exitTime) + '</td>' +
-        '<td class="mono">$' + t.exitPrice.toFixed(2) + '</td>' +
-        '<td class="mono text-muted">' + t.size.toFixed(5) + '</td>' +
-        '<td class="mono">' + fmtPnl(t.pnl) + '</td>' +
-        '<td class="text-muted" style="font-size:12px">' + t.reason + '</td>' +
-        '</tr>'
-      ).join('');
+      // Regenerate chart legend from actual results
+      const legendEl = document.getElementById('bt-chart-legend');
+      if (legendEl) {
+        legendEl.innerHTML = results.map((r, i) => {
+          const c = STRAT_COLORS[i] || STRAT_COLORS[0];
+          return '<div class="chart-legend-item">' +
+            '<span class="legend-line" style="background:' + c.line + '"></span>' +
+            (STRAT_NAMES[r.name] || r.name) +
+            '</div>';
+        }).join('') +
+        '<div class="chart-legend-item">' +
+          '<span class="legend-line legend-line-dashed" style="border-color:rgba(210,153,34,0.7);width:18px"></span>' +
+          'Buy &amp; Hold' +
+        '</div>';
+      }
+
+      // ── Trades tables (one per strategy) ─────────────────────────────────
+      const tradesSection = document.getElementById('bt-trades-section');
+      tradesSection.style.display = '';
+      tradesSection.innerHTML = results.map((r, i) => {
+        const rows = r.trades.map((t) =>
+          '<tr>' +
+          '<td class="text-muted">' + (t.index + 1) + '</td>' +
+          '<td><span class="badge badge-' + t.side + '">' + t.side.toUpperCase() + '</span></td>' +
+          '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.entryTime) + '</td>' +
+          '<td class="mono">$' + t.entryPrice.toFixed(2) + '</td>' +
+          '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.exitTime) + '</td>' +
+          '<td class="mono">$' + t.exitPrice.toFixed(2) + '</td>' +
+          '<td class="mono text-muted">' + t.size.toFixed(5) + '</td>' +
+          '<td class="mono">' + fmtPnl(t.pnl) + '</td>' +
+          '<td class="text-muted" style="font-size:12px">' + t.reason + '</td>' +
+          '</tr>'
+        ).join('');
+        const dot   = (STRAT_COLORS[i] || STRAT_COLORS[0]).line;
+        const label = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + dot + ';margin-right:6px;vertical-align:middle"></span>' + (STRAT_NAMES[r.name] || r.name);
+        return '<p class="section-title">' + label + ' — Simulated Trades</p>' +
+          '<div class="table-wrap" style="margin-bottom:2rem"><table><thead><tr>' +
+          '<th>#</th><th>Side</th><th>Entry Time</th><th>Entry $</th>' +
+          '<th>Exit Time</th><th>Exit $</th><th>Size</th><th>P&amp;L</th><th>Reason</th>' +
+          '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+      }).join('');
     } catch (e) {
       status.textContent = 'Error: ' + e.message;
     } finally {
@@ -254,11 +386,7 @@
     }
   });
 
-  // Resize chart on window resize
-  if (typeof ResizeObserver !== 'undefined' && equityChart) {
-    const ro = new ResizeObserver(() => { if (equityChart) equityChart.applyOptions({ width: 0 }); });
-    ro.observe(document.querySelector('.chart-panel'));
-  }
+
 })();
 </script>
 </body>

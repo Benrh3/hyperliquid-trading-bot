@@ -31,6 +31,12 @@ export interface BacktestTrade {
   reason:     string;
 }
 
+export interface BuyHoldResult {
+  returnPct:      number;
+  equityCurve:    { time: number; equity: number }[];
+  maxDrawdownPct: number;
+}
+
 export interface BacktestResult {
   totalPnl:       number;
   winRate:        number;
@@ -40,6 +46,7 @@ export interface BacktestResult {
   sharpeRatio:    number;
   trades:         BacktestTrade[];
   equityCurve:    { time: number; equity: number }[];
+  buyHold:        BuyHoldResult;
 }
 
 interface BacktestOptions {
@@ -168,7 +175,23 @@ export function runBacktest(
     sharpeRatio = std > 0 ? (mean / std) * Math.sqrt(returns.length) : 0;
   }
 
-  return { totalPnl, winRate, tradeCount: trades.length, maxDrawdownPct, profitFactor, sharpeRatio, trades, equityCurve };
+  // ── Buy-and-hold benchmark ───────────────────────────────────────────────
+  const buyHold: BuyHoldResult = { returnPct: 0, equityCurve: [], maxDrawdownPct: 0 };
+  if (candles.length > 0) {
+    const entryPrice = candles[0].close;
+    const units = initialEquity / entryPrice;
+    let bhPeak = initialEquity;
+    for (const c of candles) {
+      const bhEquity = units * c.close;
+      buyHold.equityCurve.push({ time: c.timestamp, equity: bhEquity });
+      if (bhEquity > bhPeak) bhPeak = bhEquity;
+      const dd = (bhPeak - bhEquity) / bhPeak * 100;
+      if (dd > buyHold.maxDrawdownPct) buyHold.maxDrawdownPct = dd;
+    }
+    buyHold.returnPct = (candles[candles.length - 1].close - entryPrice) / entryPrice * 100;
+  }
+
+  return { totalPnl, winRate, tradeCount: trades.length, maxDrawdownPct, profitFactor, sharpeRatio, trades, equityCurve, buyHold };
 }
 
 export async function fetchCandles(coin: string, interval: string, limit: number): Promise<Candle[]> {
