@@ -123,6 +123,19 @@ export class Logger {
       .all(limit) as TradeRow[];
   }
 
+  getTrades(limit = 100, offset = 0): TradeRow[] {
+    return this.db
+      .prepare("SELECT * FROM trades ORDER BY created_at DESC LIMIT ? OFFSET ?")
+      .all(limit, offset) as TradeRow[];
+  }
+
+  getTradeCount(): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) as count FROM trades")
+      .get() as { count: number };
+    return row.count;
+  }
+
   getSumPnl(): number {
     const row = this.db
       .prepare("SELECT COALESCE(SUM(pnl), 0) as total FROM trades WHERE pnl IS NOT NULL AND success = 1")

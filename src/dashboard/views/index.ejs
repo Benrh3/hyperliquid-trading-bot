@@ -1000,18 +1000,30 @@
       const pos = l.position;
       let posHtml = '<span class="text-muted">—</span>';
       if (pos) {
-        const cls  = pos.side === 'long' ? 'lane-pos-long' : 'lane-pos-short';
-        const upnl = pos.unrealisedPnl ?? 0;
-        const upnlCls = upnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
-        posHtml = '<span class="' + cls + '">' + pos.side.toUpperCase() + '</span>'
-          + ' <span class="' + upnlCls + '" style="font-size:11px">(' + fmt(upnl, 2) + ')</span>';
+        if (pos.side === 'neutral') {
+          const upnl    = pos.unrealisedPnl ?? 0;
+          const upnlCls = upnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
+          posHtml = '<span style="color:var(--blue)">NEUTRAL</span>'
+            + ' <span class="' + upnlCls + '" style="font-size:11px">(' + fmt(upnl, 2) + ')</span>';
+        } else {
+          const cls     = pos.side === 'long' ? 'lane-pos-long' : 'lane-pos-short';
+          const upnl    = pos.unrealisedPnl ?? 0;
+          const upnlCls = upnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
+          posHtml = '<span class="' + cls + '">' + pos.side.toUpperCase() + '</span>'
+            + ' <span class="' + upnlCls + '" style="font-size:11px">(' + fmt(upnl, 2) + ')</span>';
+        }
       }
-      const spnlCls = l.sessionPnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
+      const spnlCls  = l.sessionPnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
       const liveBadge = l.live ? '<span class="lane-live-badge">LIVE</span>' : '';
+      const tfBadge   = l.timeframe !== '—'
+        ? ' <span class="lane-tf-badge">' + l.timeframe + '</span>'
+        : '';
+      // Funding-basis shows "Periods" instead of "Trades"
+      const tradeLabel = l.strategyId === 'funding-basis' ? 'Periods' : 'Trades';
       return '<div class="lane-card">'
         + '<div class="lane-card-header">'
         +   l.displayName
-        +   ' <span class="lane-tf-badge">' + l.timeframe + '</span>'
+        +   tfBadge
         +   liveBadge
         + '</div>'
         + '<div class="lane-card-body">'
@@ -1021,7 +1033,7 @@
         +     '<span class="lane-stat-value">' + posHtml + '</span></div>'
         +   '<div class="lane-stat"><span class="lane-stat-label">Session P&amp;L</span>'
         +     '<span class="lane-stat-value ' + spnlCls + '">' + fmt(l.sessionPnl, 2) + '</span></div>'
-        +   '<div class="lane-stat"><span class="lane-stat-label">Trades</span>'
+        +   '<div class="lane-stat"><span class="lane-stat-label">' + tradeLabel + '</span>'
         +     '<span class="lane-stat-value">' + l.tradeCount + '</span></div>'
         + '</div>'
         + '</div>';

@@ -20,12 +20,18 @@
 
 <div class="container">
 
-  <p class="section-title">Trade History</p>
+  <div style="display:flex;align-items:baseline;gap:1rem;margin-bottom:0.5rem">
+    <p class="section-title" style="margin-bottom:0">Trade History</p>
+    <span class="text-muted" style="font-size:12px" id="trade-count-label">
+      Showing <span id="showing-count"><%= trades.length %></span> of <span id="total-count"><%= total %></span>
+    </span>
+  </div>
+
   <div class="table-wrap">
-    <% if (trades.length === 0) { %>
-      <p class="empty">No trades recorded yet.</p>
+    <% if (total === 0) { %>
+      <p class="empty" id="empty-msg">No trades recorded yet.</p>
     <% } else { %>
-      <table>
+      <table id="trades-table">
         <thead>
           <tr>
             <th>#</th>
@@ -39,7 +45,7 @@
             <th>Status</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="trades-body">
           <% for (const t of trades) { %>
             <tr>
               <td class="text-muted"><%= t.id %></td>
@@ -72,8 +78,97 @@
     <% } %>
   </div>
 
+  <div id="load-more-wrap" style="margin-top:1rem;display:<%= trades.length < total ? 'block' : 'none' %>">
+    <button id="btn-load-more" style="
+      background:var(--surface);border:1px solid var(--border);color:var(--text);
+      font-size:13px;padding:0.45rem 1.1rem;border-radius:5px;cursor:pointer;
+    ">Load 100 more</button>
+    <span id="load-msg" style="font-size:12px;color:var(--muted);margin-left:0.75rem;display:none"></span>
+  </div>
+
 </div>
 
-<script>setTimeout(() => location.reload(), 5000)</script>
+<script>
+(function () {
+  var offset    = <%= trades.length %>;
+  var total     = <%= total %>;
+  var loading   = false;
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function pnlCell(pnl) {
+    if (pnl === null || pnl === undefined) return '<span class="text-muted">—</span>';
+    var cls = pnl >= 0 ? 'text-green' : 'text-red';
+    var prefix = pnl >= 0 ? '+' : '';
+    return '<span class="' + cls + '">' + prefix + Number(pnl).toFixed(2) + '</span>';
+  }
+
+  function statusCell(success, error) {
+    if (success) return '<span class="badge badge-info">ok</span>';
+    return '<span class="badge badge-error" title="' + esc(error || '') + '">failed</span>';
+  }
+
+  function formatPrice(p) {
+    return '$' + Number(p).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function makeRow(t) {
+    return '<tr>' +
+      '<td class="text-muted">'  + esc(t.id) + '</td>' +
+      '<td class="mono text-muted" style="white-space:nowrap">' + esc(t.created_at) + '</td>' +
+      '<td><span class="badge badge-' + esc(t.side) + '">' + esc(t.side) + '</span></td>' +
+      '<td class="mono">' + esc(t.coin) + '</td>' +
+      '<td class="mono">' + esc(t.size) + '</td>' +
+      '<td class="mono">' + formatPrice(t.price) + '</td>' +
+      '<td class="mono">' + pnlCell(t.pnl) + '</td>' +
+      '<td>' + esc(t.strategy) + '</td>' +
+      '<td>' + statusCell(t.success, t.error) + '</td>' +
+    '</tr>';
+  }
+
+  document.getElementById('btn-load-more').addEventListener('click', async function () {
+    if (loading) return;
+    loading = true;
+    var btn = this;
+    var msg = document.getElementById('load-msg');
+    btn.disabled = true;
+    msg.style.display = 'inline';
+    msg.textContent = 'Loading…';
+
+    try {
+      var resp = await fetch('/api/trades?limit=100&offset=' + offset);
+      if (!resp.ok) throw new Error(resp.statusText);
+      var data = await resp.json();
+
+      // Ensure the table exists (could have been hidden if total was 0 initially)
+      var tbody = document.getElementById('trades-body');
+      data.trades.forEach(function (t) {
+        tbody.insertAdjacentHTML('beforeend', makeRow(t));
+      });
+
+      offset += data.trades.length;
+      total   = data.total;
+
+      document.getElementById('showing-count').textContent = offset;
+      document.getElementById('total-count').textContent   = total;
+
+      if (!data.hasMore) {
+        document.getElementById('load-more-wrap').style.display = 'none';
+      }
+
+      msg.style.display = 'none';
+    } catch (err) {
+      msg.textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      loading = false;
+    }
+  });
+})();
+</script>
 </body>
 </html>

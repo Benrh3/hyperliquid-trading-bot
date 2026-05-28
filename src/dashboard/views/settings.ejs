@@ -216,24 +216,19 @@
     <% for (const entry of registry) { %>
     <%
       const lc = laneMap[entry.id] || { strategyId: entry.id, timeframe: '1h', active: false, live: false };
-      const canLane = entry.isCandleStrategy;
+      const isFunding = entry.id === 'funding-basis';
     %>
     <div class="lane-row<%= !lc.active ? ' disabled' : '' %>" id="row-<%= entry.id %>">
 
       <div class="lane-info">
-        <div class="lane-name">
-          <%= entry.displayName %>
-          <% if (!canLane) { %>
-            <span class="badge badge-warn" style="font-size:10px">no simulation</span>
-          <% } %>
-        </div>
+        <div class="lane-name"><%= entry.displayName %></div>
         <div class="lane-category"><%= entry.categoryLabel %></div>
-        <% if (!canLane) { %>
-          <div class="non-candle-note">Funding-rate strategy runs separately and cannot be configured as a paper lane.</div>
+        <% if (isFunding) { %>
+          <div class="non-candle-note">Simulates both legs (long spot + short perp). Entry/exit fees deducted; funding rate accrues hourly. Cannot place real orders — no live mode.</div>
         <% } %>
       </div>
 
-      <% if (canLane) { %>
+      <% if (entry.isCandleStrategy) { %>
 
         <label class="toggle" title="Active">
           <input type="checkbox" class="lane-active"
@@ -259,6 +254,18 @@
           <span class="live-label">Live</span>
         </label>
 
+      <% } else if (isFunding) { %>
+
+        <label class="toggle" title="Active">
+          <input type="checkbox" class="lane-active"
+            data-id="<%= entry.id %>"
+            <%= lc.active ? 'checked' : '' %>>
+          <span class="toggle-slider"></span>
+        </label>
+
+        <%# No timeframe or live radio for funding-basis %>
+        <span></span><span></span>
+
       <% } else { %>
         <span></span><span></span><span></span>
       <% } %>
@@ -278,24 +285,23 @@
 (function () {
   const table = document.getElementById('lane-table');
 
-  // When a toggle changes, update the row and disable/re-enable controls
+  // When a toggle changes, update the row and enable/disable dependent controls
   table.addEventListener('change', function (e) {
     const el = e.target;
     if (el.classList.contains('lane-active')) {
-      const id  = el.dataset.id;
-      const row = document.getElementById('row-' + id);
-      const tf  = row.querySelector('.lane-tf');
-      const liveRadio = row.querySelector('.lane-live');
+      const id        = el.dataset.id;
+      const row       = document.getElementById('row-' + id);
+      const tf        = row.querySelector('.lane-tf');        // null for funding-basis
+      const liveRadio = row.querySelector('.lane-live');      // null for funding-basis
 
       if (el.checked) {
         row.classList.remove('disabled');
-        tf.disabled = false;
-        liveRadio.disabled = false;
+        if (tf)        tf.disabled        = false;
+        if (liveRadio) liveRadio.disabled = false;
       } else {
         row.classList.add('disabled');
-        tf.disabled = true;
-        liveRadio.disabled = true;
-        if (liveRadio.checked) liveRadio.checked = false;
+        if (tf)        tf.disabled = true;
+        if (liveRadio) { liveRadio.disabled = true; liveRadio.checked = false; }
       }
     }
   });

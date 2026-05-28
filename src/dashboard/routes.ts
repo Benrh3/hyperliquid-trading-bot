@@ -49,11 +49,21 @@ export function createRouter(
   });
 
   router.get("/trades", (_req, res) => {
-    const trades = logger.getRecentTrades(100);
+    const total  = logger.getTradeCount();
+    const trades = logger.getTrades(100, 0);
     res.render("trades", {
       trades,
+      total,
       coin: config.exchange.coin,
     });
+  });
+
+  router.get("/api/trades", (req, res) => {
+    const limit  = Math.min(parseInt(typeof req.query.limit  === "string" ? req.query.limit  : "100") || 100, 500);
+    const offset = parseInt(typeof req.query.offset === "string" ? req.query.offset : "0") || 0;
+    const trades = logger.getTrades(limit, offset);
+    const total  = logger.getTradeCount();
+    res.json({ trades, total, hasMore: offset + trades.length < total });
   });
 
   router.get("/backtest", (_req, res) => {
