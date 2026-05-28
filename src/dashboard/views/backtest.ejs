@@ -91,6 +91,55 @@
   .compare-table tbody tr.row-lags  { background: rgba(248,81,73,0.07); }
   .compare-table tbody tr:last-child td { border-bottom: none; }
 
+  /* ── Funding basis card ── */
+  .funding-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .funding-card-header {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .funding-card-header .tag {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--muted);
+    background: rgba(139,148,158,0.1);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  .funding-stats {
+    display: flex;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+  }
+  .funding-stat {
+    padding: 0.75rem 1.25rem;
+    border-right: 1px solid var(--border);
+    min-width: 140px;
+    flex: 1;
+  }
+  .funding-stat:last-child { border-right: none; }
+  .funding-caveat {
+    padding: 0.6rem 1rem;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .funding-caveat::before { content: '⚠ '; }
+
   /* ── Chart legend ── */
   .chart-legend { display: flex; gap: 1rem; font-size: 11px; color: var(--muted); }
   .chart-legend-item { display: flex; align-items: center; gap: 5px; }
@@ -106,6 +155,8 @@
     <a href="/strategies" class="nav-link">Strategies</a>
     <a href="/trades" class="nav-link">Trades</a>
     <a href="/backtest" class="nav-link active">Backtest</a>
+    <a href="/learn" class="nav-link">Learn</a>
+    <a href="/settings" class="nav-link">Settings</a>
   </div>
   <div class="nav-right">
     <span class="badge badge-net"><%= network %></span>
@@ -160,6 +211,9 @@
 
   <!-- Per-strategy stats — hidden until first run, populated by JS -->
   <div id="bt-stats" style="display:none"></div>
+
+  <!-- Funding basis card — hidden until first run, populated by JS -->
+  <div id="bt-funding-section" style="display:none"></div>
 
   <!-- Equity chart -->
   <div class="chart-panel" id="bt-chart-panel" style="display:none">
@@ -265,8 +319,12 @@
     status.textContent = 'Fetching candles & running…';
 
     try {
-      const res  = await fetch('/api/backtest?interval=' + interval + '&limit=' + limit);
-      const data = await res.json();
+      const [res, fundingRes] = await Promise.all([
+        fetch('/api/backtest?interval=' + interval + '&limit=' + limit),
+        fetch('/api/backtest/funding?interval=' + interval + '&limit=' + limit),
+      ]);
+      const data    = await res.json();
+      const funding = fundingRes.ok ? await fundingRes.json() : null;
 
       if (data.error) { status.textContent = 'Error: ' + data.error; return; }
 
@@ -326,6 +384,60 @@
 
       statsEl.innerHTML = '<div class="table-wrap" style="margin-bottom:1.5rem">' +
         '<table class="compare-table">' + thead + tbody + '</table></div>';
+
+      // ── Funding basis card ────────────────────────────────────────────────
+      const fundingSection = document.getElementById('bt-funding-section');
+      if (funding && !funding.error) {
+        fundingSection.style.display = '';
+        const f = funding;
+        const retCls  = f.netReturnPct  >= 0 ? 'pnl-pos' : 'pnl-neg';
+        const annCls  = f.annualisedPct >= 0 ? 'pnl-pos' : 'pnl-neg';
+        const gfCls   = f.grossFundingPct >= 0 ? 'pnl-pos' : 'pnl-neg';
+        const retSign = f.netReturnPct  >= 0 ? '+' : '';
+        const annSign = f.annualisedPct >= 0 ? '+' : '';
+        const gfSign  = f.grossFundingPct >= 0 ? '+' : '';
+        fundingSection.innerHTML =
+          '<div class="funding-card">' +
+            '<div class="funding-card-header">' +
+              'Funding Basis' +
+              '<span class="tag">Delta-Neutral</span>' +
+              '<span class="text-muted" style="font-weight:400;font-size:11px;margin-left:auto">' +
+                f.fetchedPeriods + ' hourly periods · ' + (f.coin || data.coin) +
+              '</span>' +
+            '</div>' +
+            '<div class="funding-stats">' +
+              '<div class="funding-stat">' +
+                '<div class="card-label">Net Return</div>' +
+                '<div class="card-value mono" style="font-size:1.4rem"><span class="' + retCls + '">' + retSign + f.netReturnPct.toFixed(2) + '%</span></div>' +
+                '<div class="card-sub mono"><span class="' + retCls + '">' + (f.netPnlUsd >= 0 ? '+' : '') + '$' + f.netPnlUsd.toFixed(2) + '</span></div>' +
+              '</div>' +
+              '<div class="funding-stat">' +
+                '<div class="card-label">Annualised</div>' +
+                '<div class="card-value mono"><span class="' + annCls + '">' + annSign + f.annualisedPct.toFixed(1) + '%/yr</span></div>' +
+              '</div>' +
+              '<div class="funding-stat">' +
+                '<div class="card-label">Gross Funding</div>' +
+                '<div class="card-value mono"><span class="' + gfCls + '">' + gfSign + f.grossFundingPct.toFixed(2) + '%</span></div>' +
+              '</div>' +
+              '<div class="funding-stat">' +
+                '<div class="card-label">Fee Drag</div>' +
+                '<div class="card-value mono"><span class="pnl-neg">−' + f.feeDragPct.toFixed(3) + '%</span></div>' +
+                '<div class="card-sub">4 × 0.045% taker</div>' +
+              '</div>' +
+              '<div class="funding-stat">' +
+                '<div class="card-label">Periods</div>' +
+                '<div class="card-value">' + f.fundingPeriods.toLocaleString() + '</div>' +
+                '<div class="card-sub">hourly accrual</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="funding-caveat">' +
+              'Models perfect hedge; ignores liquidation risk on the short leg, spot-borrow/financing cost, ' +
+              'and assumes spot BTC is available to hold. Real yield will be lower.' +
+            '</div>' +
+          '</div>';
+      } else {
+        fundingSection.style.display = 'none';
+      }
 
       // ── Equity chart ──────────────────────────────────────────────────────
       document.getElementById('bt-chart-panel').style.display = '';

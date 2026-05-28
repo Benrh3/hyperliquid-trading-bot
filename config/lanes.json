@@ -1,0 +1,6 @@
+{
+  "lanes": [
+    { "strategyId": "confluence",   "timeframe": "1h", "active": true,  "live": true  },
+    { "strategyId": "trend-follow", "timeframe": "4h", "active": false, "live": false }
+  ]
+}

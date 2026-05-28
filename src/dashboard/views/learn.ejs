@@ -1,0 +1,262 @@
+<%- include('_head', { title: 'Learn' }) %>
+
+<style>
+  .learn-container {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+  }
+
+  .learn-header {
+    margin-bottom: 2.5rem;
+  }
+  .learn-header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.4rem;
+  }
+  .learn-header p {
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* Strategy card */
+  .strat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 1.75rem;
+    overflow: hidden;
+  }
+
+  .strat-card-header {
+    padding: 1.25rem 1.5rem 1rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .strat-card-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .strat-category {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+  }
+
+  .strat-summary {
+    padding: 0.9rem 1.5rem;
+    font-size: 14px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    line-height: 1.6;
+  }
+
+  .strat-body {
+    padding: 1.25rem 1.5rem;
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .strat-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+  .strat-section-text {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text);
+  }
+
+  .signal-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .signal-list li {
+    font-size: 13px;
+    color: var(--text);
+    padding: 0.3rem 0.6rem;
+    background: rgba(88,166,255,0.06);
+    border-left: 2px solid var(--blue);
+    border-radius: 0 3px 3px 0;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .condition-box {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .condition-box.works {
+    background: rgba(63,185,80,0.07);
+    border: 1px solid rgba(63,185,80,0.2);
+  }
+  .condition-box.struggles {
+    background: rgba(248,81,73,0.07);
+    border: 1px solid rgba(248,81,73,0.2);
+  }
+  .condition-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 0.35rem;
+  }
+  .condition-box.works    .condition-label { color: var(--green); }
+  .condition-box.struggles .condition-label { color: var(--red); }
+
+  .param-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .param-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    font-size: 13px;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .param-row:last-child { border-bottom: none; }
+  .param-label {
+    flex: 1;
+    color: var(--text);
+  }
+  .param-default {
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .param-range {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .param-none {
+    font-size: 13px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  @media (max-width: 600px) {
+    .two-col { grid-template-columns: 1fr; }
+    .learn-container { padding: 1.25rem 0.75rem 3rem; }
+  }
+</style>
+
+<nav class="nav">
+  <a href="/" class="nav-brand">HL Bot</a>
+  <button class="hamburger" id="nav-hamburger" aria-label="Menu">&#9776;</button>
+  <div class="nav-links" id="nav-links">
+    <a href="/" class="nav-link">Overview</a>
+    <a href="/strategies" class="nav-link">Strategies</a>
+    <a href="/trades" class="nav-link">Trades</a>
+    <a href="/backtest" class="nav-link">Backtest</a>
+    <a href="/learn" class="nav-link active">Learn</a>
+    <a href="/settings" class="nav-link">Settings</a>
+  </div>
+  <div class="nav-right">
+    <span class="dot"></span>
+    <span class="badge badge-net"><%= network %></span>
+    <span class="text-muted"><%= coin %></span>
+    <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
+  </div>
+</nav>
+
+<div class="learn-container">
+
+  <div class="learn-header">
+    <h1>Strategies</h1>
+    <p>How each strategy works, what it trades on, and what market conditions it is suited to.</p>
+  </div>
+
+  <% for (const entry of registry) { %>
+  <div class="strat-card">
+
+    <div class="strat-card-header">
+      <h2><%= entry.displayName %></h2>
+      <span class="strat-category"><%= entry.categoryLabel %></span>
+    </div>
+
+    <div class="strat-summary"><%= entry.summary %></div>
+
+    <div class="strat-body">
+
+      <div>
+        <div class="strat-section-label">How it works</div>
+        <div class="strat-section-text"><%= entry.howItWorks %></div>
+      </div>
+
+      <div>
+        <div class="strat-section-label">Signals it uses</div>
+        <ul class="signal-list">
+          <% for (const signal of entry.signals) { %>
+          <li><%= signal %></li>
+          <% } %>
+        </ul>
+      </div>
+
+      <div class="two-col">
+        <div class="condition-box works">
+          <div class="condition-label">When it tends to work</div>
+          <%= entry.whenItWorks %>
+        </div>
+        <div class="condition-box struggles">
+          <div class="condition-label">When it tends to struggle</div>
+          <%= entry.whenItStruggles %>
+        </div>
+      </div>
+
+      <div>
+        <div class="strat-section-label">Parameters</div>
+        <% if (entry.params.length > 0) { %>
+        <div class="param-list">
+          <% for (const p of entry.params) { %>
+          <div class="param-row">
+            <span class="param-label"><%= p.label %></span>
+            <span class="param-default">default: <%= p.default %></span>
+            <span class="param-range"><%= p.min %> – <%= p.max %></span>
+          </div>
+          <% } %>
+        </div>
+        <% } else { %>
+        <span class="param-none">No configurable parameters — values are fixed in the implementation.</span>
+        <% } %>
+      </div>
+
+    </div>
+  </div>
+  <% } %>
+
+</div>
+
+</body>
+</html>

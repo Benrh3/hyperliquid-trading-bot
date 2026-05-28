@@ -139,6 +139,66 @@
   .ob-ask { color: #f85149; background: rgba(248,81,73,0.05); }
   .ob-bid { color: #3fb950; background: rgba(63,185,80,0.05); }
   .ob-spread { color: var(--muted); text-align: center !important; font-size: 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+  /* ── Lane cards ── */
+  .lanes-section { margin-bottom: 1.5rem; }
+  .lanes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.875rem;
+  }
+  .lane-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .lane-card-header {
+    padding: 0.55rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .lane-tf-badge {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--muted);
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+  .lane-live-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: .04em;
+  }
+  .lane-card-body {
+    padding: 0.625rem 0.875rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .lane-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 12px;
+  }
+  .lane-stat-label { color: var(--muted); }
+  .lane-stat-value { font-variant-numeric: tabular-nums; font-family: 'SFMono-Regular', Consolas, monospace; }
+  .lane-pos-long  { color: var(--green); }
+  .lane-pos-short { color: var(--red); }
+  .lane-pnl-pos   { color: var(--green); }
+  .lane-pnl-neg   { color: var(--red); }
+  #lanes-placeholder {
+    font-size: 13px; color: var(--muted);
+    padding: 0.5rem 0;
+  }
 </style>
 
 <nav class="nav">
@@ -149,6 +209,8 @@
     <a href="/strategies" class="nav-link">Strategies</a>
     <a href="/trades" class="nav-link">Trades</a>
     <a href="/backtest" class="nav-link">Backtest</a>
+    <a href="/learn" class="nav-link">Learn</a>
+    <a href="/settings" class="nav-link">Settings</a>
   </div>
   <div class="nav-right">
     <span class="dot"></span>
@@ -237,6 +299,14 @@
           <span class="fi-value" id="fr-annualized"><span class="text-muted">—</span></span>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Active lanes -->
+  <div class="lanes-section" id="lanes-section">
+    <p class="section-title">Active Lanes</p>
+    <div class="lanes-grid" id="lanes-grid">
+      <span id="lanes-placeholder" class="text-muted">Loading lanes…</span>
     </div>
   </div>
 
@@ -913,6 +983,61 @@
       }
     });
   });
+
+  // ── Lane cards ──────────────────────────────────────────────────────────
+  const lanesGrid        = document.getElementById('lanes-grid');
+  const lanesPlaceholder = document.getElementById('lanes-placeholder');
+
+  function fmt(n, dp) { return (n >= 0 ? '+' : '') + n.toFixed(dp); }
+  function fmtUsd(n)   { return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+  function renderLanes(lanes) {
+    if (!lanes.length) {
+      lanesGrid.innerHTML = '<span id="lanes-placeholder" class="text-muted">No active lanes — configure them in <a href="/settings">Settings</a>.</span>';
+      return;
+    }
+    lanesGrid.innerHTML = lanes.map(function (l) {
+      const pos = l.position;
+      let posHtml = '<span class="text-muted">—</span>';
+      if (pos) {
+        const cls  = pos.side === 'long' ? 'lane-pos-long' : 'lane-pos-short';
+        const upnl = pos.unrealisedPnl ?? 0;
+        const upnlCls = upnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
+        posHtml = '<span class="' + cls + '">' + pos.side.toUpperCase() + '</span>'
+          + ' <span class="' + upnlCls + '" style="font-size:11px">(' + fmt(upnl, 2) + ')</span>';
+      }
+      const spnlCls = l.sessionPnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
+      const liveBadge = l.live ? '<span class="lane-live-badge">LIVE</span>' : '';
+      return '<div class="lane-card">'
+        + '<div class="lane-card-header">'
+        +   l.displayName
+        +   ' <span class="lane-tf-badge">' + l.timeframe + '</span>'
+        +   liveBadge
+        + '</div>'
+        + '<div class="lane-card-body">'
+        +   '<div class="lane-stat"><span class="lane-stat-label">Equity</span>'
+        +     '<span class="lane-stat-value">' + fmtUsd(l.equity) + '</span></div>'
+        +   '<div class="lane-stat"><span class="lane-stat-label">Position</span>'
+        +     '<span class="lane-stat-value">' + posHtml + '</span></div>'
+        +   '<div class="lane-stat"><span class="lane-stat-label">Session P&amp;L</span>'
+        +     '<span class="lane-stat-value ' + spnlCls + '">' + fmt(l.sessionPnl, 2) + '</span></div>'
+        +   '<div class="lane-stat"><span class="lane-stat-label">Trades</span>'
+        +     '<span class="lane-stat-value">' + l.tradeCount + '</span></div>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  async function refreshLanes() {
+    try {
+      const resp = await fetch('/api/lanes');
+      if (!resp.ok) return;
+      renderLanes(await resp.json());
+    } catch { /* ignore transient errors */ }
+  }
+
+  refreshLanes();
+  setInterval(refreshLanes, 4000);
 
   // ── Resize observer ─────────────────────────────────────────────────────
   if (typeof ResizeObserver !== 'undefined') {

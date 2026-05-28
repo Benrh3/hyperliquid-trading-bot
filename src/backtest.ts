@@ -194,6 +194,75 @@ export function runBacktest(
   return { totalPnl, winRate, tradeCount: trades.length, maxDrawdownPct, profitFactor, sharpeRatio, trades, equityCurve, buyHold };
 }
 
+// ── Funding basis (delta-neutral) backtest ───────────────────────────────────
+
+interface FundingRecord {
+  fundingRate: string;
+  time: number;
+}
+
+export interface FundingBasisResult {
+  netReturnPct:    number;
+  netPnlUsd:       number;
+  grossFundingPct: number;
+  feeDragPct:      number;
+  fundingPeriods:  number;
+  annualisedPct:   number;
+  equityCurve:     { time: number; equity: number }[];
+}
+
+const TAKER_FEE = 0.00045; // 0.045% per leg
+
+export function runFundingBasisBacktest(
+  records: FundingRecord[],
+  initialEquity = 1000,
+): FundingBasisResult {
+  if (records.length === 0) {
+    return { netReturnPct: 0, netPnlUsd: 0, grossFundingPct: 0, feeDragPct: 0, fundingPeriods: 0, annualisedPct: 0, equityCurve: [] };
+  }
+
+  const notional = initialEquity;
+  // Entry: taker on spot buy + taker on perp short = 2 legs
+  // Exit:  taker on spot sell + taker on perp close = 2 legs
+  const entryFees  = 2 * TAKER_FEE * notional;
+  const exitFees   = 2 * TAKER_FEE * notional;
+  const feeDragUsd = entryFees + exitFees;
+  const feeDragPct = (feeDragUsd / notional) * 100;
+
+  // Build equity curve: entry fees deducted at open, funding accrues each period,
+  // exit fees deducted at the final close.
+  const baseEquity = notional - entryFees;
+  let cumFunding = 0;
+  const equityCurve: { time: number; equity: number }[] = [];
+
+  for (const r of records) {
+    cumFunding += parseFloat(r.fundingRate) * notional;
+    equityCurve.push({ time: r.time, equity: baseEquity + cumFunding });
+  }
+  // Deduct exit fees from the closing point
+  equityCurve[equityCurve.length - 1].equity -= exitFees;
+
+  const grossFundingUsd = cumFunding;
+  const grossFundingPct = (grossFundingUsd / notional) * 100;
+  const netPnlUsd       = grossFundingUsd - feeDragUsd;
+  const netReturnPct    = (netPnlUsd / notional) * 100;
+
+  const windowMs   = records[records.length - 1].time - records[0].time;
+  const windowDays = windowMs / 86_400_000;
+  const annualisedPct = windowDays > 0 ? netReturnPct * (365 / windowDays) : 0;
+
+  return { netReturnPct, netPnlUsd, grossFundingPct, feeDragPct, fundingPeriods: records.length, annualisedPct, equityCurve };
+}
+
+export async function fetchFundingHistory(coin: string, startTime: number, endTime: number): Promise<FundingRecord[]> {
+  const isTestnet  = config.exchange.network === "testnet";
+  const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+  const raw = await infoClient.fundingHistory({ coin, startTime, endTime });
+  return raw.map((r) => ({ fundingRate: r.fundingRate, time: r.time }));
+}
+
+// ── Candle fetch ─────────────────────────────────────────────────────────────
+
 export async function fetchCandles(coin: string, interval: string, limit: number): Promise<Candle[]> {
   const isTestnet  = config.exchange.network === "testnet";
   const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });

@@ -1,14 +1,14 @@
 import { Router } from "express";
 import { RSI } from "technicalindicators";
 import { config, coins } from "../config.js";
-import { runBacktest, fetchCandles } from "../backtest.js";
-import { ConfluenceStrategy } from "../strategy/confluence.js";
-import { TrendFollowStrategy } from "../strategy/trend-follow.js";
+import { runBacktest, fetchCandles, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
+import { CANDLE_STRATEGIES, STRATEGY_REGISTRY } from "../strategy/registry.js";
 import type { Logger } from "../logger.js";
 import type { BotState } from "./server.js";
 import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
+import type { LaneManager, LanesFile } from "../lane-manager.js";
 
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -23,6 +23,7 @@ export function createRouter(
   strategies: Strategy[] = [],
   feed?: Feed,
   executor?: Executor,
+  laneManager?: LaneManager,
 ): Router {
   const router = Router();
 
@@ -60,6 +61,48 @@ export function createRouter(
       coin:    config.exchange.coin,
       network: config.exchange.network,
     });
+  });
+
+  router.get("/learn", (_req, res) => {
+    res.render("learn", {
+      network:  config.exchange.network,
+      coin:     config.exchange.coin,
+      registry: STRATEGY_REGISTRY,
+    });
+  });
+
+  router.get("/settings", (_req, res) => {
+    res.render("settings", {
+      network:   config.exchange.network,
+      coin:      config.exchange.coin,
+      registry:  STRATEGY_REGISTRY,
+      lanesFile: laneManager?.getLanesFile() ?? { lanes: [] },
+    });
+  });
+
+  // ── Lane API ─────────────────────────────────────────────────────────────
+
+  router.get("/api/lanes", (_req, res) => {
+    res.json(laneManager?.getLaneStates() ?? []);
+  });
+
+  router.post("/api/lanes/config", async (req, res) => {
+    if (!laneManager) {
+      res.status(503).json({ error: "Lane manager not initialised" });
+      return;
+    }
+    try {
+      const body = req.body as LanesFile;
+      if (!Array.isArray(body?.lanes)) {
+        res.status(400).json({ error: "lanes array required" });
+        return;
+      }
+      await laneManager.applyConfig(body);
+      res.json({ ok: true });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      res.status(400).json({ error: error.message });
+    }
   });
 
   router.get("/strategies", (_req, res) => {
@@ -189,6 +232,30 @@ export function createRouter(
     res.json(state.lastPrices);
   });
 
+  router.get("/api/backtest/funding", async (req, res) => {
+    try {
+      const interval  = (typeof req.query.interval === "string" ? req.query.interval : null) ?? "1h";
+      const limit     = Math.min(parseInt(typeof req.query.limit === "string" ? req.query.limit : "1000") || 1000, 2000);
+      const coin      = coins[0];
+      const intervalMs = BACKTEST_INTERVAL_MS[interval] ?? 60_000;
+      const endTime   = Date.now();
+      const startTime = endTime - limit * intervalMs;
+
+      const records = await fetchFundingHistory(coin, startTime, endTime);
+      if (records.length === 0) {
+        res.status(400).json({ error: "No funding history returned from exchange" });
+        return;
+      }
+
+      const result = runFundingBasisBacktest(records);
+      res.json({ ...result, coin, interval, limit, fetchedPeriods: records.length });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("[backtest/funding] API error:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   router.get("/api/backtest", async (req, res) => {
     try {
       const interval = (typeof req.query.interval === "string" ? req.query.interval : null) ?? "1h";
@@ -207,7 +274,7 @@ export function createRouter(
         stopLossPct:     config.risk.stopLossPercent,
       };
 
-      const strategies = [new ConfluenceStrategy(), new TrendFollowStrategy()];
+      const strategies = CANDLE_STRATEGIES.map((e) => e.factory());
       const results = strategies.map((s) => ({
         name: s.name,
         ...runBacktest(s, candles, btOptions),

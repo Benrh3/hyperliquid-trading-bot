@@ -4,12 +4,11 @@ import { Logger } from "./logger.js";
 import { startDashboard } from "./dashboard/server.js";
 import { Executor } from "./executor.js";
 import { Feed } from "./feed.js";
-import { RsiStrategy } from "./strategy/rsi.js";
-import { ConfluenceStrategy } from "./strategy/confluence.js";
 import { FundingRateStrategy } from "./strategy/funding-rate.js";
+import { LaneManager } from "./lane-manager.js";
 import { RiskManager } from "./risk.js";
 import { initNotifications } from "./notifications.js";
-import type { Candle, Signal } from "./events.js";
+import type { Signal } from "./events.js";
 import type { Strategy } from "./strategy/base.js";
 
 // ─── Startup banner ───────────────────────────────────────
@@ -41,67 +40,25 @@ if (keyReady) {
   executor = new Executor(dryRun);
 }
 
-// 3. Strategies — all run in parallel on each candle
-function buildStrategies(): Strategy[] {
-  const active: Strategy[] = [];
-
-  switch (config.strategy.type) {
-    case "rsi":
-      active.push(new RsiStrategy());
-      break;
-    case "confluence":
-    default:
-      active.push(new ConfluenceStrategy());
-      break;
-  }
-
-  // Funding-rate strategy always runs alongside the primary strategy
-  active.push(new FundingRateStrategy());
-
-  return active;
-}
-
-const strategies = buildStrategies();
+// 3. Strategies visible to the Strategies page (funding-rate poller only)
+//    Candle strategies are managed by LaneManager below.
+const strategies: Strategy[] = [new FundingRateStrategy()];
 console.log(`[init] Strategies: ${strategies.map((s) => s.name).join(", ")}`);
+
+// 3b. Lane manager — independent candle-strategy lanes with paper simulation
+const laneManager = new LaneManager();
 
 // 4. Risk manager
 const risk = new RiskManager(1000);
 console.log("[init] Risk manager ready");
 
-// 5. Per-strategy, per-coin candle history buffers
-const MAX_HISTORY = 200;
-const candleHistories = new Map<string, Candle[]>(); // key: `${strategy.name}:${coin}`
-for (const s of strategies) {
-  for (const coin of coins) {
-    candleHistories.set(`${s.name}:${coin}`, []);
-  }
-}
-
-// 6. Feed — create before dashboard so the dashboard can reference it for interval changes
+// 5. Feed — create before dashboard so the dashboard can reference it for interval changes
 const feed = new Feed();
 
-// 7. Dashboard — pass strategies, feed, and executor
-startDashboard(logger, strategies, feed, executor);
+// 6. Dashboard — pass strategies, feed, executor, and lane manager
+startDashboard(logger, strategies, feed, executor, laneManager);
 
 // ─── Event wiring ─────────────────────────────────────────
-
-bus.on("candle", (candle) => {
-  const candleCoin = candle.coin ?? coins[0];
-  for (const s of strategies) {
-    const key     = `${s.name}:${candleCoin}`;
-    const history = candleHistories.get(key) ?? [];
-    if (!candleHistories.has(key)) candleHistories.set(key, history);
-
-    history.push(candle);
-    if (history.length > MAX_HISTORY) history.shift();
-
-    const signal = s.onCandle(candle, history);
-    if (signal) {
-      console.log(`[${s.name}] Signal: ${signal.side} ${signal.coin} — ${signal.reason}`);
-      bus.emit("signal", signal);
-    }
-  }
-});
 
 bus.on("signal:rejected", (signal: Signal, reason: string) => {
   console.log(`[risk] REJECTED ${signal.side} ${signal.coin}: ${reason}`);
@@ -116,13 +73,15 @@ for (const s of strategies) {
   if (s.init) await s.init([]);
 }
 
-// ─── Start feed (fetches 500 historical candles, then subscribes) ─────────
+// ─── Start feed and lane manager ─────────────────────────
 await feed.start();
+await laneManager.start();
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\n[init] Shutting down...");
   await feed.stop();
+  await laneManager.stop();
   for (const s of strategies) {
     if ("stop" in s && typeof (s as { stop?: () => void }).stop === "function") {
       (s as { stop: () => void }).stop();
