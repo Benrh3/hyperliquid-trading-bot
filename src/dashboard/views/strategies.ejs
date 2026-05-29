@@ -1,5 +1,172 @@
 <%- include('_head', { title: 'Strategies' }) %>
 
+<style>
+  :root { --amber: #d29922; }
+
+  .fund-page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 1.5rem 1.5rem 4rem;
+  }
+
+  /* ── Notional calculator ── */
+  .calc-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem 0.75rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+  }
+  .calc-inputs { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; }
+  .calc-field  { display: flex; flex-direction: column; gap: 0.25rem; }
+  .calc-field label { font-size: 11px; color: var(--muted); }
+  .calc-sel {
+    appearance: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 13px;
+    padding: 0.35rem 1.8rem 0.35rem 0.65rem;
+    border-radius: 4px;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+    min-width: 88px;
+  }
+  .calc-input-wrap { display: flex; }
+  .calc-pfx {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-right: none;
+    border-radius: 4px 0 0 4px;
+    padding: 0.35rem 0.5rem;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  .calc-num {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: none;
+    border-radius: 0 4px 4px 0;
+    color: var(--text);
+    font-size: 13px;
+    padding: 0.35rem 0.6rem;
+    width: 100px;
+  }
+  .calc-num:focus { outline: none; border-color: var(--blue); }
+  .calc-divider {
+    width: 1px; background: var(--border);
+    align-self: stretch; flex-shrink: 0;
+  }
+  .calc-results { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
+  .calc-stat    { display: flex; flex-direction: column; gap: 0.2rem; }
+  .calc-stat-lbl { font-size: 11px; color: var(--muted); }
+  .calc-val { font-size: 15px; font-weight: 600; font-family: monospace; }
+  .calc-footer {
+    width: 100%; font-size: 11px; color: var(--muted);
+    padding-top: 0.25rem; border-top: 1px solid var(--border);
+    margin-top: 0.25rem;
+  }
+
+  /* ── Table controls ── */
+  .tbl-hdr {
+    display: flex; align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;
+  }
+
+  /* ── Funding table ── */
+  .fund-wrap { overflow-x: auto; }
+  .fund-tbl {
+    min-width: 820px; border-collapse: collapse; width: 100%;
+  }
+  .fund-tbl th {
+    font-size: 11px; font-weight: 500; color: var(--muted);
+    text-align: left; padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface); white-space: nowrap;
+  }
+  .fund-tbl td {
+    padding: 0.55rem 0.75rem; font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .fund-tbl tbody tr:last-child td { border-bottom: none; }
+
+  /* Sort headers */
+  th.sort-th { cursor: pointer; user-select: none; }
+  th.sort-th:hover { color: var(--text); }
+  th.sort-active { color: var(--blue); }
+  .th-inner { display: inline-flex; align-items: center; gap: 3px; }
+  .sort-ind { font-size: 10px; min-width: 0.6em; }
+  th.sort-desc .sort-ind::after { content: '↓'; }
+  th.sort-asc  .sort-ind::after { content: '↑'; }
+
+  /* Info icon */
+  .info-i {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 13px; height: 13px;
+    border: 1px solid currentColor; border-radius: 50%;
+    color: var(--muted); font-size: 8px; font-style: normal;
+    font-weight: 700; cursor: help; flex-shrink: 0;
+    vertical-align: middle; margin-left: 3px; line-height: 1;
+  }
+  .info-i:hover { color: var(--text); }
+
+  /* Tooltip */
+  #tip-box {
+    position: fixed; pointer-events: none; display: none;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 11px; line-height: 1.5;
+    padding: 0.4rem 0.65rem; border-radius: 5px;
+    max-width: 230px; white-space: normal; z-index: 9999;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+  }
+
+  /* Rows */
+  .fund-row { cursor: pointer; }
+  .fund-row:hover { background: rgba(139,148,158,0.08); }
+  .fund-row.row-sel { background: rgba(88,166,255,0.07); }
+
+  /* Sticky coin column */
+  .coin-td {
+    position: sticky; left: 0; z-index: 1;
+    background: var(--bg); font-weight: 500;
+  }
+  .fund-row:hover  .coin-td { background: color-mix(in srgb, var(--bg) 92%, var(--muted) 8%); }
+  .fund-row.row-sel .coin-td { background: color-mix(in srgb, var(--bg) 88%, var(--blue) 12%); }
+  thead .coin-td { background: var(--surface); z-index: 2; }
+
+  /* Attractiveness badges */
+  .attr-pill {
+    display: inline-block; padding: 0.15rem 0.55rem;
+    border-radius: 99px; font-size: 11px; font-weight: 500; white-space: nowrap;
+  }
+  .attr-green { background: rgba(63,185,80,0.15);  color: var(--green); }
+  .attr-amber { background: rgba(210,153,34,0.15); color: var(--amber); }
+  .attr-red   { background: rgba(248,81,73,0.15);  color: var(--red);   }
+
+  /* Sparkline */
+  .sparkline { display: block; overflow: visible; }
+
+  /* Radio */
+  .coin-radio {
+    cursor: pointer; accent-color: var(--blue);
+    width: 14px; height: 14px; vertical-align: middle;
+  }
+
+  @media (max-width: 600px) {
+    .calc-divider { display: none; }
+    .calc-results { gap: 1rem; }
+  }
+</style>
+
 <nav class="nav">
   <a href="/" class="nav-brand">HL Bot</a>
   <button class="hamburger" id="nav-hamburger" aria-label="Menu">&#9776;</button>
@@ -19,154 +186,352 @@
   </div>
 </nav>
 
-<div class="container">
+<!-- Global tooltip element (position:fixed, avoids overflow clipping) -->
+<div id="tip-box"></div>
 
-<% for (const s of strategies) { %>
-  <p class="section-title"><%= s.name %></p>
+<div class="fund-page">
 
-  <% if (s.name === 'confluence') { %>
-  <div class="grid">
-    <div class="card">
-      <div class="card-label">Signals</div>
-      <div class="card-value"><%= s.state.signalCount ?? 0 %></div>
-      <div class="card-sub">generated this session</div>
-    </div>
-    <div class="card">
-      <div class="card-label">RSI (14)</div>
-      <div class="card-value mono">
-        <% if (s.state.lastRsi !== null && s.state.lastRsi !== undefined) { %>
-          <span class="<%= s.state.lastRsi <= 30 ? 'text-green' : s.state.lastRsi >= 70 ? 'text-red' : '' %>">
-            <%= Number(s.state.lastRsi).toFixed(1) %>
-          </span>
-        <% } else { %>
-          <span class="text-muted">—</span>
-        <% } %>
+  <!-- ── Notional calculator ── -->
+  <div class="calc-panel">
+    <div class="calc-inputs">
+      <div class="calc-field">
+        <label for="calc-coin">Coin</label>
+        <select id="calc-coin" class="calc-sel">
+          <option>Loading…</option>
+        </select>
       </div>
-      <div class="card-sub">
-        <% if (s.state.lastRsi !== null && s.state.lastRsi !== undefined) { %>
-          <%= Number(s.state.lastRsi) <= 30 ? 'oversold' : Number(s.state.lastRsi) >= 70 ? 'overbought' : 'neutral' %>
-        <% } %>
+      <div class="calc-field">
+        <label for="calc-amount">Notional</label>
+        <div class="calc-input-wrap">
+          <span class="calc-pfx">$</span>
+          <input id="calc-amount" class="calc-num" type="number" min="0" step="100" value="1000">
+        </div>
       </div>
     </div>
-    <div class="card">
-      <div class="card-label">MACD</div>
-      <div class="card-value">
-        <% if (s.state.macdAboveSignal !== null && s.state.macdAboveSignal !== undefined) { %>
-          <span class="<%= s.state.macdAboveSignal ? 'text-green' : 'text-red' %>">
-            <%= s.state.macdAboveSignal ? 'above signal' : 'below signal' %>
-          </span>
-        <% } else { %>
-          <span class="text-muted">—</span>
-        <% } %>
+    <div class="calc-divider"></div>
+    <div class="calc-results">
+      <div class="calc-stat">
+        <span class="calc-stat-lbl">Hourly</span>
+        <span id="c-hr" class="calc-val">—</span>
       </div>
-      <div class="card-sub">vs signal line</div>
-    </div>
-    <div class="card">
-      <div class="card-label">BB %B</div>
-      <div class="card-value mono">
-        <% if (s.state.bbPctB !== null && s.state.bbPctB !== undefined) { %>
-          <%= (Number(s.state.bbPctB) * 100).toFixed(0) %>%
-        <% } else { %>
-          <span class="text-muted">—</span>
-        <% } %>
+      <div class="calc-stat">
+        <span class="calc-stat-lbl">Daily</span>
+        <span id="c-dy" class="calc-val">—</span>
       </div>
-      <div class="card-sub">
-        <% if (s.state.bbPctB !== null && s.state.bbPctB !== undefined) { %>
-          <%= Number(s.state.bbPctB) <= 0 ? 'at lower band' : Number(s.state.bbPctB) >= 1 ? 'at upper band' : 'within bands' %>
-        <% } %>
+      <div class="calc-stat">
+        <span class="calc-stat-lbl">Annual (net fee)</span>
+        <span id="c-yr" class="calc-val">—</span>
       </div>
     </div>
+    <p class="calc-footer">After 0.18% round-trip fee · Based on current funding rate</p>
   </div>
 
-  <p class="section-title" style="margin-top:1rem">Vote breakdown</p>
-  <div class="table-wrap">
-    <table>
+  <!-- ── Table header row ── -->
+  <div class="tbl-hdr">
+    <span class="section-title">Funding Rate Dashboard</span>
+    <span id="refresh-lbl" class="text-muted" style="font-size:12px">Loading…</span>
+  </div>
+
+  <!-- ── Table ── -->
+  <div class="table-wrap fund-wrap">
+    <table class="fund-tbl" id="fund-tbl">
       <thead>
-        <tr><th>Indicator</th><th>Vote</th></tr>
+        <tr>
+          <th class="coin-td">Coin</th>
+          <th class="sort-th" data-col="currentRate">
+            <span class="th-inner">Current Rate <span class="sort-ind"></span></span><em class="info-i" data-tip="Funding charged this hour. Positive = longs pay shorts; negative = shorts pay longs.">i</em>
+          </th>
+          <th class="sort-th" data-col="annualizedRate">
+            <span class="th-inner">Annualized <span class="sort-ind"></span></span><em class="info-i" data-tip="Current hourly rate compounded for a year — a quick yield gauge.">i</em>
+          </th>
+          <th class="sort-th" data-col="predictedNextRate">
+            <span class="th-inner">Predicted Next <span class="sort-ind"></span></span><em class="info-i" data-tip="Hyperliquid's estimate of the next hourly funding payment.">i</em>
+          </th>
+          <th class="sort-th" data-col="avgRate24h">
+            <span class="th-inner">24h Avg <span class="sort-ind"></span></span><em class="info-i" data-tip="Average rate over the last 24 hours — shows the recent trend.">i</em>
+          </th>
+          <th class="sort-th" data-col="nextFundingMs">
+            <span class="th-inner">Next Funding <span class="sort-ind"></span></span><em class="info-i" data-tip="Countdown to the next payment (Hyperliquid pays hourly).">i</em>
+          </th>
+          <th>Sparkline</th>
+          <th>
+            Attractiveness<em class="info-i" data-tip="Combined signal: green = stable positive funding, amber = positive but choppy, red = negative or unreliable.">i</em>
+          </th>
+          <th style="text-align:center">Select</th>
+        </tr>
       </thead>
-      <tbody>
-        <% const labels = ['RSI', 'MACD', 'Bollinger Bands', 'Volume']; %>
-        <% const votes = Array.isArray(s.state.votes) ? s.state.votes : []; %>
-        <% for (let i = 0; i < labels.length; i++) { %>
-          <tr>
-            <td><%= labels[i] %></td>
-            <td>
-              <% const v = votes[i] || 'neutral'; %>
-              <span class="badge badge-<%= v === 'long' ? 'info' : v === 'short' ? 'error' : 'warn' %>">
-                <%= v %>
-              </span>
-            </td>
-          </tr>
-        <% } %>
+      <tbody id="fund-tbody">
+        <tr><td colspan="9" class="empty">Loading funding rates…</td></tr>
       </tbody>
     </table>
   </div>
 
-  <% } else if (s.name === 'funding-rate') { %>
-  <div class="grid">
-    <div class="card">
-      <div class="card-label">Signals</div>
-      <div class="card-value"><%= s.state.signalCount ?? 0 %></div>
-      <div class="card-sub">generated this session</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Current Rate</div>
-      <div class="card-value mono">
-        <% if (s.state.currentRate !== null && s.state.currentRate !== undefined) { %>
-          <span class="<%= Number(s.state.currentRate) > 0.0003 ? 'text-red' : Number(s.state.currentRate) < 0 ? 'text-green' : '' %>">
-            <%= (Number(s.state.currentRate) * 100).toFixed(4) %>%
-          </span>
-        <% } else { %>
-          <span class="text-muted">—</span>
-        <% } %>
-      </div>
-      <div class="card-sub">per hour</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Predicted Rate</div>
-      <div class="card-value mono">
-        <% if (s.state.predictedRate !== null && s.state.predictedRate !== undefined) { %>
-          <span class="<%= Number(s.state.predictedRate) > 0.0003 ? 'text-red' : Number(s.state.predictedRate) < 0 ? 'text-green' : '' %>">
-            <%= (Number(s.state.predictedRate) * 100).toFixed(4) %>%
-          </span>
-        <% } else { %>
-          <span class="text-muted">—</span>
-        <% } %>
-      </div>
-      <div class="card-sub">next payment</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Annualized</div>
-      <div class="card-value mono">
-        <% if (s.state.annualizedPct !== null && s.state.annualizedPct !== undefined) { %>
-          <%= Number(s.state.annualizedPct).toFixed(1) %>%
-        <% } else { %>
-          <span class="text-muted">—</span>
-        <% } %>
-      </div>
-      <div class="card-sub">per year</div>
-    </div>
-  </div>
-
-  <% if (s.state.nextFundingTime) { %>
-  <p class="text-muted" style="font-size:12px;margin-top:0.75rem">
-    Next funding: <%= new Date(Number(s.state.nextFundingTime)).toLocaleTimeString() %>
-    &nbsp;·&nbsp;
-    Updated: <%= s.state.lastUpdated ? new Date(s.state.lastUpdated).toLocaleTimeString() : '—' %>
-  </p>
-  <% } %>
-
-  <% } else { %>
-  <div class="card">
-    <div class="card-label"><%= s.name %></div>
-    <div class="card-sub">No state available</div>
-  </div>
-  <% } %>
-
-<% } %>
-
 </div>
 
-<script>setTimeout(() => location.reload(), 15000)</script>
+<script>
+(function () {
+  'use strict';
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let allData      = [];
+  let sortCol      = 'annualizedRate';
+  let sortDir      = -1;          // -1 desc, 1 asc
+  let selCoin      = null;
+  let nextFundBase = 0;
+  let lastRefresh  = 0;
+  const sparkCache = {};          // coin → { rates, times }
+  let cdTimer      = null;
+
+  // ── Elements ──────────────────────────────────────────────────────────────
+  const tbody      = document.getElementById('fund-tbody');
+  const calcCoin   = document.getElementById('calc-coin');
+  const calcAmt    = document.getElementById('calc-amount');
+  const cHr        = document.getElementById('c-hr');
+  const cDy        = document.getElementById('c-dy');
+  const cYr        = document.getElementById('c-yr');
+  const refreshLbl = document.getElementById('refresh-lbl');
+  const tipBox     = document.getElementById('tip-box');
+
+  // ── Tooltips (position:fixed, works inside overflow containers) ───────────
+  document.querySelectorAll('.info-i[data-tip]').forEach(el => {
+    el.addEventListener('click', e => e.stopPropagation());
+    el.addEventListener('mouseenter', () => {
+      tipBox.textContent = el.dataset.tip;
+      tipBox.style.display = 'block';
+      posTip(el);
+    });
+    el.addEventListener('mouseleave', () => { tipBox.style.display = 'none'; });
+  });
+
+  function posTip(el) {
+    const r  = el.getBoundingClientRect();
+    const tw = tipBox.offsetWidth;
+    const th = tipBox.offsetHeight;
+    let left = r.left + r.width / 2 - tw / 2;
+    let top  = r.bottom + 7;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (left < 6) left = 6;
+    if (left + tw > vw - 6) left = vw - tw - 6;
+    if (top + th > vh - 6) top = r.top - th - 7;
+    tipBox.style.left = left + 'px';
+    tipBox.style.top  = top  + 'px';
+  }
+
+  // ── Formatters ────────────────────────────────────────────────────────────
+  function fmtRate(r) { return (r * 100).toFixed(4) + '%'; }
+
+  function fmtAnn(r) {
+    const p = r * 100;
+    return (p >= 100 ? p.toFixed(1) : p.toFixed(2)) + '%';
+  }
+
+  function fmtMs(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
+  }
+
+  function fmtUSD(n) {
+    const abs = Math.abs(n);
+    const s = abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (n < 0 ? '-$' : '$') + s;
+  }
+
+  function rClr(r) { return r >= 0 ? 'text-green' : 'text-red'; }
+
+  function attrCls(a) {
+    return a === 'green' ? 'attr-green' : a === 'amber' ? 'attr-amber' : 'attr-red';
+  }
+  function attrLbl(a) {
+    return a === 'green' ? 'Stable' : a === 'amber' ? 'Choppy' : 'Avoid';
+  }
+
+  // ── Calculator ────────────────────────────────────────────────────────────
+  function updateCalc() {
+    if (!selCoin || !allData.length) return;
+    const coin = allData.find(d => d.coin === selCoin);
+    if (!coin) return;
+    const notional = Math.max(0, parseFloat(calcAmt.value) || 0);
+    const fee    = notional * 0.0018;
+    const hourly = notional * coin.currentRate;
+    const daily  = hourly * 24;
+    const annual = daily * 365 - fee;
+    cHr.textContent = fmtUSD(hourly); cHr.className = 'calc-val ' + rClr(hourly);
+    cDy.textContent = fmtUSD(daily);  cDy.className = 'calc-val ' + rClr(daily);
+    cYr.textContent = fmtUSD(annual); cYr.className = 'calc-val ' + rClr(annual);
+  }
+
+  // ── Sort ──────────────────────────────────────────────────────────────────
+  function getSorted() {
+    return allData.slice().sort((a, b) => ((a[sortCol] || 0) - (b[sortCol] || 0)) * sortDir);
+  }
+
+  function updateSortUI() {
+    document.querySelectorAll('th.sort-th').forEach(th => {
+      const active = th.dataset.col === sortCol;
+      th.classList.toggle('sort-active', active);
+      th.classList.toggle('sort-asc',    active && sortDir === 1);
+      th.classList.toggle('sort-desc',   active && sortDir === -1);
+    });
+  }
+
+  document.querySelectorAll('th.sort-th').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = -1; }
+      updateSortUI();
+      renderTable();
+    });
+  });
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderTable() {
+    const data = getSorted();
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">No data.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.map(item => {
+      const sel = item.coin === selCoin;
+      return `<tr class="fund-row${sel ? ' row-sel' : ''}" data-coin="${item.coin}">
+        <td class="coin-td">${item.coin}</td>
+        <td class="mono ${rClr(item.currentRate)}">${fmtRate(item.currentRate)}</td>
+        <td class="mono ${rClr(item.annualizedRate)}">${fmtAnn(item.annualizedRate)}</td>
+        <td class="mono ${rClr(item.predictedNextRate)}">${fmtRate(item.predictedNextRate)}</td>
+        <td class="mono ${rClr(item.avgRate24h)}">${fmtRate(item.avgRate24h)}</td>
+        <td class="mono countdown-cell">${fmtMs(item.nextFundingMs)}</td>
+        <td><svg class="sparkline" data-coin="${item.coin}" width="80" height="20" viewBox="0 0 80 20"><text x="40" y="13" text-anchor="middle" font-size="9" fill="var(--muted)">…</text></svg></td>
+        <td><span class="attr-pill ${attrCls(item.attractiveness)}">${attrLbl(item.attractiveness)}</span></td>
+        <td style="text-align:center"><input type="radio" name="coin-sel" class="coin-radio" value="${item.coin}"${sel ? ' checked' : ''}></td>
+      </tr>`;
+    }).join('');
+
+    // Row click → select coin
+    tbody.querySelectorAll('.fund-row').forEach(row => {
+      row.addEventListener('click', e => {
+        if (e.target && e.target.type === 'radio') return;
+        selectCoin(row.dataset.coin);
+      });
+    });
+    tbody.querySelectorAll('.coin-radio').forEach(radio => {
+      radio.addEventListener('change', () => { if (radio.checked) selectCoin(radio.value); });
+    });
+
+    // Sparklines: draw from cache or lazy-load
+    data.forEach((item, i) => {
+      if (sparkCache[item.coin]) {
+        drawSparkline(item.coin);
+      } else {
+        setTimeout(() => loadSparkline(item.coin), i * 50);
+      }
+    });
+  }
+
+  function selectCoin(coin) {
+    selCoin = coin;
+    calcCoin.value = coin;
+    tbody.querySelectorAll('.fund-row').forEach(r => {
+      const match = r.dataset.coin === coin;
+      r.classList.toggle('row-sel', match);
+      const radio = r.querySelector('.coin-radio');
+      if (radio) radio.checked = match;
+    });
+    updateCalc();
+  }
+
+  // ── Sparklines ────────────────────────────────────────────────────────────
+  async function loadSparkline(coin) {
+    if (sparkCache[coin]) { drawSparkline(coin); return; }
+    try {
+      const resp = await fetch('/api/funding/history/' + encodeURIComponent(coin));
+      if (!resp.ok) return;
+      sparkCache[coin] = await resp.json();
+      drawSparkline(coin);
+    } catch (_) {}
+  }
+
+  function drawSparkline(coin) {
+    const hist = sparkCache[coin];
+    if (!hist || !hist.rates || hist.rates.length < 2) return;
+    const svg = document.querySelector(`svg.sparkline[data-coin="${coin}"]`);
+    if (!svg) return;
+    const rates = hist.rates;
+    const W = 80, H = 20;
+    const mn  = Math.min(...rates);
+    const mx  = Math.max(...rates);
+    const rng = mx - mn || 1e-10;
+    const avg = rates.reduce((s, r) => s + r, 0) / rates.length;
+    const pts = rates.map((r, i) =>
+      `${((i / (rates.length - 1)) * W).toFixed(1)},${(H - 2 - ((r - mn) / rng) * (H - 4)).toFixed(1)}`
+    ).join(' ');
+    const clr = avg >= 0 ? 'var(--blue)' : 'var(--red)';
+    const tip = `Min: ${fmtRate(mn)} | Max: ${fmtRate(mx)} | Avg: ${fmtRate(avg)}`;
+    svg.innerHTML = `<title>${tip}</title><polyline points="${pts}" fill="none" stroke="${clr}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+
+  // ── Countdown + refresh label ─────────────────────────────────────────────
+  function startCountdown() {
+    clearInterval(cdTimer);
+    cdTimer = setInterval(() => {
+      const ms = nextFundBase - Date.now();
+      document.querySelectorAll('.countdown-cell').forEach(c => { c.textContent = fmtMs(ms); });
+      if (lastRefresh) {
+        const sAgo  = Math.floor((Date.now() - lastRefresh) / 1000);
+        const sNext = Math.max(0, 60 - sAgo);
+        refreshLbl.textContent = `Updated ${sAgo}s ago · refreshes in ${sNext}s`;
+      }
+    }, 1000);
+  }
+
+  // ── Load data ─────────────────────────────────────────────────────────────
+  async function loadData() {
+    try {
+      const resp = await fetch('/api/funding/top');
+      if (!resp.ok) throw new Error(resp.statusText);
+      allData     = await resp.json();
+      lastRefresh = Date.now();
+      if (allData.length) nextFundBase = Date.now() + allData[0].nextFundingMs;
+
+      // Sync coin dropdown
+      calcCoin.innerHTML = allData.map(d =>
+        `<option value="${d.coin}">${d.coin}</option>`
+      ).join('');
+
+      if (!selCoin || !allData.find(d => d.coin === selCoin)) {
+        selCoin = allData[0]?.coin ?? null;
+      }
+      if (selCoin) calcCoin.value = selCoin;
+
+      renderTable();
+      updateCalc();
+      refreshLbl.textContent = 'Updated just now';
+    } catch (err) {
+      refreshLbl.textContent = 'Error: ' + err.message;
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">Failed to load: ${err.message}</td></tr>`;
+    }
+  }
+
+  // ── Input events ──────────────────────────────────────────────────────────
+  calcCoin.addEventListener('change', () => {
+    selCoin = calcCoin.value;
+    tbody.querySelectorAll('.fund-row').forEach(r => {
+      const match = r.dataset.coin === selCoin;
+      r.classList.toggle('row-sel', match);
+      const radio = r.querySelector('.coin-radio');
+      if (radio) radio.checked = match;
+    });
+    updateCalc();
+  });
+  calcAmt.addEventListener('input', updateCalc);
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  updateSortUI();
+  loadData();
+  startCountdown();
+  setInterval(loadData, 60_000);
+
+})();
+</script>
+
 </body>
 </html>

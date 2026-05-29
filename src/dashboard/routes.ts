@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { RSI } from "technicalindicators";
-import { config, coins } from "../config.js";
+import { config, coins, API_URL } from "../config.js";
 import { runBacktest, fetchCandles, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
 import { CANDLE_STRATEGIES, STRATEGY_REGISTRY } from "../strategy/registry.js";
 import type { Logger } from "../logger.js";
@@ -9,6 +9,112 @@ import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
 import type { LaneManager, LanesFile } from "../lane-manager.js";
+
+// ── Funding rate cache & helpers ─────────────────────────────────────────────
+
+const HL_INFO_ENDPOINT = `${API_URL}/info`;
+
+interface CachedFundingItem {
+  coin: string;
+  currentRate: number;
+  annualizedRate: number;
+  predictedNextRate: number;
+  avgRate24h: number;
+  attractiveness: "green" | "amber" | "red";
+  volume24h: number;
+}
+
+interface FundingHistEntry {
+  rates: number[];
+  times: number[];
+  expiresAt: number;
+}
+
+let fundingTopCache: { items: CachedFundingItem[]; expiresAt: number } | null = null;
+const fundingHistCache = new Map<string, FundingHistEntry>();
+
+async function hlPost<T>(body: Record<string, unknown>): Promise<T> {
+  const resp = await fetch(HL_INFO_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`HL API ${resp.status}: ${resp.statusText}`);
+  return resp.json() as Promise<T>;
+}
+
+async function getCoinHistory(coin: string): Promise<{ rates: number[]; times: number[] }> {
+  const now = Date.now();
+  const cached = fundingHistCache.get(coin);
+  if (cached && cached.expiresAt > now) return { rates: cached.rates, times: cached.times };
+
+  type HistRecord = { fundingRate: string; time: number };
+  const records = await hlPost<HistRecord[]>({
+    type: "fundingHistory",
+    coin,
+    startTime: now - 7 * 24 * 3_600_000,
+  });
+  const rates = records.map((r) => parseFloat(r.fundingRate));
+  const times = records.map((r) => Number(r.time));
+  fundingHistCache.set(coin, { rates, times, expiresAt: now + 3_600_000 });
+  return { rates, times };
+}
+
+function computeAttractiveness(rates: number[]): "green" | "amber" | "red" {
+  if (rates.length === 0) return "red";
+  const avg = rates.reduce((s, r) => s + r, 0) / rates.length;
+  const negFrac = rates.filter((r) => r < 0).length / rates.length;
+  if (avg <= 0 || negFrac > 0.4) return "red";
+  const absRates = rates.map(Math.abs).sort((a, b) => a - b);
+  const median = absRates[Math.floor(absRates.length / 2)];
+  const hasSpike = median > 0 && rates.some((r) => Math.abs(r) > 5 * median);
+  if (avg > 0.00005 && negFrac < 0.2 && !hasSpike) return "green";
+  return "amber";
+}
+
+async function buildFundingTop(): Promise<CachedFundingItem[]> {
+  type UniverseItem = { name: string };
+  type AssetCtxItem = { funding: string; dayNtlVlm: string; premium: string };
+  const [meta, ctxs] = await hlPost<[{ universe: UniverseItem[] }, AssetCtxItem[]]>({
+    type: "metaAndAssetCtxs",
+  });
+
+  const pairs = meta.universe
+    .map((u, i) => ({ name: u.name, ctx: ctxs[i] }))
+    .filter((p) => p.ctx)
+    .sort((a, b) => parseFloat(b.ctx.dayNtlVlm) - parseFloat(a.ctx.dayNtlVlm))
+    .slice(0, 25);
+
+  const settled = await Promise.allSettled(
+    pairs.map(async ({ name, ctx }): Promise<CachedFundingItem> => {
+      const currentRate = parseFloat(ctx.funding);
+      const premium = parseFloat(ctx.premium);
+      const predictedNextRate = Math.min(0.0005, Math.max(-0.0005, premium)) + 0.0001;
+      const annualizedRate = Math.pow(1 + currentRate, 8760) - 1;
+
+      const { rates } = await getCoinHistory(name).catch(() => ({ rates: [] as number[], times: [] as number[] }));
+      const last24h = rates.slice(-24);
+      const avgRate24h =
+        last24h.length > 0 ? last24h.reduce((s, r) => s + r, 0) / last24h.length : currentRate;
+
+      return {
+        coin: name,
+        currentRate,
+        annualizedRate,
+        predictedNextRate,
+        avgRate24h,
+        attractiveness: computeAttractiveness(rates),
+        volume24h: parseFloat(ctx.dayNtlVlm),
+      };
+    }),
+  );
+
+  return settled
+    .filter((r): r is PromiseFulfilledResult<CachedFundingItem> => r.status === "fulfilled")
+    .map((r) => r.value);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function formatUptime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -112,6 +218,34 @@ export function createRouter(
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ── Funding dashboard API ────────────────────────────────────────────────
+
+  router.get("/api/funding/top", async (_req, res) => {
+    try {
+      const now = Date.now();
+      if (!fundingTopCache || fundingTopCache.expiresAt <= now) {
+        fundingTopCache = { items: await buildFundingTop(), expiresAt: now + 30_000 };
+      }
+      // nextFundingMs computed fresh per response so countdown is always accurate
+      const nextFundingMs = Math.ceil((now + 1000) / 3_600_000) * 3_600_000 - now;
+      res.json(fundingTopCache.items.map((item) => ({ ...item, nextFundingMs })));
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("[funding/top]", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  router.get("/api/funding/history/:coin", async (req, res) => {
+    try {
+      const coin = req.params.coin.toUpperCase();
+      res.json(await getCoinHistory(coin));
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      res.status(500).json({ error: error.message });
     }
   });
 
