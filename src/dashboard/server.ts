@@ -106,7 +106,7 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
 
   const app = express();
   app.set("view engine", "ejs");
-  app.set("views", join(__dirname, "views"));
+  app.set("views", join(__dirname, "../../src/dashboard/views"));
   app.use(express.json());
 
   app.use("/", createRouter(logger, state, strategies, feed, executor, laneManager));
