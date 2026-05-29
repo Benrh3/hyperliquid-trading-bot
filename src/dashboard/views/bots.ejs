@@ -1,0 +1,625 @@
+<%- include('_head', { title: 'Bots' }) %>
+
+<style>
+  :root { --amber: #d29922; }
+
+  .bots-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1.5rem 1.5rem 4rem;
+  }
+
+  /* ── Page header ── */
+  .bots-page-hdr {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;
+  }
+  .bots-page-hdr h1 { font-size: 1.1rem; font-weight: 600; }
+  .hdr-right { display: flex; align-items: center; gap: 1rem; }
+  #refresh-badge { font-size: 11px; color: var(--muted); }
+
+  /* ── Grid ── */
+  .bots-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 1rem;
+  }
+
+  /* ── Bot card ── */
+  .bot-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .bot-card.paused { opacity: 0.65; }
+
+  .bc-header {
+    padding: 0.6rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.4rem;
+    flex-wrap: wrap; row-gap: 0.25rem;
+  }
+  .bc-name { font-size: 13px; font-weight: 600; }
+  .bc-coin {
+    font-size: 10px; font-weight: 600; font-family: monospace;
+    color: var(--blue); border: 1px solid var(--blue);
+    padding: 1px 5px; border-radius: 3px;
+  }
+  .bc-tf {
+    font-size: 10px; color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 3px;
+  }
+  .bc-live { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--green); }
+  .bc-status {
+    margin-left: auto; font-size: 10px; font-weight: 600;
+    letter-spacing: .03em; padding: 2px 7px; border-radius: 99px;
+  }
+  .bc-status.running { background: rgba(63,185,80,0.15);   color: var(--green); }
+  .bc-status.paused  { background: rgba(139,148,158,0.15); color: var(--muted); }
+
+  .bc-body {
+    padding: 0.7rem 0.875rem;
+    display: flex; flex-direction: column; gap: 0.28rem;
+    flex: 1;
+  }
+  .bc-row {
+    display: flex; justify-content: space-between;
+    align-items: baseline; font-size: 12px;
+  }
+  .bc-lbl { color: var(--muted); }
+  .bc-val {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-variant-numeric: tabular-nums; font-size: 12px;
+  }
+
+  .pos-badge {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 1px 7px; border-radius: 3px; letter-spacing: .02em;
+  }
+  .pos-long    { background: rgba(63,185,80,0.15);   color: var(--green); }
+  .pos-short   { background: rgba(248,81,73,0.15);   color: var(--red); }
+  .pos-flat    { background: rgba(139,148,158,0.12); color: var(--muted); }
+  .pos-neutral { background: rgba(88,166,255,0.15);  color: var(--blue); }
+
+  .pnl-pos { color: var(--green); }
+  .pnl-neg { color: var(--red); }
+
+  .bc-divider { height: 1px; background: var(--border); margin: 0.4rem 0; }
+
+  .bc-footer {
+    padding: 0.55rem 0.875rem;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 0.5rem; align-items: center;
+  }
+  .bc-btn {
+    font-size: 11px; font-weight: 500;
+    border: 1px solid var(--border);
+    background: transparent; color: var(--text);
+    border-radius: 4px; padding: 0.3rem 0.75rem;
+    cursor: pointer; transition: background 0.1s, color 0.1s;
+  }
+  .bc-btn:hover { background: var(--border); }
+  .bc-btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .bc-btn.primary:hover { opacity: 0.85; }
+  .bc-btn.danger { color: var(--red); border-color: transparent; }
+  .bc-btn.danger:hover { background: rgba(248,81,73,0.12); border-color: var(--red); }
+  .bc-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .bots-empty {
+    grid-column: 1/-1; padding: 3rem 0;
+    text-align: center; color: var(--muted); font-size: 13px;
+  }
+
+  /* ── Modal ── */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 200;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 100%; max-width: 420px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+    display: flex; flex-direction: column;
+  }
+  .modal-hdr {
+    padding: 1rem 1.25rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-hdr h2 { font-size: 14px; font-weight: 600; margin: 0; }
+  .modal-x {
+    background: none; border: none; color: var(--muted);
+    font-size: 20px; cursor: pointer; line-height: 1; padding: 2px 5px;
+    border-radius: 3px;
+  }
+  .modal-x:hover { color: var(--text); background: var(--border); }
+  .modal-body { padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+  .modal-ftr {
+    padding: 0.875rem 1.25rem;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: flex-end; gap: 0.5rem;
+  }
+
+  /* Form fields */
+  .m-field { display: flex; flex-direction: column; gap: 0.3rem; }
+  .m-label { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .m-sel, .m-inp {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px;
+    padding: 0.42rem 0.7rem; border-radius: 4px;
+    transition: border-color 0.1s;
+  }
+  .m-sel {
+    appearance: none; cursor: pointer;
+    padding-right: 1.8rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 7px center;
+  }
+  .m-sel:focus, .m-inp:focus { outline: none; border-color: var(--blue); }
+  .m-sel:disabled, .m-inp:disabled { opacity: 0.45; cursor: default; }
+
+  .m-pfx-wrap { display: flex; }
+  .m-pfx {
+    background: rgba(139,148,158,0.08);
+    border: 1px solid var(--border); border-right: none;
+    border-radius: 4px 0 0 4px;
+    padding: 0.42rem 0.6rem; font-size: 13px; color: var(--muted);
+    line-height: 1.6;
+  }
+  .m-pfx + .m-inp { border-radius: 0 4px 4px 0; width: 100%; }
+
+  .m-hint { font-size: 11px; color: var(--muted); margin: 0; line-height: 1.4; }
+  .m-warn { font-size: 11px; color: var(--amber);  margin: 0; }
+  .m-err  { font-size: 12px; color: var(--red);    margin: 0; }
+
+  .live-row {
+    display: flex; align-items: center;
+    justify-content: space-between; gap: 1rem;
+  }
+  .live-row-text .m-label { display: block; margin-bottom: 2px; }
+
+  /* Toggle (reused from settings) */
+  .toggle {
+    position: relative; width: 36px; height: 20px;
+    cursor: pointer; display: inline-block; flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .toggle-slider {
+    position: absolute; inset: 0;
+    background: var(--border); border-radius: 20px; transition: background 0.15s;
+  }
+  .toggle-slider::after {
+    content: ""; position: absolute;
+    width: 14px; height: 14px; background: #fff;
+    border-radius: 50%; top: 3px; left: 3px; transition: transform 0.15s;
+  }
+  .toggle input:checked + .toggle-slider { background: var(--green); }
+  .toggle input:checked + .toggle-slider::after { transform: translateX(16px); }
+  .toggle input:disabled + .toggle-slider { opacity: 0.35; cursor: default; }
+</style>
+
+<nav class="nav">
+  <a href="/" class="nav-brand">HL Bot</a>
+  <button class="hamburger" id="nav-hamburger" aria-label="Menu">&#9776;</button>
+  <div class="nav-links" id="nav-links">
+    <a href="/" class="nav-link">Overview</a>
+    <a href="/strategies" class="nav-link">Strategies</a>
+    <a href="/bots" class="nav-link active">Bots</a>
+    <a href="/trades" class="nav-link">Trades</a>
+    <a href="/backtest" class="nav-link">Backtest</a>
+    <a href="/learn" class="nav-link">Learn</a>
+    <a href="/settings" class="nav-link">Settings</a>
+  </div>
+  <div class="nav-right">
+    <span class="dot"></span>
+    <span class="badge badge-net"><%= network %></span>
+    <span class="text-muted"><%= coin %></span>
+    <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
+  </div>
+</nav>
+
+<!-- ── Add Bot Modal ────────────────────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal" style="display:none" role="dialog"
+     aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2 id="modal-title">Add Bot</h2>
+      <button class="modal-x" id="modal-x" aria-label="Close">&#215;</button>
+    </div>
+
+    <div class="modal-body">
+
+      <div class="m-field">
+        <label class="m-label" for="m-strategy">Strategy</label>
+        <select class="m-sel" id="m-strategy">
+          <% for (const e of registry.filter(r => r.isCandleStrategy)) { %>
+            <option value="<%= e.id %>"><%= e.displayName %></option>
+          <% } %>
+        </select>
+      </div>
+
+      <div class="m-field">
+        <label class="m-label" for="m-coin">Coin</label>
+        <select class="m-sel" id="m-coin">
+          <option value="" disabled selected>Loading top coins…</option>
+        </select>
+        <p class="m-hint" id="m-coin-hint"></p>
+      </div>
+
+      <div class="m-field">
+        <label class="m-label" for="m-tf">Timeframe</label>
+        <select class="m-sel" id="m-tf">
+          <option value="1m">1m</option>
+          <option value="1h" selected>1h</option>
+          <option value="4h">4h</option>
+        </select>
+      </div>
+
+      <div class="m-field">
+        <label class="m-label" for="m-equity">Starting equity</label>
+        <div class="m-pfx-wrap">
+          <span class="m-pfx">$</span>
+          <input class="m-inp" id="m-equity" type="number" min="1" step="100" value="1000">
+        </div>
+      </div>
+
+      <div class="m-field">
+        <div class="live-row">
+          <div class="live-row-text">
+            <label class="m-label">Live mode</label>
+            <p class="m-hint">Places real testnet orders for this bot</p>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="m-live">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p class="m-warn" id="m-live-warn" style="display:none"></p>
+      </div>
+
+      <p class="m-err" id="m-err" style="display:none"></p>
+
+    </div>
+
+    <div class="modal-ftr">
+      <button class="bc-btn" id="modal-cancel">Cancel</button>
+      <button class="bc-btn primary" id="modal-submit">Add Bot</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Page ── -->
+<div class="bots-page">
+  <div class="bots-page-hdr">
+    <h1>Bots</h1>
+    <div class="hdr-right">
+      <span id="refresh-badge">Loading…</span>
+      <button class="bc-btn primary" id="btn-add-bot">+ Add Bot</button>
+    </div>
+  </div>
+  <div class="bots-grid" id="bots-grid">
+    <div class="bots-empty">Loading bots…</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let allBots   = [];      // most recent /api/bots response (used by modal)
+  let topCoins  = [];      // cached /api/funding/top response
+  let lastFetch = 0;
+
+  // ── Elements ─────────────────────────────────────────────────────────────
+  const grid    = document.getElementById('bots-grid');
+  const badge   = document.getElementById('refresh-badge');
+  const modal   = document.getElementById('modal');
+  const mCoin   = document.getElementById('m-coin');
+  const mLive   = document.getElementById('m-live');
+  const mLiveW  = document.getElementById('m-live-warn');
+  const mCoinH  = document.getElementById('m-coin-hint');
+  const mErr    = document.getElementById('m-err');
+  const mSubmit = document.getElementById('modal-submit');
+
+  // ── Formatters ────────────────────────────────────────────────────────────
+  function fmtPrice(n) {
+    if (!n) return '—';
+    return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtPnl(n) {
+    if (n === null || n === undefined) return '—';
+    return (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
+  }
+  function fmtPct(n) {
+    if (!n && n !== 0) return '';
+    return (n >= 0 ? '+' : '') + n.toFixed(3) + '%';
+  }
+  function fmtRate(r) {
+    return (r !== null && r !== undefined) ? (r * 100).toFixed(4) + '%/hr' : '—';
+  }
+  function timeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60)  return s + 's ago';
+    const m = Math.floor(s / 60);
+    if (m < 60)  return m + 'm ago';
+    const h = Math.floor(m / 60);
+    if (h < 24)  return h + 'h ago';
+    return Math.floor(h / 24) + 'd ago';
+  }
+  function timeSince(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm';
+    return s + 's';
+  }
+  function pnlCls(n) { return n >= 0 ? 'pnl-pos' : 'pnl-neg'; }
+
+  // ── Render cards ──────────────────────────────────────────────────────────
+  function renderBot(b) {
+    const pos      = b.position;
+    const hasPos   = pos && pos.side !== 'neutral' && pos.entryPrice > 0;
+    const isNeutral = pos && pos.side === 'neutral';
+
+    let posBadge;
+    if (isNeutral) {
+      posBadge = '<span class="pos-badge pos-neutral">NEUTRAL</span>';
+    } else if (hasPos) {
+      const cls = pos.side === 'long' ? 'pos-long' : 'pos-short';
+      posBadge  = `<span class="pos-badge ${cls}">${pos.side.toUpperCase()}</span>`;
+    } else {
+      posBadge = '<span class="pos-badge pos-flat">FLAT</span>';
+    }
+
+    let upnlHtml = '<span class="text-muted">—</span>';
+    if (hasPos || isNeutral) {
+      const upnl    = b.unrealisedPnl;
+      const notional = pos ? pos.size * pos.entryPrice : 0;
+      const upnlPct  = notional > 0 ? (upnl / notional) * 100 : 0;
+      upnlHtml = `<span class="${pnlCls(upnl)}">${fmtPnl(upnl)} <span style="font-size:11px">(${fmtPct(upnlPct)})</span></span>`;
+    }
+
+    const entryHtml = hasPos
+      ? `<div class="bc-row"><span class="bc-lbl">Entry</span><span class="bc-val">${fmtPrice(pos.entryPrice)}</span></div>`
+      : '';
+    const timePosHtml = (hasPos || isNeutral)
+      ? `<div class="bc-row"><span class="bc-lbl">Time in pos</span><span class="bc-val">${timeSince(pos.entryTime)}</span></div>`
+      : '';
+
+    const liveBadge   = b.live ? '<span class="bc-live">LIVE</span>' : '';
+    const statusLabel = b.status === 'running' ? 'Running' : 'Paused';
+    const statusCls   = b.status === 'running' ? 'running' : 'paused';
+    const tfBadge     = b.timeframe !== '—' ? `<span class="bc-tf">${b.timeframe}</span>` : '';
+    const isFunding   = b.strategyId === 'funding-basis';
+
+    const pauseBtn = isFunding ? '' : (b.status === 'running'
+      ? `<button class="bc-btn" data-action="pause" data-id="${b.id}">Pause</button>`
+      : `<button class="bc-btn primary" data-action="resume" data-id="${b.id}">Resume</button>`);
+    const deleteBtn = isFunding ? '' :
+      `<button class="bc-btn danger" data-action="delete" data-id="${b.id}" style="margin-left:auto">Delete</button>`;
+
+    return `<div class="bot-card${b.status === 'paused' ? ' paused' : ''}" data-id="${b.id}">
+      <div class="bc-header">
+        <span class="bc-name">${b.displayName}</span>
+        <span class="bc-coin">${b.coin}</span>
+        ${tfBadge}${liveBadge}
+        <span class="bc-status ${statusCls}">${statusLabel}</span>
+      </div>
+      <div class="bc-body">
+        <div class="bc-row"><span class="bc-lbl">Position</span><span class="bc-val">${posBadge}</span></div>
+        ${entryHtml}
+        <div class="bc-row"><span class="bc-lbl">Current price</span><span class="bc-val">${fmtPrice(b.lastPrice)}</span></div>
+        <div class="bc-row"><span class="bc-lbl">Unrealised P&amp;L</span><span class="bc-val">${upnlHtml}</span></div>
+        ${timePosHtml}
+        <div class="bc-divider"></div>
+        <div class="bc-row"><span class="bc-lbl">Session P&amp;L</span><span class="bc-val ${pnlCls(b.sessionPnl)}">${fmtPnl(b.sessionPnl)}</span></div>
+        <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.tradeCount}</span></div>
+        <div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">${fmtRate(b.fundingRate)}</span></div>
+        <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>
+      </div>
+      <div class="bc-footer">${pauseBtn}${deleteBtn}</div>
+    </div>`;
+  }
+
+  function render(bots) {
+    if (!bots.length) {
+      grid.innerHTML = '<div class="bots-empty">No bots yet — click <strong>+ Add Bot</strong> to create one.</div>';
+      return;
+    }
+    grid.innerHTML = bots.map(renderBot).join('');
+
+    grid.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', async function () {
+        const action = this.dataset.action;
+        const id     = this.dataset.id;
+        this.disabled = true;
+        if (action === 'delete') {
+          if (!confirm(`Delete bot "${id}"? This cannot be undone.`)) {
+            this.disabled = false; return;
+          }
+          try { await fetch('/api/bots/' + encodeURIComponent(id), { method: 'DELETE' }); }
+          catch (e) { console.error(e); }
+        } else {
+          try { await fetch('/api/bots/' + encodeURIComponent(id) + '/' + action, { method: 'POST' }); }
+          catch (e) { console.error(e); }
+        }
+        await load();
+      });
+    });
+  }
+
+  // ── Data fetch ────────────────────────────────────────────────────────────
+  async function load() {
+    try {
+      const resp = await fetch('/api/bots');
+      if (!resp.ok) throw new Error(resp.statusText);
+      allBots   = await resp.json();
+      lastFetch = Date.now();
+      render(allBots);
+      badge.textContent = 'Updated just now';
+    } catch (err) {
+      badge.textContent = 'Error: ' + err.message;
+    }
+  }
+
+  // ── Modal: coin list (prefetched, cached) ─────────────────────────────────
+  let coinsLoading = false;
+  async function ensureTopCoins() {
+    if (topCoins.length > 0 || coinsLoading) return;
+    coinsLoading = true;
+    try {
+      const resp = await fetch('/api/funding/top');
+      if (!resp.ok) return;
+      topCoins = await resp.json();
+    } catch (_) {
+    } finally {
+      coinsLoading = false;
+    }
+  }
+
+  function populateCoinDropdown() {
+    if (!topCoins.length) {
+      mCoin.innerHTML = '<option value="" disabled selected>Failed to load — type a coin symbol</option>';
+      // Allow free text by switching to a text input? No — keep select but add manual fallback
+      return;
+    }
+    mCoin.innerHTML = topCoins.map(c =>
+      `<option value="${c.coin}">${c.coin} · ${(c.annualizedRate * 100).toFixed(1)}% ann · $${(c.volume24h / 1e9).toFixed(1)}B vol</option>`
+    ).join('');
+    mCoin.value = topCoins[0]?.coin ?? '';
+    updateCoinHint();
+    checkLiveConflict();
+  }
+
+  function updateCoinHint() {
+    const coin = mCoin.value;
+    const data = topCoins.find(c => c.coin === coin);
+    if (data) {
+      mCoinH.textContent = `Current: ${(data.currentRate * 100).toFixed(4)}%/hr  ·  24h avg: ${(data.avgRate24h * 100).toFixed(4)}%/hr`;
+    } else {
+      mCoinH.textContent = '';
+    }
+  }
+
+  // ── Modal: live-conflict guard ────────────────────────────────────────────
+  function checkLiveConflict() {
+    const coin      = mCoin.value;
+    const hasLive   = allBots.some(b => b.coin === coin && b.live && b.status === 'running');
+    mLive.disabled  = hasLive;
+    if (hasLive) {
+      mLive.checked      = false;
+      mLiveW.textContent = `${coin} already has a live bot — only one per coin.`;
+      mLiveW.style.display = 'block';
+    } else {
+      mLiveW.style.display = 'none';
+    }
+  }
+
+  // ── Modal: open / close ───────────────────────────────────────────────────
+  async function openModal() {
+    mErr.style.display    = 'none';
+    mLiveW.style.display  = 'none';
+    mCoinH.textContent    = '';
+    mLive.checked         = false;
+    mLive.disabled        = false;
+    document.getElementById('m-equity').value = '1000';
+
+    modal.style.display = 'flex';
+    document.getElementById('m-strategy').focus();
+
+    if (topCoins.length > 0) {
+      populateCoinDropdown();
+    } else {
+      mCoin.innerHTML = '<option value="" disabled selected>Loading…</option>';
+      await ensureTopCoins();
+      populateCoinDropdown();
+    }
+  }
+
+  function closeModal() {
+    modal.style.display = 'none';
+    mSubmit.disabled    = false;
+    mErr.style.display  = 'none';
+  }
+
+  // ── Modal: submit ─────────────────────────────────────────────────────────
+  async function submitModal() {
+    const strategyId     = document.getElementById('m-strategy').value;
+    const coin           = mCoin.value;
+    const timeframe      = document.getElementById('m-tf').value;
+    const startingEquity = parseFloat(document.getElementById('m-equity').value) || 1000;
+    const live           = mLive.checked && !mLive.disabled;
+
+    mErr.style.display = 'none';
+    if (!coin) {
+      mErr.textContent   = 'Select a coin.';
+      mErr.style.display = 'block';
+      return;
+    }
+
+    mSubmit.disabled       = true;
+    mSubmit.textContent    = 'Adding…';
+
+    try {
+      const resp = await fetch('/api/bots', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ strategyId, coin, timeframe, live, startingEquity }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || resp.statusText);
+      closeModal();
+      await load();
+    } catch (err) {
+      mErr.textContent   = err.message;
+      mErr.style.display = 'block';
+    } finally {
+      mSubmit.disabled    = false;
+      mSubmit.textContent = 'Add Bot';
+    }
+  }
+
+  // ── Event wiring ──────────────────────────────────────────────────────────
+  document.getElementById('btn-add-bot').addEventListener('click', openModal);
+  document.getElementById('modal-x').addEventListener('click', closeModal);
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+  mSubmit.addEventListener('click', submitModal);
+  mCoin.addEventListener('change', () => { updateCoinHint(); checkLiveConflict(); });
+
+  // Close on backdrop click (not on modal box itself)
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+  // Close on Escape
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
+  });
+
+  // ── Ticker ────────────────────────────────────────────────────────────────
+  setInterval(() => {
+    if (lastFetch) {
+      const s = Math.floor((Date.now() - lastFetch) / 1000);
+      badge.textContent = 'Updated ' + s + 's ago';
+    }
+  }, 1000);
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  load();
+  setInterval(load, 4000);
+  ensureTopCoins(); // prefetch so modal opens instantly
+
+})();
+</script>
+
+</body>
+</html>

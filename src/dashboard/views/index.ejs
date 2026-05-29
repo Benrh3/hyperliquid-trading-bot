@@ -207,6 +207,7 @@
   <div class="nav-links" id="nav-links">
     <a href="/" class="nav-link active">Overview</a>
     <a href="/strategies" class="nav-link">Strategies</a>
+    <a href="/bots" class="nav-link">Bots</a>
     <a href="/trades" class="nav-link">Trades</a>
     <a href="/backtest" class="nav-link">Backtest</a>
     <a href="/learn" class="nav-link">Learn</a>
@@ -302,12 +303,20 @@
     </div>
   </div>
 
-  <!-- Active lanes -->
-  <div class="lanes-section" id="lanes-section">
-    <p class="section-title">Active Lanes</p>
-    <div class="lanes-grid" id="lanes-grid">
-      <span id="lanes-placeholder" class="text-muted">Loading lanes…</span>
-    </div>
+  <!-- Bots teaser -->
+  <div style="margin-bottom:1.5rem">
+    <a href="/bots" style="
+      display:inline-flex;align-items:center;gap:0.5rem;
+      background:var(--surface);border:1px solid var(--border);
+      border-radius:6px;padding:0.6rem 1rem;font-size:13px;
+      color:var(--text);text-decoration:none;
+      transition:border-color 0.1s;
+    " onmouseover="this.style.borderColor='var(--blue)'"
+       onmouseout="this.style.borderColor='var(--border)'">
+      <span id="bots-teaser-count" class="text-muted">—</span>
+      active bot(s) &nbsp;·&nbsp;
+      <span style="color:var(--blue)">View Bots →</span>
+    </a>
   </div>
 
   <!-- Depth chart + order book -->
@@ -984,72 +993,18 @@
     });
   });
 
-  // ── Lane cards ──────────────────────────────────────────────────────────
-  const lanesGrid        = document.getElementById('lanes-grid');
-  const lanesPlaceholder = document.getElementById('lanes-placeholder');
-
-  function fmt(n, dp) { return (n >= 0 ? '+' : '') + n.toFixed(dp); }
-  function fmtUsd(n)   { return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-
-  function renderLanes(lanes) {
-    if (!lanes.length) {
-      lanesGrid.innerHTML = '<span id="lanes-placeholder" class="text-muted">No active lanes — configure them in <a href="/settings">Settings</a>.</span>';
-      return;
-    }
-    lanesGrid.innerHTML = lanes.map(function (l) {
-      const pos = l.position;
-      let posHtml = '<span class="text-muted">—</span>';
-      if (pos) {
-        if (pos.side === 'neutral') {
-          const upnl    = pos.unrealisedPnl ?? 0;
-          const upnlCls = upnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
-          posHtml = '<span style="color:var(--blue)">NEUTRAL</span>'
-            + ' <span class="' + upnlCls + '" style="font-size:11px">(' + fmt(upnl, 2) + ')</span>';
-        } else {
-          const cls     = pos.side === 'long' ? 'lane-pos-long' : 'lane-pos-short';
-          const upnl    = pos.unrealisedPnl ?? 0;
-          const upnlCls = upnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
-          posHtml = '<span class="' + cls + '">' + pos.side.toUpperCase() + '</span>'
-            + ' <span class="' + upnlCls + '" style="font-size:11px">(' + fmt(upnl, 2) + ')</span>';
-        }
-      }
-      const spnlCls  = l.sessionPnl >= 0 ? 'lane-pnl-pos' : 'lane-pnl-neg';
-      const liveBadge = l.live ? '<span class="lane-live-badge">LIVE</span>' : '';
-      const tfBadge   = l.timeframe !== '—'
-        ? ' <span class="lane-tf-badge">' + l.timeframe + '</span>'
-        : '';
-      // Funding-basis shows "Periods" instead of "Trades"
-      const tradeLabel = l.strategyId === 'funding-basis' ? 'Periods' : 'Trades';
-      return '<div class="lane-card">'
-        + '<div class="lane-card-header">'
-        +   l.displayName
-        +   tfBadge
-        +   liveBadge
-        + '</div>'
-        + '<div class="lane-card-body">'
-        +   '<div class="lane-stat"><span class="lane-stat-label">Equity</span>'
-        +     '<span class="lane-stat-value">' + fmtUsd(l.equity) + '</span></div>'
-        +   '<div class="lane-stat"><span class="lane-stat-label">Position</span>'
-        +     '<span class="lane-stat-value">' + posHtml + '</span></div>'
-        +   '<div class="lane-stat"><span class="lane-stat-label">Session P&amp;L</span>'
-        +     '<span class="lane-stat-value ' + spnlCls + '">' + fmt(l.sessionPnl, 2) + '</span></div>'
-        +   '<div class="lane-stat"><span class="lane-stat-label">' + tradeLabel + '</span>'
-        +     '<span class="lane-stat-value">' + l.tradeCount + '</span></div>'
-        + '</div>'
-        + '</div>';
-    }).join('');
-  }
-
-  async function refreshLanes() {
+  // ── Bots teaser (count badge) ─────────────────────────────────────────────
+  async function refreshBotsTeaser() {
     try {
-      const resp = await fetch('/api/lanes');
-      if (!resp.ok) return;
-      renderLanes(await resp.json());
-    } catch { /* ignore transient errors */ }
+      const bots  = await fetch('/api/bots').then((r) => r.json());
+      const count = bots.filter((b) => b.status === 'running').length;
+      const el    = document.getElementById('bots-teaser-count');
+      if (el) el.textContent = count;
+    } catch { /* ignore */ }
   }
 
-  refreshLanes();
-  setInterval(refreshLanes, 4000);
+  refreshBotsTeaser();
+  setInterval(refreshBotsTeaser, 4000);
 
   // ── Resize observer ─────────────────────────────────────────────────────
   if (typeof ResizeObserver !== 'undefined') {

@@ -5,7 +5,7 @@ import { startDashboard } from "./dashboard/server.js";
 import { Executor } from "./executor.js";
 import { Feed } from "./feed.js";
 import { FundingRateStrategy } from "./strategy/funding-rate.js";
-import { LaneManager } from "./lane-manager.js";
+import { BotManager } from "./bot-manager.js";
 import { RiskManager } from "./risk.js";
 import { initNotifications } from "./notifications.js";
 import type { Signal } from "./events.js";
@@ -45,8 +45,8 @@ if (keyReady) {
 const strategies: Strategy[] = [new FundingRateStrategy()];
 console.log(`[init] Strategies: ${strategies.map((s) => s.name).join(", ")}`);
 
-// 3b. Lane manager — independent candle-strategy lanes with paper simulation
-const laneManager = new LaneManager();
+// 3b. Bot manager — one independent paper bot per (strategy + coin + timeframe)
+const laneManager = new BotManager();
 
 // 4. Risk manager
 const risk = new RiskManager(1000);

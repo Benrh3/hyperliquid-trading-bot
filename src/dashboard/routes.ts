@@ -8,7 +8,7 @@ import type { BotState } from "./server.js";
 import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
-import type { LaneManager, LanesFile } from "../lane-manager.js";
+import type { BotManager, BotsFile } from "../bot-manager.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
@@ -129,7 +129,7 @@ export function createRouter(
   strategies: Strategy[] = [],
   feed?: Feed,
   executor?: Executor,
-  laneManager?: LaneManager,
+  laneManager?: BotManager,
 ): Router {
   const router = Router();
 
@@ -192,25 +192,80 @@ export function createRouter(
       network:   config.exchange.network,
       coin:      config.exchange.coin,
       registry:  STRATEGY_REGISTRY,
-      lanesFile: laneManager?.getLanesFile() ?? { lanes: [] },
+      botsFile:  laneManager?.getBotsFile() ?? { bots: [], fundingActive: false },
     });
   });
 
-  // ── Lane API ─────────────────────────────────────────────────────────────
+  // ── Bot API ───────────────────────────────────────────────────────────────
 
-  router.get("/api/lanes", (_req, res) => {
-    res.json(laneManager?.getLaneStates() ?? []);
+  router.get("/api/bots", (_req, res) => {
+    const raw = laneManager?.getBotStates() ?? [];
+    // Enrich each state with the live funding rate for its coin (from the shared cache)
+    const enriched = raw.map((b) => {
+      const cached = fundingTopCache?.items.find((i) => i.coin === b.coin);
+      return { ...b, fundingRate: cached?.currentRate ?? null };
+    });
+    res.json(enriched);
   });
 
-  router.post("/api/lanes/config", async (req, res) => {
+  router.post("/api/bots/:id/pause", async (req, res) => {
+    if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
+    try {
+      await laneManager.pauseBot(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.post("/api/bots/:id/resume", async (req, res) => {
+    if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
+    try {
+      await laneManager.resumeBot(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.delete("/api/bots/:id", async (req, res) => {
+    if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
+    try {
+      await laneManager.deleteBot(req.params.id);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.post("/api/bots", async (req, res) => {
+    if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
+    try {
+      const { strategyId, coin, timeframe, live, startingEquity } = req.body as {
+        strategyId: string; coin: string; timeframe: string;
+        live?: boolean; startingEquity?: number;
+      };
+      if (!strategyId || !coin || !timeframe) {
+        res.status(400).json({ error: "strategyId, coin, and timeframe are required" });
+        return;
+      }
+      const id = await laneManager.addBot({ strategyId, coin, timeframe, live, startingEquity });
+      res.status(201).json({ ok: true, id });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  router.post("/api/bots/config", async (req, res) => {
     if (!laneManager) {
-      res.status(503).json({ error: "Lane manager not initialised" });
+      res.status(503).json({ error: "Bot manager not initialised" });
       return;
     }
     try {
-      const body = req.body as LanesFile;
-      if (!Array.isArray(body?.lanes)) {
-        res.status(400).json({ error: "lanes array required" });
+      const body = req.body as BotsFile;
+      if (!Array.isArray(body?.bots)) {
+        res.status(400).json({ error: "bots array required" });
         return;
       }
       await laneManager.applyConfig(body);
@@ -247,6 +302,14 @@ export function createRouter(
       const error = err instanceof Error ? err : new Error(String(err));
       res.status(500).json({ error: error.message });
     }
+  });
+
+  router.get("/bots", (_req, res) => {
+    res.render("bots", {
+      network:  config.exchange.network,
+      coin:     config.exchange.coin,
+      registry: STRATEGY_REGISTRY,
+    });
   });
 
   router.get("/strategies", (_req, res) => {
