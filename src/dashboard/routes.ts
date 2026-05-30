@@ -30,6 +30,62 @@ interface FundingHistEntry {
   expiresAt: number;
 }
 
+// Symbol → full name for display in dropdowns
+const COIN_NAMES: Record<string, string> = {
+  BTC:      "Bitcoin",
+  ETH:      "Ethereum",
+  SOL:      "Solana",
+  HYPE:     "Hyperliquid",
+  XRP:      "Ripple",
+  DOGE:     "Dogecoin",
+  ADA:      "Cardano",
+  AVAX:     "Avalanche",
+  LINK:     "Chainlink",
+  DOT:      "Polkadot",
+  MATIC:    "Polygon",
+  UNI:      "Uniswap",
+  ATOM:     "Cosmos",
+  LTC:      "Litecoin",
+  NEAR:     "NEAR Protocol",
+  ARB:      "Arbitrum",
+  OP:       "Optimism",
+  APT:      "Aptos",
+  SUI:      "Sui",
+  INJ:      "Injective",
+  TIA:      "Celestia",
+  SEI:      "Sei",
+  PYTH:     "Pyth Network",
+  JTO:      "Jito",
+  JUP:      "Jupiter",
+  W:        "Wormhole",
+  ZRO:      "LayerZero",
+  RNDR:     "Render",
+  FTM:      "Fantom",
+  AAVE:     "Aave",
+  WLD:      "Worldcoin",
+  WIF:      "dogwifhat",
+  BONK:     "Bonk",
+  ORDI:     "Ordinals",
+  STRK:     "Starknet",
+  MANTA:    "Manta Network",
+  NEIRO:    "Neiro",
+  GOAT:     "Goat",
+  PNUT:     "Peanut the Squirrel",
+  MOVE:     "Movement",
+  VIRTUAL:  "Virtuals Protocol",
+  AI16Z:    "ai16z",
+  TRUMP:    "Official Trump",
+  BERA:     "Berachain",
+  IP:       "Story Protocol",
+  KAITO:    "Kaito",
+  LAYER:    "Solayer",
+  SHIB:     "Shiba Inu",
+};
+
+function coinDisplayName(coin: string): string {
+  return COIN_NAMES[coin] ? `${coin} - ${COIN_NAMES[coin]}` : coin;
+}
+
 let fundingTopCache: { items: CachedFundingItem[]; expiresAt: number } | null = null;
 const fundingHistCache = new Map<string, FundingHistEntry>();
 
@@ -79,11 +135,21 @@ async function buildFundingTop(): Promise<CachedFundingItem[]> {
     type: "metaAndAssetCtxs",
   });
 
-  const pairs = meta.universe
+  const allPairs = meta.universe
     .map((u, i) => ({ name: u.name, ctx: ctxs[i] }))
-    .filter((p) => p.ctx)
-    .sort((a, b) => parseFloat(b.ctx.dayNtlVlm) - parseFloat(a.ctx.dayNtlVlm))
-    .slice(0, 25);
+    .filter((p) => p.ctx);
+
+  const byVolume = [...allPairs].sort((a, b) => parseFloat(b.ctx.dayNtlVlm) - parseFloat(a.ctx.dayNtlVlm));
+  const pairs = byVolume.slice(0, 25);
+
+  // Always include HYPE even if it falls outside the top 25 by volume
+  const ALWAYS_INCLUDE = ["HYPE"];
+  for (const must of ALWAYS_INCLUDE) {
+    if (!pairs.find((p) => p.name === must)) {
+      const extra = allPairs.find((p) => p.name === must);
+      if (extra) pairs.push(extra);
+    }
+  }
 
   const settled = await Promise.allSettled(
     pairs.map(async ({ name, ctx }): Promise<CachedFundingItem> => {
@@ -368,7 +434,13 @@ export function createRouter(
       }
       // nextFundingMs computed fresh per response so countdown is always accurate
       const nextFundingMs = Math.ceil((now + 1000) / 3_600_000) * 3_600_000 - now;
-      res.json(fundingTopCache.items.map((item) => ({ ...item, nextFundingMs })));
+      res.json(
+        fundingTopCache.items.map((item) => ({
+          ...item,
+          nextFundingMs,
+          displayName: coinDisplayName(item.coin),
+        })),
+      );
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[funding/top]", error.message);

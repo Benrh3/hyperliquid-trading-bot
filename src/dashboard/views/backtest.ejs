@@ -410,7 +410,7 @@
       if (!resp.ok) throw new Error(resp.statusText);
       topCoins = await resp.json();
       coinSel.innerHTML = topCoins.map(c =>
-        `<option value="${c.coin}">${c.coin}</option>`
+        `<option value="${c.coin}">${c.displayName || c.coin}</option>`
       ).join('');
       coinSel.value = topCoins[0]?.coin || 'BTC';
     } catch (_) {

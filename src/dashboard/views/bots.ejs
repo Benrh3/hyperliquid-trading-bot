@@ -498,7 +498,7 @@
       return;
     }
     mCoin.innerHTML = topCoins.map(c =>
-      `<option value="${c.coin}">${c.coin} · ${(c.annualizedRate * 100).toFixed(1)}% ann · $${(c.volume24h / 1e9).toFixed(1)}B vol</option>`
+      `<option value="${c.coin}">${c.displayName || c.coin} · ${(c.annualizedRate * 100).toFixed(1)}% ann</option>`
     ).join('');
     mCoin.value = topCoins[0]?.coin ?? '';
     updateCoinHint();

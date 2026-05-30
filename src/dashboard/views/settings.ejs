@@ -181,7 +181,9 @@
     </div>
     <div class="add-field">
       <label for="add-coin">Coin</label>
-      <input id="add-coin" class="add-inp" type="text" placeholder="BTC" maxlength="10" value="BTC">
+      <select id="add-coin" class="add-sel">
+        <option value="" disabled selected>Loading…</option>
+      </select>
     </div>
     <div class="add-field">
       <label for="add-tf">Timeframe</label>
@@ -258,6 +260,21 @@
 
   fundingToggle.checked = fundingInit;
 
+  // ── Load coin dropdown from funding/top ───────────────────────────────────
+  async function loadCoins() {
+    try {
+      const resp = await fetch('/api/funding/top');
+      if (!resp.ok) return;
+      const coins = await resp.json();
+      addCoin.innerHTML = coins.map(c =>
+        `<option value="${c.coin}">${c.displayName || c.coin}</option>`
+      ).join('');
+      if (coins.length > 0) addCoin.value = coins[0].coin;
+    } catch (_) {
+      // fallback: leave "Loading…" option; user can't add from here
+    }
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
   function genId() {
     return 'bot-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -311,14 +328,9 @@
 
   // ── Add bot ──────────────────────────────────────────────────────────────
   btnAdd.addEventListener('click', function () {
-    const coin = addCoin.value.trim().toUpperCase();
-    if (!coin) {
-      addCoin.style.borderColor = 'var(--red)';
-      setTimeout(() => { addCoin.style.borderColor = ''; }, 1500);
-      return;
-    }
+    const coin = addCoin.value;
+    if (!coin) return; // dropdown still loading
     bots.push({ id: genId(), strategyId: addStrat.value, coin, timeframe: addTf.value, active: true, live: false });
-    addCoin.value = 'BTC';
     render();
   });
 
@@ -368,6 +380,7 @@
   });
 
   render();
+  loadCoins();
 })();
 </script>
 

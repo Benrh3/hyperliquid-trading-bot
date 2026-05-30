@@ -495,7 +495,7 @@
 
       // Sync coin dropdown
       calcCoin.innerHTML = allData.map(d =>
-        `<option value="${d.coin}">${d.coin}</option>`
+        `<option value="${d.coin}">${d.displayName || d.coin}</option>`
       ).join('');
 
       if (!selCoin || !allData.find(d => d.coin === selCoin)) {
