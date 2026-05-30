@@ -21,10 +21,12 @@ export interface Tick {
 }
 
 export interface Signal {
-  side: "long" | "short" | "close";
-  coin: string;
+  side:   "long" | "short" | "close";
+  coin:   string;
   reason: string;
   timestamp: number;
+  /** true for paper/simulation bots — risk manager and executor must ignore these */
+  paper?: boolean;
 }
 
 export interface TradeResult {

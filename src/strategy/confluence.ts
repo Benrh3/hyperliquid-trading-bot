@@ -13,7 +13,6 @@ const RSI_CLOSE_HIGH = 60;
 export class ConfluenceStrategy implements Strategy {
   name = "confluence";
   private readonly coin: string;
-  private readonly minConfluence: number;
 
   private lastRsi:           number | null  = null;
   private lastMacdAboveSignal: boolean | null = null;
@@ -23,11 +22,11 @@ export class ConfluenceStrategy implements Strategy {
   private signalCount = 0;
   private inTrade: "long" | "short" | null = null;
 
-  // Grid-search configurable fields (match registry param keys)
-  rsiPeriod    = 14;
-  overbought   = 70;
-  oversold     = 30;
-  minConfluenceParam = 3;
+  // Grid-search configurable fields — names MUST match registry param keys so Object.assign works
+  rsiPeriod     = 14;
+  overbought    = 70;
+  oversold      = 30;
+  minConfluence = 3;  // initialised in constructor from config; overridden by grid search
 
   constructor() {
     this.coin = coins[0];
@@ -58,7 +57,7 @@ export class ConfluenceStrategy implements Strategy {
     const votes: IndicatorVote[] = [rsiVote, macdVote, bbVote, volVote];
     this.lastVotes = votes.map(v => v.vote);
 
-    const minC = (this.minConfluenceParam ?? this.minConfluence);
+    const minC = this.minConfluence;
 
     // Exit when RSI returns to neutral
     if (this.inTrade !== null && this.lastRsi !== null) {

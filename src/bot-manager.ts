@@ -497,6 +497,18 @@ export class BotManager {
     for (const bot of this.botsForCoin(coin)) {
       if (bot.config.timeframe !== "1m") continue;
       this.checkStopLoss(bot, candle);
+
+      // Sync the previous candle's final OHLCV into bot.history before appending the new one.
+      // cd.hist1m[-2] holds the final close of the just-closed candle (updated via updateAggClose
+      // on every !isNew tick); bot.history still has the first-tick (open) value for that candle.
+      // Without this, RSI/MACD/BB are computed on open prices instead of close prices.
+      if (bot.history.length > 0 && cd.hist1m.length >= 2) {
+        const finalPrev = cd.hist1m[cd.hist1m.length - 2];
+        if (bot.history[bot.history.length - 1].timestamp === finalPrev.timestamp) {
+          bot.history[bot.history.length - 1] = finalPrev;
+        }
+      }
+
       bot.history.push(candle);
       if (bot.history.length > MAX_HISTORY) bot.history.shift();
       const signal = bot.strategy.onCandle(candle, bot.history.slice());
@@ -631,7 +643,9 @@ export class BotManager {
         );
       }
     }
-    if (bot.config.live) bus.emit("signal", signal);
+    // Always emit so the Overview signal counter and logger see every bot's signals.
+    // paper:true tells the risk manager and executor to skip execution.
+    bus.emit("signal", { ...signal, paper: !bot.config.live });
   }
 
   private closePosition(bot: BotRuntime, exitPx: number, reason: string): void {
