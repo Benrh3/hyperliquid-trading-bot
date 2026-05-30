@@ -7,22 +7,22 @@
     padding: 2rem 1.5rem 4rem;
   }
 
-  .learn-header {
-    margin-bottom: 2.5rem;
-  }
+  .learn-header { margin-bottom: 2rem; }
   .learn-header h1 {
     font-size: 1.5rem;
     font-weight: 600;
     letter-spacing: -0.02em;
     margin-bottom: 0.4rem;
   }
-  .learn-header p {
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1.6;
+  .learn-header p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+  .section-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 3rem 0 2.5rem;
   }
 
-  /* Strategy card */
+  /* ── Strategy cards ─────────────────────────────────────────── */
   .strat-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -30,140 +30,128 @@
     margin-bottom: 1.75rem;
     overflow: hidden;
   }
-
   .strat-card-header {
     padding: 1.25rem 1.5rem 1rem;
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: baseline;
-    gap: 0.75rem;
+    gap: 0.6rem;
     flex-wrap: wrap;
   }
-  .strat-card-header h2 {
-    font-size: 1.1rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    margin: 0;
-  }
+  .strat-card-header h2 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
   .strat-category {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.2rem 0.55rem;
-    border: 1px solid var(--border);
-    border-radius: 20px;
+    font-size: 11px; font-weight: 500; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius: 20px;
+  }
+  .badge-planned {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 0.2rem 0.55rem; border-radius: 20px;
+    color: #f0883e; border: 1px solid rgba(240,136,62,0.4); background: rgba(240,136,62,0.07);
   }
 
   .strat-summary {
-    padding: 0.9rem 1.5rem;
-    font-size: 14px;
-    color: var(--muted);
-    border-bottom: 1px solid var(--border);
-    line-height: 1.6;
+    padding: 0.9rem 1.5rem; font-size: 14px; color: var(--muted);
+    border-bottom: 1px solid var(--border); line-height: 1.6;
   }
-
-  .strat-body {
-    padding: 1.25rem 1.5rem;
-    display: grid;
-    gap: 1.25rem;
-  }
+  .strat-body { padding: 1.25rem 1.5rem; display: grid; gap: 1.25rem; }
 
   .strat-section-label {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--muted);
-    margin-bottom: 0.4rem;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--muted); margin-bottom: 0.4rem;
   }
-  .strat-section-text {
-    font-size: 14px;
-    line-height: 1.7;
-    color: var(--text);
-  }
+  .strat-section-text { font-size: 14px; line-height: 1.7; color: var(--text); }
 
-  .signal-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
+  .signal-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
   .signal-list li {
-    font-size: 13px;
-    color: var(--text);
-    padding: 0.3rem 0.6rem;
-    background: rgba(88,166,255,0.06);
-    border-left: 2px solid var(--blue);
-    border-radius: 0 3px 3px 0;
+    font-size: 13px; color: var(--text); padding: 0.3rem 0.6rem;
+    background: rgba(88,166,255,0.06); border-left: 2px solid var(--blue); border-radius: 0 3px 3px 0;
   }
 
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-
-  .condition-box {
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    font-size: 13px;
-    line-height: 1.6;
-  }
-  .condition-box.works {
-    background: rgba(63,185,80,0.07);
-    border: 1px solid rgba(63,185,80,0.2);
-  }
-  .condition-box.struggles {
-    background: rgba(248,81,73,0.07);
-    border: 1px solid rgba(248,81,73,0.2);
-  }
-  .condition-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    margin-bottom: 0.35rem;
-  }
-  .condition-box.works    .condition-label { color: var(--green); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .condition-box { padding: 0.75rem 1rem; border-radius: 6px; font-size: 13px; line-height: 1.6; }
+  .condition-box.works   { background: rgba(63,185,80,0.07);  border: 1px solid rgba(63,185,80,0.2); }
+  .condition-box.struggles { background: rgba(248,81,73,0.07); border: 1px solid rgba(248,81,73,0.2); }
+  .condition-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.35rem; }
+  .condition-box.works     .condition-label { color: var(--green); }
   .condition-box.struggles .condition-label { color: var(--red); }
 
-  .param-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
+  .param-list { display: flex; flex-direction: column; gap: 0.4rem; }
   .param-row {
-    display: flex;
-    align-items: baseline;
-    gap: 0.75rem;
-    font-size: 13px;
-    padding: 0.35rem 0;
-    border-bottom: 1px solid var(--border);
+    display: flex; align-items: baseline; gap: 0.75rem; font-size: 13px;
+    padding: 0.35rem 0; border-bottom: 1px solid var(--border);
   }
   .param-row:last-child { border-bottom: none; }
-  .param-label {
-    flex: 1;
-    color: var(--text);
+  .param-label { flex: 1; color: var(--text); }
+  .param-default { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .param-range  { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .param-none   { font-size: 13px; color: var(--muted); font-style: italic; }
+
+  /* ── Indicator accordion ────────────────────────────────────── */
+  .ind-toolbar {
+    display: flex; align-items: center; gap: 0.6rem;
+    margin-bottom: 1.25rem; flex-wrap: wrap;
   }
-  .param-default {
-    font-size: 12px;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+  .ind-search {
+    flex: 1; min-width: 160px;
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px;
+    padding: 0.4rem 0.75rem; border-radius: 5px;
   }
-  .param-range {
-    font-size: 11px;
-    color: var(--muted);
-    white-space: nowrap;
+  .ind-search:focus { outline: none; border-color: var(--blue); }
+  .ind-search::placeholder { color: var(--muted); }
+  .ind-ctrl-btn {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    font-size: 12px; padding: 0.35rem 0.8rem; border-radius: 4px;
+    cursor: pointer; white-space: nowrap;
   }
-  .param-none {
-    font-size: 13px;
-    color: var(--muted);
-    font-style: italic;
+  .ind-ctrl-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+  .ind-group { margin-bottom: 1.25rem; }
+  .ind-group[hidden] { display: none; }
+
+  .ind-group-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--muted);
+    padding-bottom: 0.45rem; margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ind-item {
+    border: 1px solid var(--border); border-radius: 6px;
+    margin-bottom: 0.35rem; background: var(--surface); overflow: hidden;
+  }
+  .ind-item[hidden] { display: none; }
+
+  .ind-item-hdr {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.6rem 0.9rem; cursor: pointer; user-select: none;
+  }
+  .ind-item-hdr:hover { background: var(--bg); }
+  .ind-item-name { flex: 1; font-size: 13px; font-weight: 500; }
+  .ind-item-cat {
+    font-size: 10px; font-weight: 500; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 0.15rem 0.45rem; border: 1px solid var(--border); border-radius: 20px;
+  }
+  .ind-item-chevron {
+    font-size: 9px; color: var(--muted); flex-shrink: 0;
+    transition: transform 0.15s; line-height: 1;
+  }
+  .ind-item.open .ind-item-chevron { transform: rotate(90deg); }
+
+  .ind-item-body {
+    border-top: 1px solid var(--border);
+    padding: 1rem 1rem 1.1rem;
+    display: none; grid-template-columns: 1fr; gap: 0.9rem;
+  }
+  .ind-item.open .ind-item-body { display: grid; }
+
+  .ind-example {
+    font-family: monospace; font-size: 12px;
+    background: var(--bg); padding: 0.45rem 0.7rem;
+    border-radius: 4px; border: 1px solid var(--border);
+    color: var(--text); word-break: break-all;
   }
 
   @media (max-width: 600px) {
@@ -195,37 +183,33 @@
 
 <div class="learn-container">
 
+  <!-- ═══════════════════════════════════════════════════════════
+       STRATEGIES
+  ════════════════════════════════════════════════════════════ -->
   <div class="learn-header">
     <h1>Strategies</h1>
     <p>How each strategy works, what it trades on, and what market conditions it is suited to.</p>
   </div>
 
+  <!-- ── Runnable strategies (from registry) ── -->
   <% for (const entry of registry.filter(e => e.isCandleStrategy)) { %>
   <div class="strat-card">
-
     <div class="strat-card-header">
       <h2><%= entry.displayName %></h2>
       <span class="strat-category"><%= entry.categoryLabel %></span>
     </div>
-
     <div class="strat-summary"><%= entry.summary %></div>
-
     <div class="strat-body">
-
       <div>
         <div class="strat-section-label">How it works</div>
         <div class="strat-section-text"><%= entry.howItWorks %></div>
       </div>
-
       <div>
         <div class="strat-section-label">Signals it uses</div>
         <ul class="signal-list">
-          <% for (const signal of entry.signals) { %>
-          <li><%= signal %></li>
-          <% } %>
+          <% for (const sig of entry.signals) { %><li><%= sig %></li><% } %>
         </ul>
       </div>
-
       <div class="two-col">
         <div class="condition-box works">
           <div class="condition-label">When it tends to work</div>
@@ -236,7 +220,6 @@
           <%= entry.whenItStruggles %>
         </div>
       </div>
-
       <div>
         <div class="strat-section-label">Parameters</div>
         <% if (entry.params.length > 0) { %>
@@ -253,65 +236,255 @@
         <span class="param-none">No configurable parameters — values are fixed in the implementation.</span>
         <% } %>
       </div>
-
     </div>
   </div>
   <% } %>
 
-</div>
+  <!-- ── Planned strategies (display-only, NOT in registry) ── -->
 
-  <!-- ── Indicator Library ─────────────────────────────────────────────── -->
-  <div class="learn-header" style="margin-top:3rem">
-    <h1>Indicator Library</h1>
-    <p>All 20 indicators available in the Strategy Builder — what each one measures, how to use it, and an example rule.</p>
-  </div>
-
-  <%
-    const indCats = ['Trend', 'Momentum', 'Volatility', 'Volume'];
-    for (const cat of indCats) {
-      const catInds = indicators.filter(m => m.category === cat);
-  %>
-  <p class="section-title" style="margin-bottom:0.75rem"><%= cat %></p>
-  <% for (const m of catInds) { %>
-  <div class="strat-card" style="margin-bottom:1rem">
+  <div class="strat-card">
     <div class="strat-card-header">
-      <h2 style="font-size:1rem"><%= m.displayName %></h2>
-      <span class="strat-category"><%= m.category %></span>
+      <h2>Volatility Regime Switching</h2>
+      <span class="strat-category">Adaptive (regime-aware)</span>
+      <span class="badge-planned">Planned — not yet implemented</span>
     </div>
-    <div class="strat-summary"><%= m.description %></div>
+    <div class="strat-summary">Switches between mean-reversion and trend-following based on the current volatility regime.</div>
     <div class="strat-body">
       <div>
-        <div class="strat-section-label">Common use</div>
-        <div class="strat-section-text"><%= m.commonUse %></div>
+        <div class="strat-section-label">How it works</div>
+        <div class="strat-section-text">It measures realised volatility on a rolling window and compares to a 30-day baseline. In low-vol periods (range-bound markets), it allocates more capital to mean-reversion logic; in high-vol periods (trending markets), it shifts to trend-following. Rather than a binary regime toggle, the allocation is weighted continuously by the volatility percentile, avoiding whipsaws at regime boundaries.</div>
       </div>
       <div>
-        <div class="strat-section-label">Typical parameters</div>
-        <div class="strat-section-text"><%= m.typicalParams %></div>
+        <div class="strat-section-label">Signals it uses</div>
+        <ul class="signal-list">
+          <li>Realised volatility (rolling window vs 30-day baseline)</li>
+          <li>ATR (regime weighting)</li>
+          <li>Underlying mean-reversion signals</li>
+          <li>Underlying trend-following signals</li>
+        </ul>
       </div>
-      <div>
-        <div class="strat-section-label">Example rule</div>
-        <div class="strat-section-text" style="font-family:monospace;font-size:13px;background:var(--bg);padding:0.5rem 0.75rem;border-radius:4px;border:1px solid var(--border)"><%= m.exampleRule %></div>
+      <div class="two-col">
+        <div class="condition-box works">
+          <div class="condition-label">When it tends to work</div>
+          When the market clearly alternates between regimes over the holding window.
+        </div>
+        <div class="condition-box struggles">
+          <div class="condition-label">When it tends to struggle</div>
+          In transitional regimes where vol is changing rapidly.
+        </div>
       </div>
-      <% if (m.defaultParams && m.defaultParams.length > 0) { %>
       <div>
         <div class="strat-section-label">Parameters</div>
         <div class="param-list">
-          <% for (const p of m.defaultParams) { %>
-          <div class="param-row">
-            <span class="param-label"><%= p.label %></span>
-            <span class="param-default">default: <%= p.default %></span>
-            <span class="param-range"><%= p.min %> – <%= p.max %></span>
-          </div>
-          <% } %>
+          <div class="param-row"><span class="param-label">Vol lookback period</span><span class="param-default">—</span></div>
+          <div class="param-row"><span class="param-label">Regime weighting curve</span><span class="param-default">—</span></div>
         </div>
       </div>
-      <% } %>
     </div>
   </div>
-  <% } %>
+
+  <div class="strat-card">
+    <div class="strat-card-header">
+      <h2>Liquidation Cascade Fade</h2>
+      <span class="strat-category">Microstructure (counter-trend)</span>
+      <span class="badge-planned">Planned — not yet implemented</span>
+    </div>
+    <div class="strat-summary">Trades against forced-liquidation cascades after they begin to exhaust.</div>
+    <div class="strat-body">
+      <div>
+        <div class="strat-section-label">How it works</div>
+        <div class="strat-section-text">When Hyperliquid's liquidation volume spikes far above its rolling baseline, the strategy waits for the first candle close that prints opposite the cascade direction (a confirmation candle), then enters a counter-trend position with a tight stop. The confirmation filter sacrifices the first part of the bounce in exchange for not catching falling knives mid-cascade.</div>
+      </div>
+      <div>
+        <div class="strat-section-label">Signals it uses</div>
+        <ul class="signal-list">
+          <li>Liquidation USD volume vs rolling baseline</li>
+          <li>Candle direction (confirmation filter)</li>
+        </ul>
+      </div>
+      <div class="two-col">
+        <div class="condition-box works">
+          <div class="condition-label">When it tends to work</div>
+          During sharp cascade events that overshoot fair value and snap back.
+        </div>
+        <div class="condition-box struggles">
+          <div class="condition-label">When it tends to struggle</div>
+          In extended grinding moves where no single cascade resolves cleanly.
+        </div>
+      </div>
+      <div>
+        <div class="strat-section-label">Parameters</div>
+        <div class="param-list">
+          <div class="param-row"><span class="param-label">Spike threshold (× baseline)</span><span class="param-default">—</span></div>
+          <div class="param-row"><span class="param-label">Baseline window</span><span class="param-default">—</span></div>
+          <div class="param-row"><span class="param-label">Stop distance</span><span class="param-default">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="strat-card">
+    <div class="strat-card-header">
+      <h2>Funding Deviation (Predicted vs Actual)</h2>
+      <span class="strat-category">Positioning flow (rare metric)</span>
+      <span class="badge-planned">Planned — not yet implemented</span>
+    </div>
+    <div class="strat-summary">Trades against positioning shifts revealed when actual funding diverges from Hyperliquid's predicted rate.</div>
+    <div class="strat-body">
+      <div>
+        <div class="strat-section-label">How it works</div>
+        <div class="strat-section-text">Hyperliquid publishes both the current funding rate and a predicted next rate. Persistent positive deviation (actual exceeds predicted) signals fresh long crowding — historically a precursor to reversals. Negative deviation signals short crowding. The raw deviation is normalised as a 7-day z-score so the signal is scale-invariant across calm and volatile funding regimes.</div>
+      </div>
+      <div>
+        <div class="strat-section-label">Signals it uses</div>
+        <ul class="signal-list">
+          <li>Actual funding rate</li>
+          <li>Predicted funding rate (next period)</li>
+          <li>7-day rolling mean and std of the gap (z-score)</li>
+        </ul>
+      </div>
+      <div class="two-col">
+        <div class="condition-box works">
+          <div class="condition-label">When it tends to work</div>
+          When positioning is shifting fast and the market hasn't priced it in.
+        </div>
+        <div class="condition-box struggles">
+          <div class="condition-label">When it tends to struggle</div>
+          During sustained directional funding regimes where deviation is small but persistent.
+        </div>
+      </div>
+      <div>
+        <div class="strat-section-label">Parameters</div>
+        <div class="param-list">
+          <div class="param-row"><span class="param-label">Z-score window</span><span class="param-default">—</span></div>
+          <div class="param-row"><span class="param-label">Entry threshold (z-score)</span><span class="param-default">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       INDICATOR LIBRARY
+  ════════════════════════════════════════════════════════════ -->
+  <hr class="section-divider">
+
+  <div class="learn-header">
+    <h1>Indicator Library</h1>
+    <p>All 20 indicators available in the Strategy Builder. Click any row to expand details.</p>
+  </div>
+
+  <!-- Toolbar: search + expand/collapse -->
+  <div class="ind-toolbar">
+    <input type="text" id="ind-search" class="ind-search" placeholder="Search indicators…" autocomplete="off">
+    <button class="ind-ctrl-btn" id="ind-expand-all">Expand all</button>
+    <button class="ind-ctrl-btn" id="ind-collapse-all">Collapse all</button>
+  </div>
+
+  <!-- Grouped accordion — server-side rendered -->
+  <%
+    const IND_CATS = ['Momentum', 'Trend', 'Volatility', 'Volume'];
+    for (const cat of IND_CATS) {
+      const catInds = indicators.filter(m => m.category === cat);
+      if (!catInds.length) continue;
+  %>
+  <div class="ind-group" data-cat="<%= cat %>">
+    <div class="ind-group-label"><%= cat %></div>
+
+    <% for (const m of catInds) { %>
+    <div class="ind-item" data-name="<%= m.displayName.toLowerCase() %>">
+      <div class="ind-item-hdr">
+        <span class="ind-item-name"><%= m.displayName %></span>
+        <span class="ind-item-cat"><%= m.category %></span>
+        <span class="ind-item-chevron">&#9658;</span>
+      </div>
+      <div class="ind-item-body">
+
+        <div>
+          <div class="strat-section-label">Description</div>
+          <div class="strat-section-text"><%= m.description %></div>
+        </div>
+
+        <div>
+          <div class="strat-section-label">Common use</div>
+          <div class="strat-section-text"><%= m.commonUse %></div>
+        </div>
+
+        <div>
+          <div class="strat-section-label">Typical parameters</div>
+          <div class="strat-section-text"><%= m.typicalParams %></div>
+        </div>
+
+        <div>
+          <div class="strat-section-label">Example rule</div>
+          <div class="ind-example"><%= m.exampleRule %></div>
+        </div>
+
+        <% if (m.defaultParams && m.defaultParams.length > 0) { %>
+        <div>
+          <div class="strat-section-label">Parameters</div>
+          <div class="param-list">
+            <% for (const p of m.defaultParams) { %>
+            <div class="param-row">
+              <span class="param-label"><%= p.label %></span>
+              <span class="param-default">default: <%= p.default %></span>
+              <span class="param-range"><%= p.min %> – <%= p.max %></span>
+            </div>
+            <% } %>
+          </div>
+        </div>
+        <% } %>
+
+      </div>
+    </div>
+    <% } %>
+
+  </div>
   <% } %>
 
-</div>
+</div><!-- /.learn-container -->
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Accordion ────────────────────────────────────────────────
+  document.querySelectorAll('.ind-item-hdr').forEach(function (hdr) {
+    hdr.addEventListener('click', function () {
+      hdr.closest('.ind-item').classList.toggle('open');
+    });
+  });
+
+  // ── Expand / Collapse all ────────────────────────────────────
+  document.getElementById('ind-expand-all').addEventListener('click', function () {
+    document.querySelectorAll('.ind-item:not([hidden])').forEach(function (el) {
+      el.classList.add('open');
+    });
+  });
+  document.getElementById('ind-collapse-all').addEventListener('click', function () {
+    document.querySelectorAll('.ind-item').forEach(function (el) {
+      el.classList.remove('open');
+    });
+  });
+
+  // ── Live search ──────────────────────────────────────────────
+  document.getElementById('ind-search').addEventListener('input', function () {
+    var q = this.value.trim().toLowerCase();
+
+    document.querySelectorAll('.ind-item').forEach(function (el) {
+      var match = !q || el.dataset.name.includes(q);
+      el.hidden = !match;
+      // Auto-expand single exact-ish match; collapse when clearing
+      if (match && q) el.classList.add('open');
+    });
+
+    // Hide group headers when all their items are hidden
+    document.querySelectorAll('.ind-group').forEach(function (grp) {
+      var anyVisible = grp.querySelector('.ind-item:not([hidden])');
+      grp.hidden = !anyVisible;
+    });
+  });
+})();
+</script>
 
 </body>
 </html>
