@@ -1,0 +1,436 @@
+<%- include('_head', { title: 'Builder' }) %>
+
+<style>
+  .builder-wrap {
+    max-width: 860px; margin: 0 auto; padding: 1.5rem 1.5rem 4rem;
+  }
+  .builder-hdr { margin-bottom: 1.75rem; }
+  .builder-hdr h1 { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.25rem; }
+  .builder-hdr p  { font-size: 13px; color: var(--muted); }
+
+  /* Section cards */
+  .bld-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 7px; margin-bottom: 1.25rem; overflow: hidden;
+  }
+  .bld-card-hdr {
+    padding: 0.75rem 1.1rem; border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 700; color: var(--text);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .bld-card-body { padding: 1rem 1.1rem; }
+
+  /* Form fields */
+  .bld-field { margin-bottom: 0.9rem; }
+  .bld-field:last-child { margin-bottom: 0; }
+  .bld-label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 0.25rem; }
+  .bld-inp, .bld-sel, .bld-ta {
+    width: 100%; box-sizing: border-box;
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px;
+    padding: 0.4rem 0.65rem; border-radius: 4px;
+    font-family: inherit;
+  }
+  .bld-sel {
+    appearance: none; cursor: pointer; padding-right: 1.6rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 7px center;
+  }
+  .bld-ta { resize: vertical; min-height: 60px; }
+  .bld-inp:focus, .bld-sel:focus, .bld-ta:focus { outline: none; border-color: var(--blue); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+  /* Rule rows */
+  .rules-list { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 0.75rem; }
+  .rule-row {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 5px; padding: 0.65rem 0.875rem;
+    display: flex; align-items: flex-end; gap: 0.5rem; flex-wrap: wrap;
+  }
+  .rule-field { display: flex; flex-direction: column; gap: 0.2rem; }
+  .rule-label { font-size: 10px; color: var(--muted); }
+  .rule-sel, .rule-inp {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 12px;
+    padding: 0.32rem 0.55rem; border-radius: 4px;
+  }
+  .rule-sel {
+    appearance: none; padding-right: 1.4rem; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 6px center;
+  }
+  .rule-sel:focus, .rule-inp:focus { outline: none; border-color: var(--blue); }
+  .rule-params { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+  .rule-param-inp { width: 60px; }
+  .btn-del-rule {
+    background: none; border: none; color: var(--muted); font-size: 18px;
+    cursor: pointer; padding: 0 4px; line-height: 1; margin-left: auto;
+    transition: color 0.1s;
+  }
+  .btn-del-rule:hover { color: var(--red); }
+
+  /* Logic selector */
+  .logic-row {
+    display: flex; align-items: center; gap: 0.75rem;
+    font-size: 12px; color: var(--muted); margin-bottom: 0.5rem;
+  }
+  .logic-row .bld-sel { width: auto; font-size: 12px; padding: 0.28rem 1.4rem 0.28rem 0.5rem; }
+  .votes-n { width: 52px; }
+
+  /* Add rule button */
+  .btn-add-rule {
+    background: none; border: 1px dashed var(--border); color: var(--muted);
+    font-size: 12px; border-radius: 4px; padding: 0.35rem 0.875rem;
+    cursor: pointer; width: 100%; transition: border-color .1s, color .1s;
+  }
+  .btn-add-rule:hover { border-color: var(--blue); color: var(--blue); }
+
+  /* Save bar */
+  .save-bar { display: flex; align-items: center; gap: 1rem; margin-top: 1.5rem; }
+  .btn-save-strat {
+    background: var(--blue); color: #fff; border: none;
+    border-radius: 5px; padding: 0.55rem 1.5rem;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn-save-strat:disabled { opacity: 0.5; cursor: default; }
+  #bld-msg { font-size: 12px; }
+  #bld-msg.ok    { color: var(--green); }
+  #bld-msg.error { color: var(--red); }
+</style>
+
+<nav class="nav">
+  <a href="/" class="nav-brand">HL Bot</a>
+  <button class="hamburger" id="nav-hamburger" aria-label="Menu">&#9776;</button>
+  <div class="nav-links" id="nav-links">
+    <a href="/" class="nav-link">Overview</a>
+    <a href="/strategies" class="nav-link">Strategies</a>
+    <a href="/bots" class="nav-link">Bots</a>
+    <a href="/trades" class="nav-link">Trades</a>
+    <a href="/backtest" class="nav-link">Backtest</a>
+    <a href="/builder" class="nav-link active">Builder</a>
+    <a href="/learn" class="nav-link">Learn</a>
+    <a href="/settings" class="nav-link">Settings</a>
+  </div>
+  <div class="nav-right">
+    <span class="dot"></span>
+    <span class="badge badge-net"><%= network %></span>
+    <span class="text-muted"><%= coin %></span>
+    <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
+  </div>
+</nav>
+
+<div class="builder-wrap">
+  <div class="builder-hdr">
+    <h1>Strategy Builder</h1>
+    <p>Compose a strategy from indicator conditions. Saved strategies appear immediately in the Bot Manager, Backtest, and Learn tabs — no restart needed.</p>
+  </div>
+
+  <!-- Identity -->
+  <div class="bld-card">
+    <div class="bld-card-hdr">Identity</div>
+    <div class="bld-card-body">
+      <div class="two-col">
+        <div class="bld-field">
+          <label class="bld-label">Strategy ID (unique slug, no spaces)</label>
+          <input class="bld-inp" id="bld-id" type="text" placeholder="e.g. custom-rsi-bb" maxlength="40">
+        </div>
+        <div class="bld-field">
+          <label class="bld-label">Display Name</label>
+          <input class="bld-inp" id="bld-name" type="text" placeholder="e.g. RSI + Bollinger Bands" maxlength="60">
+        </div>
+      </div>
+      <div class="bld-field">
+        <label class="bld-label">Description (shown on Learn tab)</label>
+        <textarea class="bld-ta" id="bld-desc" rows="2" placeholder="What does this strategy do and when does it work?"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entry long rules -->
+  <div class="bld-card">
+    <div class="bld-card-hdr">
+      Long Entry Rules
+      <small style="font-weight:400;color:var(--muted)">All rules must pass (configurable below) to open a long</small>
+    </div>
+    <div class="bld-card-body">
+      <div class="logic-row">
+        Combine with
+        <select class="bld-sel" id="entry-logic">
+          <option value="AND">AND — all rules must pass</option>
+          <option value="OR">OR — any rule must pass</option>
+          <option value="votes">N of M voting</option>
+        </select>
+        <span id="votes-wrap" style="display:none">
+          at least <input class="rule-inp votes-n" id="entry-votes-n" type="number" value="2" min="1" max="10"> of M
+        </span>
+      </div>
+      <div class="rules-list" id="long-entry-rules"></div>
+      <button class="btn-add-rule" onclick="addRule('long-entry')">+ Add condition</button>
+    </div>
+  </div>
+
+  <!-- Exit rules -->
+  <div class="bld-card">
+    <div class="bld-card-hdr">
+      Exit Rules
+      <small style="font-weight:400;color:var(--muted)">Conditions to close any open position</small>
+    </div>
+    <div class="bld-card-body">
+      <div class="logic-row">
+        Combine with
+        <select class="bld-sel" id="exit-logic">
+          <option value="AND">AND</option>
+          <option value="OR">OR</option>
+          <option value="votes">N of M voting</option>
+        </select>
+        <span id="exit-votes-wrap" style="display:none">
+          at least <input class="rule-inp votes-n" id="exit-votes-n" type="number" value="1" min="1" max="10"> of M
+        </span>
+      </div>
+      <div class="rules-list" id="exit-rules"></div>
+      <button class="btn-add-rule" onclick="addRule('exit')">+ Add condition</button>
+    </div>
+  </div>
+
+  <!-- Short entry rules -->
+  <div class="bld-card">
+    <div class="bld-card-hdr">
+      Short Entry Rules
+      <small style="font-weight:400;color:var(--muted)">Optional — leave empty for long-only</small>
+    </div>
+    <div class="bld-card-body">
+      <div class="rules-list" id="short-entry-rules"></div>
+      <button class="btn-add-rule" onclick="addRule('short-entry')">+ Add condition</button>
+    </div>
+  </div>
+
+  <!-- Risk -->
+  <div class="bld-card">
+    <div class="bld-card-hdr">Risk Management</div>
+    <div class="bld-card-body">
+      <div class="two-col">
+        <div class="bld-field">
+          <label class="bld-label">Stop-loss (%)</label>
+          <input class="bld-inp" id="bld-sl" type="number" min="0" step="0.1" value="2">
+        </div>
+        <div class="bld-field">
+          <label class="bld-label">Take-profit (% — 0 = disabled)</label>
+          <input class="bld-inp" id="bld-tp" type="number" min="0" step="0.5" value="0">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="save-bar">
+    <button class="btn-save-strat" id="btn-save">Save Strategy</button>
+    <span id="bld-msg"></span>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Seeded data ───────────────────────────────────────────────────────────
+  const INDICATORS = <%- JSON.stringify(indicators) %>;
+  let ruleCounter  = 0;
+
+  // ── Logic toggles ─────────────────────────────────────────────────────────
+  document.getElementById('entry-logic').addEventListener('change', function () {
+    document.getElementById('votes-wrap').style.display = this.value === 'votes' ? '' : 'none';
+  });
+  document.getElementById('exit-logic').addEventListener('change', function () {
+    document.getElementById('exit-votes-wrap').style.display = this.value === 'votes' ? '' : 'none';
+  });
+
+  // ── Build a rule row ──────────────────────────────────────────────────────
+  window.addRule = function (group) {
+    const id     = 'rule-' + (++ruleCounter);
+    const listId = group === 'long-entry' ? 'long-entry-rules'
+                 : group === 'exit'       ? 'exit-rules'
+                 :                         'short-entry-rules';
+    const list   = document.getElementById(listId);
+    const div    = document.createElement('div');
+    div.className = 'rule-row';
+    div.dataset.id = id;
+    div.innerHTML  = buildRuleHtml(id);
+    list.appendChild(div);
+
+    // Wire indicator change → re-render params + output key
+    div.querySelector('.rule-indicator-sel').addEventListener('change', function () {
+      rebuildOutputKey(div, this.value);
+      rebuildParams(div, this.value);
+    });
+    rebuildOutputKey(div, INDICATORS[0]?.id);
+    rebuildParams(div, INDICATORS[0]?.id);
+  };
+
+  function buildRuleHtml(id) {
+    const indOpts = INDICATORS.map(m =>
+      `<option value="${m.id}">${m.displayName}</option>`
+    ).join('');
+    return `
+      <div class="rule-field">
+        <label class="rule-label">Indicator</label>
+        <select class="rule-sel rule-indicator-sel" data-rule="${id}">${indOpts}</select>
+      </div>
+      <div class="rule-field" id="${id}-output-wrap">
+        <label class="rule-label">Output</label>
+        <select class="rule-sel rule-output-sel" data-rule="${id}"></select>
+      </div>
+      <div class="rule-field" id="${id}-params"></div>
+      <div class="rule-field">
+        <label class="rule-label">Is</label>
+        <select class="rule-sel rule-cmp-sel" data-rule="${id}">
+          <option value=">">&#62; greater than</option>
+          <option value="<">&#60; less than</option>
+          <option value=">=">&#62;= ≥</option>
+          <option value="<=">&#60;= ≤</option>
+          <option value="crossAbove">crosses above</option>
+          <option value="crossBelow">crosses below</option>
+        </select>
+      </div>
+      <div class="rule-field">
+        <label class="rule-label">Value</label>
+        <input class="rule-inp" style="width:80px" type="number" step="any" value="0" data-role="rhs" data-rule="${id}">
+      </div>
+      <button class="btn-del-rule" onclick="deleteRule(this)">×</button>
+    `;
+  }
+
+  function rebuildOutputKey(rowEl, indId) {
+    const m   = INDICATORS.find(i => i.id === indId);
+    const sel = rowEl.querySelector('.rule-output-sel');
+    const wrap = rowEl.querySelector('[id$="-output-wrap"]');
+    if (!m) return;
+    if (m.outputKeys.length <= 1) {
+      if (wrap) wrap.style.display = 'none';
+      sel.innerHTML = `<option value="values">values</option>`;
+    } else {
+      if (wrap) wrap.style.display = '';
+      sel.innerHTML = m.outputKeys.map(k =>
+        `<option value="${k}">${k}</option>`
+      ).join('');
+    }
+  }
+
+  function rebuildParams(rowEl, indId) {
+    const m      = INDICATORS.find(i => i.id === indId);
+    const wrap   = rowEl.querySelector('[id$="-params"]');
+    if (!m) return;
+    if (!m.defaultParams || m.defaultParams.length === 0) {
+      wrap.innerHTML = '';
+      return;
+    }
+    wrap.innerHTML = '<label class="rule-label">Params</label><div class="rule-params">' +
+      m.defaultParams.map(p =>
+        `<input class="rule-inp rule-param-inp" type="number"
+                data-param="${p.key}" title="${p.label}"
+                value="${p.default}" min="${p.min}" max="${p.max}" step="${p.step}"
+                placeholder="${p.key}">`
+      ).join('') + '</div>';
+  }
+
+  window.deleteRule = function (btn) {
+    btn.closest('.rule-row').remove();
+  };
+
+  // ── Collect all rules from a list ─────────────────────────────────────────
+  function collectRules(listId) {
+    const rows = document.getElementById(listId).querySelectorAll('.rule-row');
+    return Array.from(rows).map((row, i) => {
+      const indId     = row.querySelector('.rule-indicator-sel').value;
+      const outputKey = row.querySelector('.rule-output-sel').value || 'values';
+      const cmp       = row.querySelector('.rule-cmp-sel').value;
+      const rhsVal    = parseFloat(row.querySelector('[data-role="rhs"]').value) || 0;
+
+      const params = {};
+      row.querySelectorAll('[data-param]').forEach(inp => {
+        params[inp.dataset.param] = parseFloat(inp.value);
+      });
+
+      return {
+        id:          'r' + i,
+        indicatorId: indId,
+        params,
+        outputKey,
+        comparator:  cmp,
+        rhsType:     'value',
+        rhsValue:    rhsVal,
+        rhsPriceKey: 'close',
+      };
+    });
+  }
+
+  function parseLogic(selId, votesId) {
+    const v = document.getElementById(selId).value;
+    if (v === 'votes') {
+      const n = parseInt(document.getElementById(votesId).value) || 2;
+      return { type: 'votes', required: n };
+    }
+    return v;
+  }
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+  document.getElementById('btn-save').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save');
+    const msg = document.getElementById('bld-msg');
+    const id  = document.getElementById('bld-id').value.trim().replace(/\s+/g, '-').toLowerCase();
+    const name = document.getElementById('bld-name').value.trim();
+
+    if (!id || !name) {
+      msg.className = 'error'; msg.textContent = 'ID and Name are required.'; return;
+    }
+    if (!/^[a-z0-9-]+$/.test(id)) {
+      msg.className = 'error'; msg.textContent = 'ID must be lowercase letters, numbers, and hyphens only.'; return;
+    }
+
+    const def = {
+      id:               'custom-' + id,
+      name,
+      description:      document.getElementById('bld-desc').value.trim(),
+      entryLongRules:   collectRules('long-entry-rules'),
+      entryShortRules:  collectRules('short-entry-rules'),
+      exitRules:        collectRules('exit-rules'),
+      entryLogic:       parseLogic('entry-logic', 'entry-votes-n'),
+      exitLogic:        parseLogic('exit-logic', 'exit-votes-n'),
+      stopLoss:         parseFloat(document.getElementById('bld-sl').value) || 2,
+      takeProfit:       parseFloat(document.getElementById('bld-tp').value) || 0,
+      isCustom:         true,
+    };
+
+    btn.disabled = true; msg.className = ''; msg.textContent = 'Saving…';
+
+    try {
+      const resp = await fetch('/api/strategies/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(def),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || resp.statusText);
+      msg.className = 'ok';
+      msg.textContent = `✓ Saved "${name}" — it now appears in Bots, Backtest, and Learn.`;
+    } catch (err) {
+      msg.className = 'error'; msg.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Auto-generate ID from name
+  document.getElementById('bld-name').addEventListener('input', function () {
+    const idEl = document.getElementById('bld-id');
+    if (!idEl.dataset.touched) {
+      idEl.value = this.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    }
+  });
+  document.getElementById('bld-id').addEventListener('input', function () {
+    this.dataset.touched = '1';
+  });
+
+})();
+</script>
+
+</body>
+</html>

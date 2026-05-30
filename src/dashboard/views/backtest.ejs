@@ -147,6 +147,53 @@
   .pnl-pos { color: var(--green); }
   .pnl-neg { color: var(--red); }
 
+  /* ── Mode toggle ── */
+  .mode-toggle {
+    display: flex; gap: 0; margin-bottom: 0; overflow: hidden;
+    border: 1px solid var(--border); border-radius: 5px; width: fit-content;
+  }
+  .mode-toggle label {
+    padding: 0.38rem 1rem; font-size: 12px; font-weight: 500; cursor: pointer;
+    color: var(--muted); transition: background .1s, color .1s;
+  }
+  .mode-toggle input[type="radio"] { display: none; }
+  .mode-toggle input:checked + span { background: var(--blue); color: #fff; }
+  .mode-toggle label:first-child { border-right: 1px solid var(--border); }
+
+  /* ── Walk-forward results ── */
+  .wf-headline {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 1.25rem;
+    display: flex; gap: 2rem; flex-wrap: wrap; align-items: center;
+  }
+  .wf-stat { display: flex; flex-direction: column; gap: 0.15rem; }
+  .wf-stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .wf-stat-val { font-size: 1.3rem; font-weight: 600; font-family: monospace; }
+  .wf-curve-warn {
+    background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.3);
+    border-radius: 5px; padding: 0.5rem 0.875rem; font-size: 12px;
+    color: var(--red); flex-basis: 100%; margin-top: 0.25rem;
+  }
+  .wf-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .wf-table th {
+    padding: 6px 10px; text-align: right; font-size: 11px; font-weight: 600;
+    color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .wf-table th:first-child { text-align: left; }
+  .wf-table td {
+    padding: 7px 10px; text-align: right;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    border-bottom: 1px solid var(--border); white-space: nowrap; font-size: 11px;
+  }
+  .wf-table td:first-child { text-align: left; font-family: inherit; }
+  .wf-table tbody tr:last-child td { border-bottom: none; }
+  .wf-table tr.wf-beats { background: rgba(63,185,80,0.06); }
+  .wf-table tr.wf-lags  { background: rgba(248,81,73,0.06); }
+  .param-pill {
+    display: inline-block; font-size: 10px; background: rgba(88,166,255,0.1);
+    color: var(--blue); border-radius: 3px; padding: 1px 5px; margin: 1px;
+  }
+
   /* ── Funding basis card (unchanged) ── */
   .funding-card {
     background: var(--surface); border: 1px solid var(--border);
@@ -195,6 +242,7 @@
     <a href="/bots" class="nav-link">Bots</a>
     <a href="/trades" class="nav-link">Trades</a>
     <a href="/backtest" class="nav-link active">Backtest</a>
+    <a href="/builder" class="nav-link">Builder</a>
     <a href="/learn" class="nav-link">Learn</a>
     <a href="/settings" class="nav-link">Settings</a>
   </div>
@@ -282,6 +330,32 @@
         </div>
       </div>
 
+      <!-- Mode -->
+      <div class="ctrl-section">
+        <div class="ctrl-section-title">Mode</div>
+        <div class="mode-toggle">
+          <label><input type="radio" name="bt-mode" value="single" id="mode-single" checked><span>Single Run</span></label>
+          <label><input type="radio" name="bt-mode" value="walkforward" id="mode-wf"><span>Walk-Forward</span></label>
+        </div>
+      </div>
+
+      <!-- Walk-forward controls (hidden by default) -->
+      <div class="ctrl-section" id="wf-controls" style="display:none">
+        <div class="ctrl-section-title">Walk-Forward Settings</div>
+        <div class="ctrl-field">
+          <label class="ctrl-label" for="wf-windows">Windows (3–10)</label>
+          <input class="ctrl-inp" id="wf-windows" type="number" min="3" max="10" value="5">
+        </div>
+        <div class="ctrl-field">
+          <label class="ctrl-label" for="wf-metric">Optimise by</label>
+          <select class="ctrl-sel" id="wf-metric">
+            <option value="sharpeRatio">Sharpe Ratio</option>
+            <option value="totalPnl">Total PnL</option>
+            <option value="profitFactor">Profit Factor</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Run -->
       <div class="ctrl-section">
         <button class="btn-run-bt" id="bt-run">Run Backtest</button>
@@ -293,6 +367,37 @@
 
   <!-- ── Results area ── -->
   <div class="bt-results">
+
+    <!-- Walk-forward results (hidden until WF run) -->
+    <div id="wf-results" style="display:none">
+      <div class="wf-headline" id="wf-headline"></div>
+      <div class="table-wrap" style="margin-bottom:1.5rem">
+        <table class="wf-table" id="wf-table">
+          <thead>
+            <tr>
+              <th style="text-align:left">Win.</th>
+              <th>IS Period</th>
+              <th>Best Params</th>
+              <th>IS Sharpe</th>
+              <th>IS Return</th>
+              <th>OOS Period</th>
+              <th>OOS Sharpe</th>
+              <th>OOS Return</th>
+              <th>B&amp;H</th>
+              <th>Gap (IS−OOS)</th>
+            </tr>
+          </thead>
+          <tbody id="wf-tbody"></tbody>
+        </table>
+      </div>
+      <div class="chart-panel" id="wf-chart-panel">
+        <div class="chart-toolbar">
+          <span>Walk-Forward Equity Track Record</span>
+          <span style="font-size:11px;color:var(--muted)">OOS windows stitched end-to-end</span>
+        </div>
+        <div id="wf-equity-chart" style="height:200px"></div>
+      </div>
+    </div>
 
     <!-- Placeholder shown before first run -->
     <div class="bt-placeholder" id="bt-placeholder">
@@ -667,7 +772,123 @@
     }
   }
 
-  runBtn.addEventListener('click', run);
+  // ── Mode toggle ───────────────────────────────────────────────────────────
+  document.querySelectorAll('input[name="bt-mode"]').forEach(radio => {
+    radio.addEventListener('change', function () {
+      const isWF = this.value === 'walkforward';
+      document.getElementById('wf-controls').style.display = isWF ? '' : 'none';
+      runBtn.textContent = isWF ? 'Run Walk-Forward' : 'Run Backtest';
+    });
+  });
+
+  // ── Walk-forward chart (lazy init) ────────────────────────────────────────
+  let wfChart = null;
+  let wfSeries = null;
+
+  function initWFChart() {
+    if (wfChart) return;
+    const border = getCssVar('--border') || '#30363d';
+    wfChart = LC.createChart(document.getElementById('wf-equity-chart'), {
+      layout: { background: { type: 'solid', color: getCssVar('--surface') || '#161b22' }, textColor: getCssVar('--muted') || '#8b949e', attributionLogo: false },
+      grid: { vertLines: { color: border }, horzLines: { color: border } },
+      crosshair: { mode: 1 }, rightPriceScale: { borderColor: border },
+      timeScale: { borderColor: border, timeVisible: true }, height: 200,
+    });
+    wfSeries = wfChart.addAreaSeries({
+      lineColor: '#58a6ff', topColor: 'rgba(88,166,255,0.18)',
+      bottomColor: 'rgba(88,166,255,0)', lineWidth: 1.5,
+      priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+    });
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => wfChart.applyOptions({ width: 0 }));
+      ro.observe(document.getElementById('wf-chart-panel'));
+    }
+  }
+
+  // ── Walk-forward run ──────────────────────────────────────────────────────
+  async function runWalkForward() {
+    const strategyId  = stratSel.value;
+    const coin        = coinSel.value;
+    const interval    = document.getElementById('bt-tf').value;
+    const totalCandles = parseInt(document.getElementById('bt-limit').value) || 1000;
+    const windows     = parseInt(document.getElementById('wf-windows').value) || 5;
+    const optimiseBy  = document.getElementById('wf-metric').value;
+    const initialEquity = parseFloat(document.getElementById('bt-equity').value) || 1000;
+    const commissionPct = parseFloat(document.getElementById('bt-commission').value) || 0.045;
+    const stopLossPct   = parseFloat(document.getElementById('bt-stoploss').value) || 2;
+
+    runBtn.disabled = true;
+    statusEl.textContent = `Running walk-forward (${windows} windows)…`;
+
+    try {
+      const resp = await fetch('/api/backtest/walkforward', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategyId, coin, interval, totalCandles, windows, optimiseBy, commissionPct, stopLossPct, initialEquity }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || data.error) throw new Error(data.error || resp.statusText);
+
+      statusEl.textContent = `${data.windows.length} OOS windows completed`;
+      document.getElementById('bt-placeholder').style.display = 'none';
+      document.getElementById('wf-results').style.display = '';
+
+      // Headline
+      const agg  = data.aggregate;
+      const warn = agg.curveFitWarning;
+      const moos  = agg.meanOosSharpe.toFixed(3);
+      const mis   = agg.meanIsSharpe.toFixed(3);
+      const oosCls = agg.meanOosSharpe >= 0 ? 'pnl-pos' : 'pnl-neg';
+      document.getElementById('wf-headline').innerHTML =
+        `<div class="wf-stat"><span class="wf-stat-lbl">Mean OOS Sharpe (honest number)</span><span class="wf-stat-val ${oosCls}">${moos}</span></div>` +
+        `<div class="wf-stat"><span class="wf-stat-lbl">Mean IS Sharpe</span><span class="wf-stat-val">${mis}</span></div>` +
+        `<div class="wf-stat"><span class="wf-stat-lbl">OOS windows beating B&amp;H</span><span class="wf-stat-val">${agg.pctBeatBH.toFixed(0)}%</span></div>` +
+        (warn ? `<div class="wf-curve-warn">⚠ Curve-fit warning: OOS Sharpe (${moos}) is less than half of IS Sharpe (${mis}). The strategy may be over-optimised to historical data.</div>` : '');
+
+      // Table
+      const rows = data.windows.map(w => {
+        const paramStr = Object.entries(w.bestParams || {}).map(([k, v]) =>
+          `<span class="param-pill">${k}=${v}</span>`
+        ).join('');
+        const oosSign = w.oosMetrics.returnPct >= 0 ? '+' : '';
+        const isSign  = w.isMetrics.returnPct  >= 0 ? '+' : '';
+        const gap     = (w.isMetrics.sharpeRatio - w.oosMetrics.sharpeRatio).toFixed(3);
+        const gapCls  = parseFloat(gap) < 0.5 ? 'pnl-pos' : 'pnl-neg';
+        const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
+        return `<tr class="${w.beatsBH ? 'wf-beats' : 'wf-lags'}">
+          <td>#${w.window}</td>
+          <td>${fmtDate(w.isStart)}–${fmtDate(w.isEnd)} (${w.isCandles})</td>
+          <td style="max-width:160px;white-space:normal">${paramStr || '—'}</td>
+          <td>${w.isMetrics.sharpeRatio.toFixed(3)}</td>
+          <td class="${w.isMetrics.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg'}">${isSign}${w.isMetrics.returnPct.toFixed(2)}%</td>
+          <td>${fmtDate(w.oosStart)}–${fmtDate(w.oosEnd)} (${w.oosCandles})</td>
+          <td class="${w.oosMetrics.sharpeRatio >= 0 ? 'pnl-pos' : 'pnl-neg'}">${w.oosMetrics.sharpeRatio.toFixed(3)}</td>
+          <td class="${w.oosMetrics.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg'}">${oosSign}${w.oosMetrics.returnPct.toFixed(2)}%</td>
+          <td class="${parseFloat(w.bhOosReturnPct) >= 0 ? 'pnl-pos' : 'pnl-neg'}">${(w.bhOosReturnPct >= 0 ? '+' : '')}${w.bhOosReturnPct.toFixed(2)}%</td>
+          <td class="${gapCls}">${gap}</td>
+        </tr>`;
+      }).join('');
+      document.getElementById('wf-tbody').innerHTML = rows;
+
+      // Stitched equity chart
+      if (data.stitchedEquity && data.stitchedEquity.length > 0) {
+        initWFChart();
+        wfSeries.setData(data.stitchedEquity.map(p => ({ time: Math.floor(p.time / 1000), value: p.equity })));
+        wfChart.timeScale().fitContent();
+      }
+
+    } catch (err) {
+      statusEl.textContent = 'Error: ' + err.message;
+    } finally {
+      runBtn.disabled = false;
+    }
+  }
+
+  runBtn.addEventListener('click', () => {
+    const mode = document.querySelector('input[name="bt-mode"]:checked').value;
+    if (mode === 'walkforward') runWalkForward();
+    else run();
+  });
 
   // ── Init ──────────────────────────────────────────────────────────────────
   loadCoins();

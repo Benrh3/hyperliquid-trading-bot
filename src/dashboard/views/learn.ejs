@@ -181,6 +181,7 @@
     <a href="/bots" class="nav-link">Bots</a>
     <a href="/trades" class="nav-link">Trades</a>
     <a href="/backtest" class="nav-link">Backtest</a>
+    <a href="/builder" class="nav-link">Builder</a>
     <a href="/learn" class="nav-link active">Learn</a>
     <a href="/settings" class="nav-link">Settings</a>
   </div>
@@ -199,7 +200,7 @@
     <p>How each strategy works, what it trades on, and what market conditions it is suited to.</p>
   </div>
 
-  <% for (const entry of registry) { %>
+  <% for (const entry of registry.filter(e => e.isCandleStrategy)) { %>
   <div class="strat-card">
 
     <div class="strat-card-header">
@@ -255,6 +256,59 @@
 
     </div>
   </div>
+  <% } %>
+
+</div>
+
+  <!-- ── Indicator Library ─────────────────────────────────────────────── -->
+  <div class="learn-header" style="margin-top:3rem">
+    <h1>Indicator Library</h1>
+    <p>All 20 indicators available in the Strategy Builder — what each one measures, how to use it, and an example rule.</p>
+  </div>
+
+  <%
+    const indCats = ['Trend', 'Momentum', 'Volatility', 'Volume'];
+    for (const cat of indCats) {
+      const catInds = indicators.filter(m => m.category === cat);
+  %>
+  <p class="section-title" style="margin-bottom:0.75rem"><%= cat %></p>
+  <% for (const m of catInds) { %>
+  <div class="strat-card" style="margin-bottom:1rem">
+    <div class="strat-card-header">
+      <h2 style="font-size:1rem"><%= m.displayName %></h2>
+      <span class="strat-category"><%= m.category %></span>
+    </div>
+    <div class="strat-summary"><%= m.description %></div>
+    <div class="strat-body">
+      <div>
+        <div class="strat-section-label">Common use</div>
+        <div class="strat-section-text"><%= m.commonUse %></div>
+      </div>
+      <div>
+        <div class="strat-section-label">Typical parameters</div>
+        <div class="strat-section-text"><%= m.typicalParams %></div>
+      </div>
+      <div>
+        <div class="strat-section-label">Example rule</div>
+        <div class="strat-section-text" style="font-family:monospace;font-size:13px;background:var(--bg);padding:0.5rem 0.75rem;border-radius:4px;border:1px solid var(--border)"><%= m.exampleRule %></div>
+      </div>
+      <% if (m.defaultParams && m.defaultParams.length > 0) { %>
+      <div>
+        <div class="strat-section-label">Parameters</div>
+        <div class="param-list">
+          <% for (const p of m.defaultParams) { %>
+          <div class="param-row">
+            <span class="param-label"><%= p.label %></span>
+            <span class="param-default">default: <%= p.default %></span>
+            <span class="param-range"><%= p.min %> – <%= p.max %></span>
+          </div>
+          <% } %>
+        </div>
+      </div>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
   <% } %>
 
 </div>

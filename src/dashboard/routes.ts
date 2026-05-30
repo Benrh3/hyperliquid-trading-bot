@@ -3,6 +3,9 @@ import { RSI } from "technicalindicators";
 import { config, coins, API_URL } from "../config.js";
 import { runBacktest, fetchCandles, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
 import { CANDLE_STRATEGIES, STRATEGY_REGISTRY } from "../strategy/registry.js";
+import { INDICATOR_REGISTRY } from "../strategy/indicators.js";
+import { saveCustomDef, deleteCustomDef, customDefToRegistryEntry } from "../strategy/custom-strategy.js";
+import type { CustomStrategyDef } from "../strategy/custom-strategy.js";
 import type { Logger } from "../logger.js";
 import type { BotState } from "./server.js";
 import type { Strategy } from "../strategy/base.js";
@@ -180,6 +183,35 @@ async function buildFundingTop(): Promise<CachedFundingItem[]> {
     .map((r) => r.value);
 }
 
+// ── Walk-forward grid helpers ─────────────────────────────────────────────────
+
+function generateParamGrid(
+  params: { key: string; min: number; max: number; step: number }[],
+  maxCombinations = 200,
+): Record<string, number>[] {
+  if (params.length === 0) return [{}];
+
+  let combos: Record<string, number>[] = [{}];
+  for (const p of params) {
+    const vals: number[] = [];
+    for (let v = p.min; v <= p.max + 1e-9; v += p.step) {
+      vals.push(Math.round(v * 1000) / 1000);
+    }
+    const next: Record<string, number>[] = [];
+    for (const combo of combos) {
+      for (const v of vals) next.push({ ...combo, [p.key]: v });
+    }
+    combos = next;
+    if (combos.length > 50_000) { combos = combos.slice(0, 50_000); break; }
+  }
+
+  if (combos.length > maxCombinations) {
+    const step = Math.ceil(combos.length / maxCombinations);
+    return combos.filter((_, i) => i % step === 0).slice(0, maxCombinations);
+  }
+  return combos;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function formatUptime(seconds: number): string {
@@ -329,9 +361,10 @@ export function createRouter(
 
   router.get("/learn", (_req, res) => {
     res.render("learn", {
-      network:  config.exchange.network,
-      coin:     config.exchange.coin,
-      registry: STRATEGY_REGISTRY,
+      network:    config.exchange.network,
+      coin:       config.exchange.coin,
+      registry:   STRATEGY_REGISTRY,
+      indicators: INDICATOR_REGISTRY,
     });
   });
 
@@ -466,6 +499,66 @@ export function createRouter(
     });
   });
 
+  router.get("/builder", (_req, res) => {
+    res.render("builder", {
+      network:    config.exchange.network,
+      coin:       config.exchange.coin,
+      registry:   STRATEGY_REGISTRY,
+      indicators: INDICATOR_REGISTRY.map(m => ({
+        id:           m.id,
+        displayName:  m.displayName,
+        category:     m.category,
+        outputType:   m.outputType,
+        outputKeys:   m.outputKeys,
+        defaultParams: m.defaultParams,
+      })),
+    });
+  });
+
+  // ── Custom strategy API ───────────────────────────────────────────────────
+
+  router.post("/api/strategies/custom", (req, res) => {
+    try {
+      const def = req.body as CustomStrategyDef;
+      if (!def.id || !def.name) {
+        res.status(400).json({ error: "id and name are required" });
+        return;
+      }
+      // Ensure required fields have defaults
+      def.isCustom        = true;
+      def.entryLongRules  = def.entryLongRules  ?? [];
+      def.entryShortRules = def.entryShortRules ?? [];
+      def.exitRules       = def.exitRules        ?? [];
+      def.entryLogic      = def.entryLogic       ?? "AND";
+      def.exitLogic       = def.exitLogic        ?? "AND";
+      def.stopLoss        = def.stopLoss         ?? 2;
+      def.takeProfit      = def.takeProfit        ?? 0;
+
+      saveCustomDef(def);
+
+      // Register in the live registry so it appears immediately without restart
+      const existing = STRATEGY_REGISTRY.findIndex(e => e.id === def.id);
+      const entry    = customDefToRegistryEntry(def);
+      if (existing >= 0) STRATEGY_REGISTRY[existing] = entry;
+      else               STRATEGY_REGISTRY.push(entry);
+
+      res.json({ ok: true, id: def.id });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.delete("/api/strategies/custom/:id", (req, res) => {
+    try {
+      deleteCustomDef(req.params.id);
+      const idx = STRATEGY_REGISTRY.findIndex(e => e.id === req.params.id && e.isCustom);
+      if (idx >= 0) STRATEGY_REGISTRY.splice(idx, 1);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   router.get("/strategies", (_req, res) => {
     const strategyData = strategies.map((s) => ({
       name:  s.name,
@@ -591,6 +684,131 @@ export function createRouter(
 
   router.get("/api/prices", (_req, res) => {
     res.json(state.lastPrices);
+  });
+
+  // ── Walk-forward backtesting ──────────────────────────────────────────────
+
+  router.post("/api/backtest/walkforward", async (req, res) => {
+    try {
+      const {
+        strategyId,
+        coin,
+        interval    = "1h",
+        totalCandles = 2000,
+        windows      = 5,
+        optimiseBy   = "sharpeRatio",
+        commissionPct = 0.045,
+        stopLossPct   = config.risk.stopLossPercent,
+        initialEquity = 1000,
+      } = req.body as {
+        strategyId:     string;
+        coin:           string;
+        interval?:      string;
+        totalCandles?:  number;
+        windows?:       number;
+        optimiseBy?:    string;
+        commissionPct?: number;
+        stopLossPct?:   number;
+        initialEquity?: number;
+      };
+
+      const entry = STRATEGY_REGISTRY.find(e => e.id === strategyId && e.isCandleStrategy && e.factory);
+      if (!entry?.factory) { res.status(400).json({ error: `Unknown strategy: ${strategyId}` }); return; }
+
+      const limit   = Math.min(parseInt(String(totalCandles)) || 2000, 5000);
+      const allCandles = await fetchCandles(coin.toUpperCase(), interval, limit);
+      if (allCandles.length < windows * 10) {
+        res.status(400).json({ error: "Not enough candles for the requested number of windows" });
+        return;
+      }
+
+      const nWin      = Math.min(Math.max(parseInt(String(windows)) || 5, 2), 10);
+      const segSize   = Math.floor(allCandles.length / nWin);
+      const btOpts    = { initialEquity, positionSizeUsd: config.risk.maxPositionSizeUsd, stopLossPct, commissionPct: commissionPct / 100 };
+      const grid      = generateParamGrid(entry.params, 200);
+
+      const windowResults: object[] = [];
+      const stitchedEquity: { time: number; equity: number }[] = [];
+      let prevEndEquity = initialEquity;
+
+      for (let i = 1; i < nWin; i++) {
+        const isSamples  = allCandles.slice(0, i * segSize);
+        const oosSamples = allCandles.slice(i * segSize, (i + 1) * segSize);
+        if (oosSamples.length === 0) break;
+
+        // Grid-search on IS window
+        let bestParams: Record<string, number> = grid[0] ?? {};
+        let bestMetric = -Infinity;
+        let bestISResult: ReturnType<typeof runBacktest> | null = null;
+
+        for (const params of grid) {
+          const s = entry.factory!();
+          if (Object.keys(params).length > 0) Object.assign(s, params);
+          const r = runBacktest(s, isSamples, btOpts);
+          const m = (r as unknown as Record<string, number>)[optimiseBy] ?? 0;
+          if (m > bestMetric) { bestMetric = m; bestParams = params; bestISResult = r; }
+        }
+
+        // OOS with best params
+        const oosStrat = entry.factory!();
+        if (Object.keys(bestParams).length > 0) Object.assign(oosStrat, bestParams);
+        const oosResult = runBacktest(oosStrat, oosSamples, btOpts);
+        const oosReturn = initialEquity > 0 ? (oosResult.totalPnl / initialEquity) * 100 : 0;
+        const isReturn  = initialEquity > 0 && bestISResult ? (bestISResult.totalPnl / initialEquity) * 100 : 0;
+
+        // Stitch OOS equity curve (continuous from previous window end)
+        const stitched = oosResult.equityCurve.map(p => ({
+          time:   p.time,
+          equity: prevEndEquity + (p.equity - initialEquity),
+        }));
+        if (stitched.length > 0) {
+          stitchedEquity.push(...stitched);
+          prevEndEquity = stitched[stitched.length - 1].equity;
+        }
+
+        // B&H for this OOS segment
+        const bhOos = oosSamples.length > 1
+          ? (oosSamples[oosSamples.length - 1].close - oosSamples[0].close) / oosSamples[0].close * 100
+          : 0;
+
+        windowResults.push({
+          window:     i,
+          isStart:    isSamples[0]?.timestamp,
+          isEnd:      isSamples[isSamples.length - 1]?.timestamp,
+          isCandles:  isSamples.length,
+          oosStart:   oosSamples[0]?.timestamp,
+          oosEnd:     oosSamples[oosSamples.length - 1]?.timestamp,
+          oosCandles: oosSamples.length,
+          bestParams,
+          isMetrics:  { sharpeRatio: bestISResult?.sharpeRatio ?? 0, returnPct: isReturn, tradeCount: bestISResult?.tradeCount ?? 0 },
+          oosMetrics: { sharpeRatio: oosResult.sharpeRatio, returnPct: oosReturn, tradeCount: oosResult.tradeCount },
+          bhOosReturnPct: bhOos,
+          beatsBH:    oosReturn > bhOos,
+        });
+      }
+
+      const wr = windowResults as Array<{
+        isMetrics: { sharpeRatio: number };
+        oosMetrics: { sharpeRatio: number; returnPct: number };
+        bhOosReturnPct: number;
+        beatsBH: boolean;
+      }>;
+      const meanIsSharpe  = wr.reduce((s, r) => s + r.isMetrics.sharpeRatio,  0) / wr.length;
+      const meanOosSharpe = wr.reduce((s, r) => s + r.oosMetrics.sharpeRatio, 0) / wr.length;
+      const pctBeatBH     = wr.filter(r => r.beatsBH).length / wr.length * 100;
+      const curveFit      = meanIsSharpe > 0 && meanOosSharpe < meanIsSharpe * 0.5;
+
+      res.json({
+        windows: windowResults,
+        aggregate: { meanIsSharpe, meanOosSharpe, pctBeatBH, curveFitWarning: curveFit },
+        stitchedEquity,
+        runConfig: { strategyId, strategyName: entry.displayName, coin, interval, totalCandles: allCandles.length, windows: nWin, optimiseBy, initialEquity },
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("[backtest/walkforward]", error.message);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   router.get("/api/backtest/funding", async (req, res) => {

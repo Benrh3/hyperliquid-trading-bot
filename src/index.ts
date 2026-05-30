@@ -6,6 +6,8 @@ import { Executor } from "./executor.js";
 import { Feed } from "./feed.js";
 import { FundingRateStrategy } from "./strategy/funding-rate.js";
 import { BotManager } from "./bot-manager.js";
+import { loadCustomDefs, customDefToRegistryEntry } from "./strategy/custom-strategy.js";
+import { STRATEGY_REGISTRY } from "./strategy/registry.js";
 import { RiskManager } from "./risk.js";
 import { initNotifications } from "./notifications.js";
 import type { Signal } from "./events.js";
@@ -44,6 +46,13 @@ if (keyReady) {
 //    Candle strategies are managed by LaneManager below.
 const strategies: Strategy[] = [new FundingRateStrategy()];
 console.log(`[init] Strategies: ${strategies.map((s) => s.name).join(", ")}`);
+
+// 3a-custom. Load user-built strategies from config/custom-strategies.json into the registry
+//            They live in the same registry, so they appear everywhere automatically.
+for (const def of loadCustomDefs()) {
+  STRATEGY_REGISTRY.push(customDefToRegistryEntry(def));
+}
+console.log(`[init] Custom strategies loaded: ${STRATEGY_REGISTRY.filter(e => e.isCustom).length}`);
 
 // 3b. Bot manager — one independent paper bot per (strategy + coin + timeframe)
 const laneManager = new BotManager();

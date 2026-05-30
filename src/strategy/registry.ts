@@ -29,6 +29,7 @@ export interface StrategyRegistryEntry {
    * false → driven by an alternative data source (e.g. funding history); factory is null.
    */
   isCandleStrategy: boolean;
+  isCustom?:        boolean;   // true for user-built strategies from the Strategy Builder
   factory:          (() => Strategy) | null;
 }
 
@@ -59,9 +60,9 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
       "Strong sustained trends, where it repeatedly fades the move and gets stopped out.",
     params: [
       { key: "minConfluence", label: "Min votes to enter",   default: 3,  min: 1,  max: 4,  step: 1  },
-      { key: "rsiPeriod",    label: "RSI period",            default: 14, min: 5,  max: 30, step: 1  },
-      { key: "overbought",   label: "RSI overbought level",  default: 70, min: 60, max: 90, step: 1  },
-      { key: "oversold",     label: "RSI oversold level",    default: 30, min: 10, max: 40, step: 1  },
+      { key: "rsiPeriod",    label: "RSI period",            default: 14, min: 5,  max: 30, step: 2  },
+      { key: "overbought",   label: "RSI overbought level",  default: 70, min: 60, max: 90, step: 5  },
+      { key: "oversold",     label: "RSI oversold level",    default: 30, min: 10, max: 40, step: 5  },
     ],
     isCandleStrategy: true,
     factory: () => new ConfluenceStrategy(),
