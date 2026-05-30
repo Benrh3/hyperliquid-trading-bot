@@ -58,7 +58,7 @@ export interface BotState {
   timeframe:     string;
   live:          boolean;
   active:        boolean;
-  status:        "running" | "paused";
+  status:        "running" | "paused" | "error";
   equity:        number;
   unrealisedPnl: number;
   lastPrice:     number;
@@ -72,6 +72,7 @@ export interface BotState {
   sessionPnl: number;
   tradeCount: number;
   startedAt:  number;
+  error?:     string;
 }
 
 // ── Internal types ────────────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ interface BotRuntime {
   } | null;
   unrealisedPnl: number;
   startedAt:     number;
+  error?:        string;
 }
 
 interface FundingLane {
@@ -228,7 +230,7 @@ export class BotManager {
         timeframe:     bot.config.timeframe,
         live:          bot.config.live,
         active:        bot.config.active,
-        status:        bot.config.active ? "running" : "paused",
+        status:        bot.error ? "error" : bot.config.active ? "running" : "paused",
         equity:        bot.equity,
         unrealisedPnl,
         lastPrice,
@@ -236,6 +238,7 @@ export class BotManager {
         sessionPnl:    bot.sessionPnl,
         tradeCount:    bot.tradeCount,
         startedAt:     bot.startedAt,
+        error:         bot.error,
       });
     }
 
@@ -311,12 +314,28 @@ export class BotManager {
 
       this.isWarming = true;
       try {
-        await Promise.all([...activeCoins].map((c) => this.warmupCoin(c)));
+        await Promise.all([...activeCoins].map(async (coin) => {
+          try {
+            await this.warmupCoin(coin);
+          } catch (e) {
+            const msg = (e as Error).message;
+            console.error(`[bot-manager] Warmup failed for ${coin}: ${msg}`);
+            this.markCoinError(coin, `Warmup failed: ${msg}`);
+          }
+        }));
       } finally {
         this.isWarming = false;
       }
 
-      for (const coin of activeCoins) await this.subscribeToCoin(coin);
+      for (const coin of activeCoins) {
+        try {
+          await this.subscribeToCoin(coin);
+        } catch (e) {
+          const msg = (e as Error).message;
+          console.error(`[bot-manager] Subscription failed for ${coin}: ${msg}`);
+          this.markCoinError(coin, `Subscription failed: ${msg}`);
+        }
+      }
 
       if (!wasFundingActive && nowFundingActive) {
         await this.openFundingLane();
@@ -349,12 +368,28 @@ export class BotManager {
 
     this.isWarming = true;
     try {
-      await Promise.all([...activeCoins].map((c) => this.warmupCoin(c)));
+      await Promise.all([...activeCoins].map(async (coin) => {
+        try {
+          await this.warmupCoin(coin);
+        } catch (e) {
+          const msg = (e as Error).message;
+          console.error(`[bot-manager] Warmup failed for ${coin}: ${msg}`);
+          this.markCoinError(coin, `Warmup failed: ${msg}`);
+        }
+      }));
     } finally {
       this.isWarming = false;
     }
 
-    for (const coin of activeCoins) await this.subscribeToCoin(coin);
+    for (const coin of activeCoins) {
+      try {
+        await this.subscribeToCoin(coin);
+      } catch (e) {
+        const msg = (e as Error).message;
+        console.error(`[bot-manager] Subscription failed for ${coin}: ${msg}`);
+        this.markCoinError(coin, `Subscription failed: ${msg}`);
+      }
+    }
 
     if (this.botsFile.fundingActive) await this.openFundingLane();
 
@@ -390,6 +425,13 @@ export class BotManager {
       if (bot.config.coin === coin && bot.config.active) out.push(bot);
     }
     return out;
+  }
+
+  /** Mark every bot on a coin as errored so the UI surfaces the failure. */
+  private markCoinError(coin: string, message: string): void {
+    for (const bot of this.bots.values()) {
+      if (bot.config.coin === coin) bot.error = message;
+    }
   }
 
   // ── Coin subscriptions ───────────────────────────────────────────────────
@@ -753,6 +795,22 @@ export class BotManager {
     if (!entry?.isCandleStrategy || !entry.factory) {
       throw new Error(`Unknown candle strategy: ${input.strategyId}`);
     }
+
+    // Validate against live universe — catches phantom tickers like "HYP" before
+    // they get persisted and crash the WebSocket subscription on next startup.
+    const { universe } = await this.info.meta();
+    const validCoin = universe.find((u) => u.name.toUpperCase() === coin);
+    if (!validCoin) {
+      const suggestions = universe
+        .map((u) => u.name)
+        .filter((n) => n.toUpperCase().startsWith(coin.slice(0, 3)))
+        .slice(0, 3);
+      const hint = suggestions.length
+        ? ` Did you mean: ${suggestions.join(", ")}?`
+        : " Check the symbol on Hyperliquid.";
+      throw new Error(`"${coin}" is not listed on Hyperliquid perpetuals.${hint}`);
+    }
+
     if (live) {
       const conflict = this.botsFile.bots.find(
         (b) => b.coin === coin && b.active && b.live,
@@ -787,8 +845,22 @@ export class BotManager {
           this.coinData.set(coin, { hist1m: [], aggBuffers: new Map(), aggHistories: new Map() });
         }
         this.isWarming = true;
-        try { await this.warmupCoin(coin); } finally { this.isWarming = false; }
-        await this.subscribeToCoin(coin);
+        try {
+          await this.warmupCoin(coin);
+        } catch (e) {
+          const msg = (e as Error).message;
+          console.error(`[bot-manager] Warmup failed for ${coin}: ${msg}`);
+          this.markCoinError(coin, `Warmup failed: ${msg}`);
+        } finally {
+          this.isWarming = false;
+        }
+        try {
+          await this.subscribeToCoin(coin);
+        } catch (e) {
+          const msg = (e as Error).message;
+          console.error(`[bot-manager] Subscription failed for ${coin}: ${msg}`);
+          this.markCoinError(coin, `Subscription failed: ${msg}`);
+        }
       } else {
         await this.warmupSingleBot(runtime);
       }
