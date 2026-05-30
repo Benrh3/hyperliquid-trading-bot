@@ -444,12 +444,26 @@ export function createRouter(
       return;
     }
     try {
-      const body = req.body as BotsFile;
+      const body = req.body as { bots?: BotsFile["bots"]; fundingActive?: boolean };
       if (!Array.isArray(body?.bots)) {
         res.status(400).json({ error: "bots array required" });
         return;
       }
-      await laneManager.applyConfig(body);
+
+      // Merge-only: the Settings page may have been loaded before bots were added via
+      // the Bots page (POST /api/bots). A full replacement would silently drop those bots.
+      // Instead: keep any bot whose ID is absent from the submitted list — it was added
+      // after the page loaded and the user never saw it in the form.
+      const currentBots = laneManager.getBotsFile().bots;
+      const submittedIds = new Set(body.bots.map((b) => b.id));
+      const unseen = currentBots.filter((b) => !submittedIds.has(b.id));
+
+      const mergedFile: BotsFile = {
+        bots: [...body.bots, ...unseen],
+        fundingActive: body.fundingActive ?? laneManager.getBotsFile().fundingActive,
+      };
+
+      await laneManager.applyConfig(mergedFile);
       res.json({ ok: true });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
