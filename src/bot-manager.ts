@@ -24,9 +24,12 @@ const FUNDING_POLL_MS = 60_000;
 const HOUR_MS         = 3_600_000;
 
 const TF_MS: Record<string, number> = {
-  "1m": 60_000,
-  "1h": 3_600_000,
-  "4h": 14_400_000,
+  "1m":  60_000,
+  "5m":  300_000,
+  "15m": 900_000,
+  "1h":  3_600_000,
+  "4h":  14_400_000,
+  "1d":  86_400_000,
 };
 
 // ── Public interfaces ─────────────────────────────────────────────────────────
@@ -501,8 +504,11 @@ export class BotManager {
       this.markPosition(bot, candle.close);
     }
 
-    for (const [tf, tfMs] of [["1h", TF_MS["1h"]], ["4h", TF_MS["4h"]]] as [string, number][]) {
-      this.aggregate(coin, cd, candle, tf, tfMs);
+    // Aggregate only the timeframes that active bots on this coin actually use
+    const neededTfs = new Set(this.botsForCoin(coin).map(b => b.config.timeframe).filter(tf => tf !== "1m"));
+    for (const tf of neededTfs) {
+      const tfMs = TF_MS[tf];
+      if (tfMs) this.aggregate(coin, cd, candle, tf, tfMs);
     }
   }
 
@@ -726,7 +732,7 @@ export class BotManager {
     const live       = input.live ?? false;
     const equity     = Math.max(1, input.startingEquity ?? INITIAL_EQUITY);
 
-    if (!["1m", "1h", "4h"].includes(timeframe)) {
+    if (!TF_MS[timeframe]) {
       throw new Error(`Invalid timeframe: ${timeframe}`);
     }
     const entry = getStrategyEntry(input.strategyId);

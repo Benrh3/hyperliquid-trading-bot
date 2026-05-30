@@ -53,12 +53,13 @@ interface BacktestOptions {
   initialEquity?:   number;
   positionSizeUsd?: number;
   stopLossPct?:     number;
+  commissionPct?:   number;   // per-side decimal fraction, e.g. 0.00045 for 0.045%
 }
 
 export function runBacktest(
   strategy: Strategy,
   candles: Candle[],
-  { initialEquity = 1000, positionSizeUsd = 500, stopLossPct = 2 }: BacktestOptions = {},
+  { initialEquity = 1000, positionSizeUsd = 500, stopLossPct = 2, commissionPct = 0 }: BacktestOptions = {},
 ): BacktestResult {
   const trades: BacktestTrade[] = [];
   const equityCurve: { time: number; equity: number }[] = [];
@@ -76,9 +77,12 @@ export function runBacktest(
   function closeTrade(exitPrice: number, exitTime: number, reason: string): void {
     if (!position) return;
     const { side, entryPrice, entryTime, size } = position;
-    const pnl = side === "long"
+    const rawPnl = side === "long"
       ? (exitPrice - entryPrice) * size
       : (entryPrice - exitPrice) * size;
+    // Two-sided commission: charged on entry notional + exit notional
+    const commission = commissionPct * size * (entryPrice + exitPrice);
+    const pnl = rawPnl - commission;
     trades.push({ index: trades.length, side, entryTime, entryPrice, exitTime, exitPrice, size, pnl, reason });
     equity += pnl;
     position = null;

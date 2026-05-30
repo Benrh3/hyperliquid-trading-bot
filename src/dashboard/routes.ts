@@ -174,9 +174,91 @@ export function createRouter(
 
   router.get("/backtest", (_req, res) => {
     res.render("backtest", {
-      coin:    config.exchange.coin,
-      network: config.exchange.network,
+      coin:              config.exchange.coin,
+      network:           config.exchange.network,
+      registry:          STRATEGY_REGISTRY,
+      defaultStopLoss:   config.risk.stopLossPercent,
     });
+  });
+
+  router.post("/api/backtest/run", async (req, res) => {
+    try {
+      const {
+        strategyId,
+        coin,
+        interval   = "1h",
+        candles:   candleLimit = 1000,
+        strategyParams = {},
+        initialEquity  = 1000,
+        commissionPct  = 0.045,   // received as % (e.g. 0.045), stored in runConfig as-is
+        stopLossPct    = config.risk.stopLossPercent,
+      } = req.body as {
+        strategyId:      string;
+        coin:            string;
+        interval?:       string;
+        candles?:        number;
+        strategyParams?: Record<string, number>;
+        initialEquity?:  number;
+        commissionPct?:  number;
+        stopLossPct?:    number;
+      };
+
+      if (!strategyId || !coin) {
+        res.status(400).json({ error: "strategyId and coin are required" });
+        return;
+      }
+
+      const entry = STRATEGY_REGISTRY.find(
+        (e) => e.id === strategyId && e.isCandleStrategy && e.factory !== null,
+      );
+      if (!entry || !entry.factory) {
+        res.status(400).json({ error: `Unknown candle strategy: ${strategyId}` });
+        return;
+      }
+
+      const limit   = Math.min(parseInt(String(candleLimit)) || 1000, 2000);
+      const candles = await fetchCandles(coin.toUpperCase(), interval, limit);
+      if (candles.length === 0) {
+        res.status(400).json({ error: "No candle data returned for this coin/interval" });
+        return;
+      }
+
+      // Instantiate strategy; inject user params via Object.assign — TypeScript `private`
+      // compiles to regular JS properties, so this correctly overrides defaults at runtime.
+      const strategy = entry.factory();
+      if (Object.keys(strategyParams).length > 0) Object.assign(strategy, strategyParams);
+
+      // Merge defaults with user params so runConfig shows the full picture
+      const paramDefaults = Object.fromEntries(entry.params.map((p) => [p.key, p.default]));
+      const mergedParams  = { ...paramDefaults, ...strategyParams };
+
+      const result = runBacktest(strategy, candles, {
+        initialEquity,
+        positionSizeUsd: config.risk.maxPositionSizeUsd,
+        stopLossPct,
+        commissionPct: commissionPct / 100,   // convert % → fraction for engine
+      });
+
+      res.json({
+        ...result,
+        returnPct: initialEquity > 0 ? (result.totalPnl / initialEquity) * 100 : 0,
+        runConfig: {
+          strategyId,
+          strategyName:   entry.displayName,
+          coin:           coin.toUpperCase(),
+          interval,
+          fetchedCandles: candles.length,
+          strategyParams: mergedParams,
+          initialEquity,
+          commissionPct,
+          stopLossPct,
+        },
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("[backtest/run]", error.message);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   router.get("/learn", (_req, res) => {
