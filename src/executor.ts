@@ -305,34 +305,25 @@ export class Executor {
     }
     this.closing = true;
 
-    const { coin, side, size, entryPrice } = this.position;
+    const { coin, side: localSide, size: localSize, entryPrice } = this.position;
     const currentPrice = this.currentPrices.get(coin) ?? 0;
-
-    // To close a long we sell (b: false); to close a short we buy (b: true)
-    const closeIsLong = side === "short";
-    const limitPrice  = closeIsLong
-      ? currentPrice * (1 + SLIPPAGE)   // buy back to close short
-      : currentPrice * (1 - SLIPPAGE);  // sell to close long
-    const priceStr = limitPrice.toPrecision(5);
-    const sizeStr  = size.toString();
-
-    console.log(
-      `[executor] ${this.dryRun ? "DRY-RUN " : ""}CLOSE ${side.toUpperCase()} ` +
-      `${sizeStr} ${coin} @ ~$${priceStr} (${reason})`,
-    );
 
     try {
       if (this.dryRun) {
-        const pnl = side === "long"
-          ? (currentPrice - entryPrice) * size
-          : (entryPrice - currentPrice) * size;
-        console.log(`[executor] DRY-RUN close — est. PnL: $${pnl.toFixed(2)}`);
+        const pnl = localSide === "long"
+          ? (currentPrice - entryPrice) * localSize
+          : (entryPrice - currentPrice) * localSize;
+        console.log(
+          `[executor] DRY-RUN CLOSE ${localSide.toUpperCase()} ` +
+          `${localSize} ${coin} @ ~$${currentPrice.toFixed(1)} (${reason}) ` +
+          `est. PnL: $${pnl.toFixed(2)}`,
+        );
         this.position = null;
         bus.emit("trade", {
           orderId:   `dry-close-${Date.now()}`,
           coin,
-          side,
-          size,
+          side:      localSide,
+          size:      localSize,
           price:     currentPrice,
           timestamp: Date.now(),
           success:   true,
@@ -342,8 +333,52 @@ export class Executor {
         return;
       }
 
-      const { index: assetIndex } = await this.resolveAsset(coin);
+      if (currentPrice === 0) {
+        // No tick received yet — cannot compute a valid limit price; stop-loss will retry on next tick
+        console.warn(`[executor] No price for ${coin} yet — deferring close`);
+        return;
+      }
 
+      // Query the exchange for the actual signed position size (szi).
+      // Using local size risks "reduce-only order would increase position" if the open IOC
+      // partially filled, or if the position was externally modified since we opened it.
+      const state = await this.info.clearinghouseState({
+        user: this.walletAddress as `0x${string}`,
+      });
+      const exchPos = state.assetPositions.find((p) => p.position.coin === coin);
+      const szi = exchPos ? parseFloat(exchPos.position.szi) : 0;
+
+      if (szi === 0) {
+        // Exchange has no position for this coin — already flat; sync local state
+        console.warn(`[executor] Exchange reports no ${coin} position — clearing local state`);
+        this.position = null;
+        return;
+      }
+
+      // szi is signed: positive = long, negative = short
+      const actualSide: "long" | "short" = szi > 0 ? "long" : "short";
+      const actualSize = Math.abs(szi);
+
+      if (actualSide !== localSide) {
+        console.warn(
+          `[executor] Position side mismatch: local=${localSide} exchange=${actualSide} — ` +
+          `trusting exchange`,
+        );
+      }
+
+      const { index: assetIndex, szDecimals } = await this.resolveAsset(coin);
+
+      // To close a long we sell (b: false); to close a short we buy (b: true)
+      const closingBuy  = actualSide === "short";
+      const limitPrice  = closingBuy
+        ? currentPrice * (1 + SLIPPAGE)   // buy back to close short
+        : currentPrice * (1 - SLIPPAGE);  // sell to close long
+      const priceStr = limitPrice.toPrecision(5);
+      const sizeStr  = actualSize.toFixed(szDecimals);
+
+      console.log(
+        `[executor] CLOSE ${actualSide.toUpperCase()} ${sizeStr} ${coin} @ ~$${priceStr} (${reason})`,
+      );
       console.log(`[executor] POST close order → ${config.exchange.network} REST`);
 
       let resp: Awaited<ReturnType<typeof this.exchange.order>>;
@@ -351,7 +386,7 @@ export class Executor {
         resp = await this.exchange.order({
           orders: [{
             a: assetIndex,
-            b: closeIsLong,
+            b: closingBuy,
             p: priceStr,
             s: sizeStr,
             r: true,   // reduce-only — never accidentally opens a new position
@@ -379,8 +414,8 @@ export class Executor {
         bus.emit("trade", {
           orderId:   `close-pending-${Date.now()}`,
           coin,
-          side,
-          size,
+          side:      localSide,
+          size:      actualSize,
           price:     currentPrice,
           timestamp: Date.now(),
           success:   true,
@@ -396,14 +431,14 @@ export class Executor {
       const orderId   = filled?.oid.toString() ??
         ("resting" in status ? status.resting.oid.toString() : `close-${Date.now()}`);
       const fillPrice = filled ? parseFloat(filled.avgPx)   : currentPrice;
-      const fillSize  = filled ? parseFloat(filled.totalSz) : size;
+      const fillSize  = filled ? parseFloat(filled.totalSz) : actualSize;
 
-      const pnl = side === "long"
+      const pnl = localSide === "long"
         ? (fillPrice - entryPrice) * fillSize
         : (entryPrice - fillPrice) * fillSize;
 
       console.log(
-        `[executor] Closed ${side} ${coin} oid=${orderId} sz=${fillSize} avgPx=${fillPrice} ` +
+        `[executor] Closed ${localSide} ${coin} oid=${orderId} sz=${fillSize} avgPx=${fillPrice} ` +
         `PnL=$${pnl.toFixed(2)}`,
       );
 
@@ -412,7 +447,7 @@ export class Executor {
       bus.emit("trade", {
         orderId,
         coin,
-        side,
+        side:      localSide,
         size:      fillSize,
         price:     fillPrice,
         timestamp: Date.now(),
