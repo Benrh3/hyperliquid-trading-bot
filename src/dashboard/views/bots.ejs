@@ -446,6 +446,14 @@
         <div class="bc-row"><span class="bc-lbl">Session P&amp;L</span><span class="bc-val ${pnlCls(b.sessionPnl)}">${fmtPnl(b.sessionPnl)}</span></div>
         <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.tradeCount}</span></div>
         <div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">${fmtRate(b.fundingRate)}</span></div>
+        ${isFunding && b.fundingDirection ? `
+        <div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:12px">${esc(b.fundingDirection)}</span></div>
+        <div class="bc-row"><span class="bc-lbl">Direction flips</span><span class="bc-val">${b.fundingFlips ?? 0}</span></div>
+        <div class="bc-row" style="margin-top:0.25rem">
+          <span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">
+            Paper sim only — short-spot leg is not executable on Hyperliquid alone.
+          </span>
+        </div>` : ''}
         <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>
       </div>
       <div class="bc-footer">${pauseBtn}${deleteBtn}</div>

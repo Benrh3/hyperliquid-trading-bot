@@ -69,10 +69,14 @@ export interface BotState {
     entryTime:     number;
     unrealisedPnl: number;
   } | null;
-  sessionPnl: number;
-  tradeCount: number;
-  startedAt:  number;
-  error?:     string;
+  sessionPnl:       number;
+  tradeCount:       number;
+  startedAt:        number;
+  error?:           string;
+  /** Funding-basis only: human-readable description of current legs. */
+  fundingDirection?: string;
+  /** Funding-basis only: number of direction flips since open. */
+  fundingFlips?:     number;
 }
 
 // ── Internal types ────────────────────────────────────────────────────────────
@@ -110,6 +114,9 @@ interface BotRuntime {
 }
 
 interface FundingLane {
+  /** "long"  = long spot + short perp (earns when rate > 0)
+   *  "short" = long perp + short spot (earns when rate < 0) */
+  side:       "long" | "short";
   notional:   number;
   entryPrice: number;
   openTime:   number;
@@ -118,6 +125,7 @@ interface FundingLane {
   periods:    number;
   lastRate:   number;
   lastBucket: number;
+  flipCount:  number;
   pollTimer:  ReturnType<typeof setInterval>;
 }
 
@@ -245,11 +253,15 @@ export class BotManager {
     if (this.fundingLane) {
       const fl = this.fundingLane;
       const msIntoHour     = Date.now() % HOUR_MS;
-      const partialAccrual = fl.lastRate * fl.notional * (msIntoHour / HOUR_MS);
+      // Always earn abs(rate) × notional regardless of which legs are open
+      const partialAccrual = Math.abs(fl.lastRate) * fl.notional * (msIntoHour / HOUR_MS);
       const cd             = this.coinData.get(this.primaryCoin);
       const lastPrice      = cd && cd.hist1m.length > 0
         ? cd.hist1m[cd.hist1m.length - 1].close
         : fl.entryPrice;
+      const dirLabel = fl.side === "long"
+        ? "Long spot / Short perp"
+        : "Long perp / Short spot";
       states.push({
         id:            "funding-basis",
         strategyId:    "funding-basis",
@@ -270,9 +282,11 @@ export class BotManager {
           entryTime:     fl.openTime,
           unrealisedPnl: partialAccrual,
         },
-        sessionPnl: fl.sessionPnl + partialAccrual,
-        tradeCount: fl.periods,
-        startedAt:  fl.openTime,
+        sessionPnl:       fl.sessionPnl + partialAccrual,
+        tradeCount:       fl.periods,
+        startedAt:        fl.openTime,
+        fundingDirection: dirLabel,
+        fundingFlips:     fl.flipCount,
       });
     }
 
@@ -740,21 +754,38 @@ export class BotManager {
       return;
     }
 
-    const now        = Date.now();
-    const entryFees  = 2 * TAKER_FEE * INITIAL_EQUITY;
+    // Fetch current rate to pick the correct starting direction
+    let initialRate = 0;
+    try {
+      const [meta, assetCtxs] = await this.info.metaAndAssetCtxs();
+      const idx = meta.universe.findIndex((u) => u.name === this.primaryCoin);
+      if (idx !== -1) initialRate = parseFloat(assetCtxs[idx].funding);
+    } catch (e) {
+      console.warn("[bot-manager] Funding lane: could not fetch initial rate, defaulting to long-spot");
+    }
+
+    // long  = long spot + short perp → earns when rate > 0
+    // short = long perp + short spot → earns when rate < 0
+    const initialSide: "long" | "short" = initialRate < 0 ? "short" : "long";
+
+    const now       = Date.now();
+    const entryFees = 2 * TAKER_FEE * INITIAL_EQUITY;
     this.fundingLane = {
+      side:       initialSide,
       notional:   INITIAL_EQUITY,
       entryPrice,
       openTime:   now,
       equity:     INITIAL_EQUITY - entryFees,
       sessionPnl: -entryFees,
       periods:    0,
-      lastRate:   0,
+      lastRate:   initialRate,
       lastBucket: Math.floor(now / HOUR_MS),
+      flipCount:  0,
       pollTimer:  setInterval(() => void this.pollFunding(), FUNDING_POLL_MS),
     };
     console.log(
       `[bot-manager] Funding lane OPEN @ $${entryPrice.toFixed(2)}` +
+      ` side=${initialSide} rate=${(initialRate * 100).toFixed(4)}%` +
       ` notional=$${INITIAL_EQUITY} entry fees=$${entryFees.toFixed(4)}`,
     );
     void this.pollFunding();
@@ -963,18 +994,42 @@ export class BotManager {
       const idx = meta.universe.findIndex((u) => u.name === this.primaryCoin);
       if (idx === -1) return;
       const rate = parseFloat(assetCtxs[idx].funding);
+
+      // Flip direction when funding sign changes.
+      // long (long-spot/short-perp) earns when rate > 0; flip to short when rate turns negative.
+      // short (long-perp/short-spot) earns when rate < 0; flip to long when rate turns positive.
+      const needsFlip =
+        (fl.side === "long"  && rate < 0) ||
+        (fl.side === "short" && rate > 0);
+
+      if (needsFlip && rate !== 0) {
+        // Close two legs, reopen two opposite legs: 4 × TAKER_FEE × notional total
+        const flipCost    = 4 * TAKER_FEE * fl.notional;
+        fl.equity        -= flipCost;
+        fl.sessionPnl    -= flipCost;
+        fl.side           = fl.side === "long" ? "short" : "long";
+        fl.flipCount++;
+        console.log(
+          `[bot-manager] Funding lane flipped to ${fl.side}` +
+          ` rate=${(rate * 100).toFixed(4)}% flip cost=$${flipCost.toFixed(4)}` +
+          ` (flip #${fl.flipCount})`,
+        );
+      }
+
       fl.lastRate = rate;
+
+      // Accrue abs(rate) × notional per completed hour — same formula for both directions
       const currentBucket = Math.floor(Date.now() / HOUR_MS);
       if (currentBucket > fl.lastBucket) {
-        const n         = currentBucket - fl.lastBucket;
-        const earned    = rate * fl.notional * n;
-        fl.equity      += earned;
-        fl.sessionPnl  += earned;
-        fl.periods     += n;
-        fl.lastBucket   = currentBucket;
+        const n      = currentBucket - fl.lastBucket;
+        const earned = Math.abs(rate) * fl.notional * n;
+        fl.equity    += earned;
+        fl.sessionPnl += earned;
+        fl.periods   += n;
+        fl.lastBucket = currentBucket;
         console.log(
           `[bot-manager] Funding accrual ×${n}` +
-          ` rate=${(rate * 100).toFixed(4)}% earned=${earned >= 0 ? "+" : ""}${earned.toFixed(4)}`,
+          ` rate=${(rate * 100).toFixed(4)}% side=${fl.side} earned=+${earned.toFixed(4)}`,
         );
       }
     } catch (e) {
