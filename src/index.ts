@@ -1,12 +1,15 @@
 import { bus } from "./events.js";
-import { config, coins, hasValidPrivateKey } from "./config.js";
+import { config, coins, hasValidPrivateKey, getPrivateKey } from "./config.js";
 import { Logger } from "./logger.js";
 import { startDashboard } from "./dashboard/server.js";
 import { Executor } from "./executor.js";
+import { HyperliquidVenue } from "./venues/hyperliquid.js";
 import { Feed } from "./feed.js";
 import { FundingRateStrategy } from "./strategy/funding-rate.js";
 import { BotManager } from "./bot-manager.js";
 import { DydxFundingPoller } from "./dydx-funding.js";
+import { CrossVenueFundingBasis } from "./cross-venue-funding.js";
+import { DydxVenue } from "./venues/dydx.js";
 import { loadCustomDefs, customDefToRegistryEntry } from "./strategy/custom-strategy.js";
 import { STRATEGY_REGISTRY } from "./strategy/registry.js";
 import { RiskManager } from "./risk.js";
@@ -36,12 +39,28 @@ const logger = new Logger();
 // 1b. Notifications (Telegram — no-op if env vars not set)
 initNotifications();
 
-// 2. Executor (only when a real key is present; dry-run by default)
+const isTestnet = config.exchange.network === "testnet";
+
+// 2. Venue + Executor (only when a real key is present; dry-run by default)
 let executor: Executor | undefined;
 if (keyReady) {
-  const dryRun = process.env.DRY_RUN !== "false";
-  executor = new Executor(dryRun);
+  const dryRun  = process.env.DRY_RUN !== "false";
+  const hlVenue = new HyperliquidVenue(getPrivateKey(), isTestnet);
+  executor = new Executor(hlVenue, dryRun);
 }
+
+// 2b. Cross-venue funding basis — uses read-only HL venue + dYdX venue with optional mnemonic
+const hlReadOnly = new HyperliquidVenue(null, isTestnet);
+
+const dydxMnemonic = process.env.DYDX_TESTNET_MNEMONIC?.trim();
+if (dydxMnemonic) {
+  console.log("[init] DYDX_TESTNET_MNEMONIC loaded — dYdX testnet trading available");
+} else {
+  console.log("[init] DYDX_TESTNET_MNEMONIC not set — cross-venue strategy runs paper-only");
+}
+
+const dydxTradingVenue = new DydxVenue(dydxMnemonic);
+const crossVenue       = new CrossVenueFundingBasis(hlReadOnly, dydxTradingVenue, "BTC", 1_000, logger);
 
 // 3. Strategies visible to the Strategies page (funding-rate poller only)
 //    Candle strategies are managed by LaneManager below.
@@ -68,8 +87,8 @@ console.log("[init] Risk manager ready");
 // 5. Feed — create before dashboard so the dashboard can reference it for interval changes
 const feed = new Feed();
 
-// 6. Dashboard — pass strategies, feed, executor, lane manager, and dYdX poller
-startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller);
+// 6. Dashboard — pass strategies, feed, executor, lane manager, dYdX poller, and cross-venue strategy
+startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller, crossVenue);
 
 // ─── Event wiring ─────────────────────────────────────────
 
@@ -90,6 +109,7 @@ for (const s of strategies) {
 await feed.start();
 await laneManager.start();
 await dydxPoller.start();
+await crossVenue.start();
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
@@ -97,6 +117,7 @@ process.on("SIGINT", async () => {
   await feed.stop();
   await laneManager.stop();
   dydxPoller.stop();
+  crossVenue.stop();
   for (const s of strategies) {
     if ("stop" in s && typeof (s as { stop?: () => void }).stop === "function") {
       (s as { stop: () => void }).stop();

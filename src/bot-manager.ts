@@ -77,6 +77,22 @@ export interface BotState {
   fundingDirection?: string;
   /** Funding-basis only: number of direction flips since open. */
   fundingFlips?:     number;
+  /** Cross-venue only: ordered legs [shortLeg, longLeg]. */
+  crossVenueLegs?:   Array<{ venue: string; side: "long" | "short" }>;
+  /** Cross-venue only: gross funding collected before fees (USD). */
+  capturedFunding?:  number;
+  /** Cross-venue only: current funding spread rate (decimal per hour). */
+  currentSpread?:    number;
+  /** Cross-venue only: current execution mode. */
+  executionMode?:    "paper" | "testnet";
+  /** Cross-venue only: average hours between leg-direction flips. */
+  avgFlipFrequencyHours?: number;
+  /** Cross-venue only: average hold duration per direction in hours. */
+  avgHeldDurationHours?:  number;
+  /** Cross-venue only: total funding captured over rolling 7-day window as % of notional. */
+  rolling7dCapturePct?:   number;
+  /** Cross-venue only: human-readable reason the daily-loss circuit breaker tripped. */
+  crossVenuePausedReason?: string;
 }
 
 // ── Internal types ────────────────────────────────────────────────────────────

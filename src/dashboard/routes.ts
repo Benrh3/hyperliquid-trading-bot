@@ -13,6 +13,7 @@ import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
 import type { BotManager, BotsFile } from "../bot-manager.js";
 import type { DydxFundingPoller } from "../dydx-funding.js";
+import type { CrossVenueFundingBasis } from "../cross-venue-funding.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
@@ -230,6 +231,7 @@ export function createRouter(
   executor?: Executor,
   laneManager?: BotManager,
   dydxPoller?: DydxFundingPoller,
+  crossVenue?: CrossVenueFundingBasis,
 ): Router {
   const router = Router();
 
@@ -382,7 +384,10 @@ export function createRouter(
   // ── Bot API ───────────────────────────────────────────────────────────────
 
   router.get("/api/bots", (_req, res) => {
-    const raw = laneManager?.getBotStates() ?? [];
+    const raw = [...(laneManager?.getBotStates() ?? [])];
+    // Append cross-venue paper strategy as a synthetic bot entry
+    const cv = crossVenue?.getBotState();
+    if (cv) raw.push(cv);
     // Enrich each state with the live funding rate for its coin (from the shared cache)
     const enriched = raw.map((b) => {
       const cached = fundingTopCache?.items.find((i) => i.coin === b.coin);
@@ -700,6 +705,21 @@ export function createRouter(
 
   router.get("/api/dydx-funding", (_req, res) => {
     res.json(dydxPoller?.getState() ?? { rate: null, lastUpdated: null, error: "Poller not initialised" });
+  });
+
+  router.post("/api/cross-venue/mode", (req, res) => {
+    if (!crossVenue) { res.status(503).json({ error: "Cross-venue strategy not initialised" }); return; }
+    const { mode } = req.body as { mode?: string };
+    if (mode !== "paper" && mode !== "testnet") {
+      res.status(400).json({ error: 'mode must be "paper" or "testnet"' });
+      return;
+    }
+    try {
+      crossVenue.setExecutionMode(mode);
+      res.json({ ok: true, mode });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   router.get("/api/prices", (_req, res) => {

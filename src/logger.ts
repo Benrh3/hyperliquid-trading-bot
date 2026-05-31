@@ -155,6 +155,24 @@ export class Logger {
       .all(limit) as EventRow[];
   }
 
+  /**
+   * Write a structured event row directly — used by modules that don't go
+   * through the bus (e.g. the cross-venue strategy's flip events).
+   */
+  logEvent(
+    module:  string,
+    level:   "info" | "warn" | "error",
+    message: string,
+    data?:   unknown,
+  ): void {
+    this.stmtInsertEvent.run({
+      module,
+      level,
+      message,
+      data: data != null ? JSON.stringify(data) : null,
+    });
+  }
+
   close(): void {
     this.db.close();
     console.log("[logger] Database closed");

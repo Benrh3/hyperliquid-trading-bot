@@ -1,7 +1,7 @@
-const INDEXER_BASE    = "https://indexer.v4testnet.dydx.exchange/v4";
-const TICKER          = "BTC-USD";
-const POLL_INTERVAL   = 60_000;
-const FETCH_TIMEOUT   = 10_000;
+import { DydxVenue } from "./venues/dydx.js";
+
+const POLL_INTERVAL = 60_000;
+const COIN          = "BTC";
 
 export interface DydxFundingState {
   /** Per-hour rate as a decimal (e.g. 0.000050 = 0.005%/hr). null until first successful poll. */
@@ -11,7 +11,12 @@ export interface DydxFundingState {
   error:       string | null;
 }
 
+/**
+ * Polls dYdX BTC-USD funding every 60 s via DydxVenue.getFundingRate.
+ * Exposes the latest state for the dashboard's cross-exchange comparison panel.
+ */
 export class DydxFundingPoller {
+  private readonly venue = new DydxVenue();
   private state: DydxFundingState = { rate: null, lastUpdated: null, error: null };
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -29,46 +34,13 @@ export class DydxFundingPoller {
 
   private async poll(): Promise<void> {
     try {
-      // Primary: nextFundingRate from perpetualMarkets
-      const url  = `${INDEXER_BASE}/perpetualMarkets?ticker=${encodeURIComponent(TICKER)}`;
-      const resp = await fetch(url, {
-        headers: { Accept: "application/json" },
-        signal:  AbortSignal.timeout(FETCH_TIMEOUT),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
-
-      type Market  = { nextFundingRate?: string };
-      type MktResp = { markets?: Record<string, Market> };
-      const data   = await resp.json() as MktResp;
-      const market = data.markets?.[TICKER];
-      if (!market) throw new Error(`${TICKER} not in dYdX perpetualMarkets response`);
-
-      let rate: number;
-
-      if (market.nextFundingRate != null && market.nextFundingRate !== "") {
-        rate = parseFloat(market.nextFundingRate);
-      } else {
-        // Fallback: most recently settled rate from historicalFunding
-        const histUrl  = `${INDEXER_BASE}/historicalFunding/${encodeURIComponent(TICKER)}?limit=1`;
-        const histResp = await fetch(histUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT) });
-        if (!histResp.ok) throw new Error(`historicalFunding HTTP ${histResp.status}`);
-        type HistEntry = { rate?: string };
-        type HistResp  = { historicalFunding?: HistEntry[] };
-        const hist     = await histResp.json() as HistResp;
-        const entry    = hist.historicalFunding?.[0];
-        if (!entry?.rate) throw new Error("No rate in dYdX historicalFunding response");
-        rate = parseFloat(entry.rate);
-        console.log(`[dydx-funding] ${TICKER} ${(rate * 100).toFixed(4)}%/hr (historical fallback)`);
-      }
-
-      if (!Number.isFinite(rate)) throw new Error(`Parsed rate is not finite: ${rate}`);
-
+      const rate = await this.venue.getFundingRate(COIN);
+      if (rate == null) throw new Error("No funding rate in dYdX response");
       this.state = { rate, lastUpdated: new Date(), error: null };
-      console.log(`[dydx-funding] ${TICKER} ${(rate * 100).toFixed(4)}%/hr`);
+      console.log(`[dydx-funding] BTC-USD ${(rate * 100).toFixed(4)}%/hr`);
     } catch (e) {
       const msg = (e as Error).message;
       console.error("[dydx-funding] Poll failed:", msg);
-      // Keep stale rate so callers can still show last-known value
       this.state = { ...this.state, error: msg };
     }
   }

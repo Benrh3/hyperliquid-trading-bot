@@ -22,6 +22,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@dydxprotocol/v4-client-js": "^3.6.0",
     "@nktkas/hyperliquid": "^0.32.1",
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.7",

@@ -381,6 +381,106 @@
   }
   function pnlCls(n) { return n >= 0 ? 'pnl-pos' : 'pnl-neg'; }
 
+  // ── Card body helpers ─────────────────────────────────────────────────────
+
+  function renderStandardBody(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml) {
+    return `
+      <div class="bc-row"><span class="bc-lbl">Position</span><span class="bc-val">${posBadge}</span></div>
+      ${entryHtml}
+      <div class="bc-row"><span class="bc-lbl">Current price</span><span class="bc-val">${fmtPrice(b.lastPrice)}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Unrealised P&amp;L</span><span class="bc-val">${upnlHtml}</span></div>
+      ${timePosHtml}
+      <div class="bc-divider"></div>
+      <div class="bc-row"><span class="bc-lbl">Session P&amp;L</span><span class="bc-val ${pnlCls(b.sessionPnl)}">${fmtPnl(b.sessionPnl)}</span></div>
+      <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.tradeCount}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">${fmtRate(b.fundingRate)}</span></div>
+      ${isFunding && b.fundingDirection ? `
+      <div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:12px">${esc(b.fundingDirection)}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Direction flips</span><span class="bc-val">${b.fundingFlips ?? 0}</span></div>
+      <div class="bc-row" style="margin-top:0.25rem">
+        <span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">
+          Paper sim only — short-spot leg is not executable on Hyperliquid alone.
+        </span>
+      </div>` : ''}
+      <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>`;
+  }
+
+  function renderCrossVenueBody(b) {
+    const legs    = b.crossVenueLegs ?? [];
+    const spread  = b.currentSpread ?? 0;
+    const spreadPct = (spread * 100).toFixed(4);
+    const spreadClr = spread >= 0 ? 'text-green' : 'text-red';
+    const grossFunding = b.capturedFunding ?? 0;
+    const netPnl       = b.sessionPnl ?? 0;
+    const feePaid      = grossFunding - netPnl;
+    const mode         = b.executionMode ?? 'paper';
+    const isTestnet    = mode === 'testnet';
+
+    const legsHtml = legs.length === 2
+      ? legs.map(l =>
+          `<span class="pos-badge ${l.side === 'short' ? 'pos-short' : 'pos-long'}" style="font-size:10px;margin-right:3px">${l.venue.toUpperCase()} ${l.side.toUpperCase()}</span>`
+        ).join('')
+      : '<span class="pos-badge pos-flat">WAITING</span>';
+
+    const modeBadge = isTestnet
+      ? `<span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:99px;background:rgba(240,136,62,.15);color:#f0883e;border:1px solid rgba(240,136,62,.35)">TESTNET</span>`
+      : `<span style="font-size:10px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:99px;background:rgba(139,148,158,.15);color:var(--muted)">PAPER</span>`;
+
+    const toggleBtn = `<button class="bc-btn cv-mode-toggle" data-id="${b.id}" data-current="${mode}" style="font-size:11px;padding:2px 8px">
+      ${isTestnet ? 'Switch to Paper' : 'Switch to Testnet'}
+    </button>`;
+
+    return `
+      <div class="bc-row" style="align-items:center">
+        <span class="bc-lbl">Mode</span>
+        <span class="bc-val" style="display:flex;align-items:center;gap:6px">${modeBadge}${toggleBtn}</span>
+      </div>
+      <div class="bc-row"><span class="bc-lbl">Legs</span><span class="bc-val" style="display:flex;gap:3px;flex-wrap:wrap">${legsHtml}</span></div>
+      <div class="bc-row">
+        <span class="bc-lbl">Spread<span style="font-size:9px;color:var(--muted);margin-left:3px">/hr</span></span>
+        <span class="bc-val ${spreadClr}">${spread >= 0 ? '+' : ''}${spreadPct}%</span>
+      </div>
+      <div class="bc-row">
+        <span class="bc-lbl">Spread (ann.)</span>
+        <span class="bc-val ${spreadClr}">${spread >= 0 ? '+' : ''}${(spread * 8760 * 100).toFixed(1)}%</span>
+      </div>
+      <div class="bc-divider"></div>
+      <div class="bc-row"><span class="bc-lbl">Net P&amp;L</span><span class="bc-val ${pnlCls(netPnl)}">${fmtPnl(netPnl)}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Gross funding</span><span class="bc-val ${pnlCls(grossFunding)}">${fmtPnl(grossFunding)}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Fees paid</span><span class="bc-val text-muted">${fmtPnl(-feePaid)}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Periods</span><span class="bc-val">${b.tradeCount}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Leg flips</span><span class="bc-val">${b.fundingFlips ?? 0}</span></div>
+      <div class="bc-divider"></div>
+      <div class="bc-row">
+        <span class="bc-lbl">Avg flip freq</span>
+        <span class="bc-val">${b.avgFlipFrequencyHours != null ? b.avgFlipFrequencyHours.toFixed(1) + 'h' : '—'}</span>
+      </div>
+      <div class="bc-row">
+        <span class="bc-lbl">Avg hold / dir</span>
+        <span class="bc-val">${b.avgHeldDurationHours != null ? b.avgHeldDurationHours.toFixed(1) + 'h' : '—'}</span>
+      </div>
+      <div class="bc-row">
+        <span class="bc-lbl">7d capture</span>
+        <span class="bc-val ${b.rolling7dCapturePct != null ? pnlCls(b.rolling7dCapturePct) : ''}">
+          ${b.rolling7dCapturePct != null ? (b.rolling7dCapturePct >= 0 ? '+' : '') + b.rolling7dCapturePct.toFixed(3) + '%' : '—'}
+        </span>
+      </div>
+      ${b.crossVenuePausedReason ? `
+      <div class="bc-row" style="margin-top:0.3rem">
+        <span style="font-size:11px;color:var(--amber, #d29922);line-height:1.4;font-weight:500">
+          ⚠ ${esc(b.crossVenuePausedReason)}
+        </span>
+      </div>` : ''}
+      <div class="bc-row" style="margin-top:0.25rem">
+        <span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">
+          ${isTestnet
+            ? 'Testnet execution — real orders on HL &amp; dYdX testnet. Flip: +30%, max 1/hr.'
+            : 'Paper simulation — no real orders. Min spread: 0.005%/hr. Flip: +30%, max 1/hr.'}
+        </span>
+      </div>
+      <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>`;
+  }
+
   // ── Render cards ──────────────────────────────────────────────────────────
   function renderBot(b) {
     const pos      = b.position;
@@ -416,13 +516,14 @@
     const statusLabel = b.status === 'running' ? 'Running' : b.status === 'error' ? 'Error' : 'Paused';
     const statusCls   = b.status === 'running' ? 'running' : b.status === 'error' ? 'error' : 'paused';
     const tfBadge     = b.timeframe !== '—' ? `<span class="bc-tf">${b.timeframe}</span>` : '';
-    const isFunding   = b.strategyId === 'funding-basis';
-    const isError     = b.status === 'error';
+    const isFunding    = b.strategyId === 'funding-basis';
+    const isCrossVenue = b.strategyId === 'cross-venue-funding-basis';
+    const isError      = b.status === 'error';
 
-    const pauseBtn = (isFunding || isError) ? '' : (b.status === 'running'
+    const pauseBtn = (isFunding || isCrossVenue || isError) ? '' : (b.status === 'running'
       ? `<button class="bc-btn" data-action="pause" data-id="${b.id}">Pause</button>`
       : `<button class="bc-btn primary" data-action="resume" data-id="${b.id}">Resume</button>`);
-    const deleteBtn = isFunding ? '' :
+    const deleteBtn = (isFunding || isCrossVenue) ? '' :
       `<button class="bc-btn danger" data-action="delete" data-id="${b.id}" style="margin-left:auto">Delete</button>`;
     const errorBanner = isError
       ? `<div class="bc-error-msg">&#9888; ${esc(b.error || 'Unknown error')}</div>`
@@ -437,24 +538,7 @@
       </div>
       ${errorBanner}
       <div class="bc-body">
-        <div class="bc-row"><span class="bc-lbl">Position</span><span class="bc-val">${posBadge}</span></div>
-        ${entryHtml}
-        <div class="bc-row"><span class="bc-lbl">Current price</span><span class="bc-val">${fmtPrice(b.lastPrice)}</span></div>
-        <div class="bc-row"><span class="bc-lbl">Unrealised P&amp;L</span><span class="bc-val">${upnlHtml}</span></div>
-        ${timePosHtml}
-        <div class="bc-divider"></div>
-        <div class="bc-row"><span class="bc-lbl">Session P&amp;L</span><span class="bc-val ${pnlCls(b.sessionPnl)}">${fmtPnl(b.sessionPnl)}</span></div>
-        <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.tradeCount}</span></div>
-        <div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">${fmtRate(b.fundingRate)}</span></div>
-        ${isFunding && b.fundingDirection ? `
-        <div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:12px">${esc(b.fundingDirection)}</span></div>
-        <div class="bc-row"><span class="bc-lbl">Direction flips</span><span class="bc-val">${b.fundingFlips ?? 0}</span></div>
-        <div class="bc-row" style="margin-top:0.25rem">
-          <span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">
-            Paper sim only — short-spot leg is not executable on Hyperliquid alone.
-          </span>
-        </div>` : ''}
-        <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>
+        ${isCrossVenue ? renderCrossVenueBody(b) : renderStandardBody(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml)}
       </div>
       <div class="bc-footer">${pauseBtn}${deleteBtn}</div>
     </div>`;
@@ -482,6 +566,33 @@
           try { await fetch('/api/bots/' + encodeURIComponent(id) + '/' + action, { method: 'POST' }); }
           catch (e) { console.error(e); }
         }
+        await load();
+      });
+    });
+
+    // Cross-venue execution mode toggle
+    grid.querySelectorAll('.cv-mode-toggle').forEach(btn => {
+      btn.addEventListener('click', async function () {
+        const current = this.dataset.current;
+        const next    = current === 'testnet' ? 'paper' : 'testnet';
+        if (next === 'testnet') {
+          if (!confirm(
+            'Switch to TESTNET mode?\n\n' +
+            'Real orders will be placed on Hyperliquid testnet and dYdX testnet.\n' +
+            'DYDX_TESTNET_MNEMONIC must be set in .env.\n\n' +
+            'Existing paper positions will be reset.'
+          )) return;
+        }
+        this.disabled = true;
+        try {
+          const resp = await fetch('/api/cross-venue/mode', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ mode: next }),
+          });
+          const data = await resp.json();
+          if (!resp.ok) { alert('Error: ' + (data.error || resp.statusText)); }
+        } catch (e) { console.error(e); }
         await load();
       });
     });
