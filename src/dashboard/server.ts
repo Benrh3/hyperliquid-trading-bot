@@ -9,6 +9,7 @@ import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
 import type { BotManager } from "../bot-manager.js";
+import type { DydxFundingPoller } from "../dydx-funding.js";
 import { createRouter } from "./routes.js";
 
 export interface BotState {
@@ -26,7 +27,7 @@ export interface BotState {
 const INITIAL_EQUITY = 1000;
 const MAX_EQUITY_HISTORY = 1440; // 24h at 1-minute recording
 
-export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed?: Feed, executor?: Executor, laneManager?: BotManager): void {
+export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed?: Feed, executor?: Executor, laneManager?: BotManager, dydxPoller?: DydxFundingPoller): void {
   const state: BotState = {
     lastPrices: Object.fromEntries(coins.map((c) => [c, { mid: 0, bid: 0, ask: 0 }])),
     lastUpdate: null,
@@ -109,7 +110,7 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
   app.set("views", join(__dirname, "../../src/dashboard/views"));
   app.use(express.json());
 
-  app.use("/", createRouter(logger, state, strategies, feed, executor, laneManager));
+  app.use("/", createRouter(logger, state, strategies, feed, executor, laneManager, dydxPoller));
 
   const port = config.dashboard.port;
   app.listen(port, () => {

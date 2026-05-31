@@ -30,16 +30,17 @@ export interface Signal {
 }
 
 export interface TradeResult {
-  orderId: string;
-  coin: string;
-  side: "long" | "short";
-  size: number;
-  price: number;
+  orderId:   string;
+  coin:      string;
+  side:      "long" | "short";
+  size:      number;
+  price:     number;
   timestamp: number;
-  success: boolean;
-  error?: string;
-  pnl?: number;    // realised PnL — only set on close trades
-  reason?: string; // e.g. "Stop-loss 2.10%" or signal reason
+  success:   boolean;
+  error?:    string;
+  pnl?:      number;    // realised PnL — only set on close trades
+  reason?:   string;    // e.g. "Stop-loss 2.10%" or signal reason
+  strategy?: string;    // strategy id — callers that know it should set this
 }
 
 export interface OrderbookLevel {

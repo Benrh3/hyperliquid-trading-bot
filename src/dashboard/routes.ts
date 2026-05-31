@@ -12,6 +12,7 @@ import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
 import type { BotManager, BotsFile } from "../bot-manager.js";
+import type { DydxFundingPoller } from "../dydx-funding.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
@@ -228,6 +229,7 @@ export function createRouter(
   feed?: Feed,
   executor?: Executor,
   laneManager?: BotManager,
+  dydxPoller?: DydxFundingPoller,
 ): Router {
   const router = Router();
 
@@ -694,6 +696,10 @@ export function createRouter(
       return;
     }
     res.json(fr.getState());
+  });
+
+  router.get("/api/dydx-funding", (_req, res) => {
+    res.json(dydxPoller?.getState() ?? { rate: null, lastUpdated: null, error: "Poller not initialised" });
   });
 
   router.get("/api/prices", (_req, res) => {

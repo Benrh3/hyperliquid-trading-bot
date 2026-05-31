@@ -686,10 +686,11 @@ export class BotManager {
           signal.side === "long"
             ? candle.close * (1 + SLIPPAGE)
             : candle.close * (1 - SLIPPAGE);
+        const size = config.risk.maxPositionSizeUsd / entryPx;
         bot.position = {
           side:          signal.side,
           entryPrice:    entryPx,
-          size:          config.risk.maxPositionSizeUsd / entryPx,
+          size,
           entryTime:     candle.timestamp,
           unrealisedPnl: 0,
         };
@@ -697,6 +698,19 @@ export class BotManager {
           `[bot-manager] ${bot.config.id}/${bot.config.coin}/${bot.config.timeframe}` +
           ` OPEN ${signal.side.toUpperCase()} @ ${entryPx.toFixed(2)}`,
         );
+        if (bot.config.live) {
+          bus.emit("trade", {
+            orderId:   `bm-open-${bot.config.id}-${Date.now()}`,
+            coin:      bot.config.coin,
+            side:      signal.side,
+            size,
+            price:     entryPx,
+            timestamp: candle.timestamp,
+            success:   true,
+            reason:    signal.reason,
+            strategy:  bot.config.strategyId,
+          });
+        }
       }
     }
     // Always emit so the Overview signal counter and logger see every bot's signals.
@@ -720,6 +734,20 @@ export class BotManager {
       `[bot-manager] ${bot.config.id}/${bot.config.coin}/${bot.config.timeframe}` +
       ` CLOSE @ ${exitPx.toFixed(2)} PnL ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} (${reason})`,
     );
+    if (bot.config.live) {
+      bus.emit("trade", {
+        orderId:   `bm-close-${bot.config.id}-${Date.now()}`,
+        coin:      bot.config.coin,
+        side:      pos.side,
+        size:      pos.size,
+        price:     exitPx,
+        timestamp: Date.now(),
+        success:   true,
+        pnl,
+        reason,
+        strategy:  bot.config.strategyId,
+      });
+    }
   }
 
   private markPosition(bot: BotRuntime, currentPrice: number): void {

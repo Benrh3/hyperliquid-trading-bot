@@ -6,6 +6,7 @@ import { Executor } from "./executor.js";
 import { Feed } from "./feed.js";
 import { FundingRateStrategy } from "./strategy/funding-rate.js";
 import { BotManager } from "./bot-manager.js";
+import { DydxFundingPoller } from "./dydx-funding.js";
 import { loadCustomDefs, customDefToRegistryEntry } from "./strategy/custom-strategy.js";
 import { STRATEGY_REGISTRY } from "./strategy/registry.js";
 import { RiskManager } from "./risk.js";
@@ -57,6 +58,9 @@ console.log(`[init] Custom strategies loaded: ${STRATEGY_REGISTRY.filter(e => e.
 // 3b. Bot manager — one independent paper bot per (strategy + coin + timeframe)
 const laneManager = new BotManager();
 
+// 3c. dYdX v4 funding rate poller (read-only, no wallet required)
+const dydxPoller = new DydxFundingPoller();
+
 // 4. Risk manager
 const risk = new RiskManager(1000);
 console.log("[init] Risk manager ready");
@@ -64,8 +68,8 @@ console.log("[init] Risk manager ready");
 // 5. Feed — create before dashboard so the dashboard can reference it for interval changes
 const feed = new Feed();
 
-// 6. Dashboard — pass strategies, feed, executor, and lane manager
-startDashboard(logger, strategies, feed, executor, laneManager);
+// 6. Dashboard — pass strategies, feed, executor, lane manager, and dYdX poller
+startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller);
 
 // ─── Event wiring ─────────────────────────────────────────
 
@@ -82,15 +86,17 @@ for (const s of strategies) {
   if (s.init) await s.init([]);
 }
 
-// ─── Start feed and lane manager ─────────────────────────
+// ─── Start feed, lane manager, and dYdX poller ───────────
 await feed.start();
 await laneManager.start();
+await dydxPoller.start();
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\n[init] Shutting down...");
   await feed.stop();
   await laneManager.stop();
+  dydxPoller.stop();
   for (const s of strategies) {
     if ("stop" in s && typeof (s as { stop?: () => void }).stop === "function") {
       (s as { stop: () => void }).stop();

@@ -74,7 +74,7 @@ export class Logger {
         size: result.size,
         price: result.price,
         pnl: result.pnl ?? null,
-        strategy: config.strategy.type,
+        strategy: result.strategy ?? config.strategy.type,
         success: result.success ? 1 : 0,
         error: result.error ?? null,
       });

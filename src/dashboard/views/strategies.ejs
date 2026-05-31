@@ -161,9 +161,51 @@
     width: 14px; height: 14px; vertical-align: middle;
   }
 
+  /* ── Cross-exchange comparison panel ── */
+  .cross-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.875rem 1.25rem 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+  .cross-hdr {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--muted);
+    margin-bottom: 0.85rem;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .cross-tag {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.04em; padding: 0.1rem 0.45rem;
+    border-radius: 3px; color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .cross-metrics {
+    display: flex; align-items: stretch; gap: 0; flex-wrap: wrap;
+  }
+  .cross-metric {
+    display: flex; flex-direction: column; gap: 0.2rem;
+    padding: 0 1.25rem 0 0;
+    margin-right: 1.25rem;
+    border-right: 1px solid var(--border);
+  }
+  .cross-metric:last-child { border-right: none; margin-right: 0; padding-right: 0; }
+  .cross-metric.spread { border-left: none; }
+  .cross-lbl { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .cross-val { font-size: 1.05rem; font-weight: 600; font-family: monospace; }
+  .cross-sub { font-size: 10px; color: var(--muted); }
+  .cross-footer {
+    font-size: 11px; color: var(--muted);
+    margin-top: 0.65rem; padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 1rem; flex-wrap: wrap; justify-content: space-between;
+  }
+
   @media (max-width: 600px) {
     .calc-divider { display: none; }
     .calc-results { gap: 1rem; }
+    .cross-metric { border-right: none; padding-right: 0; margin-right: 0; margin-bottom: 0.6rem; }
   }
 </style>
 
@@ -192,6 +234,36 @@
 <div id="tip-box"></div>
 
 <div class="fund-page">
+
+  <!-- ── Cross-exchange BTC funding comparison ── -->
+  <div class="cross-panel">
+    <div class="cross-hdr">
+      BTC Funding Rate Comparison
+      <span class="cross-tag">BTC-USD · hourly rate</span>
+    </div>
+    <div class="cross-metrics">
+      <div class="cross-metric">
+        <span class="cross-lbl">Hyperliquid BTC</span>
+        <span class="cross-val" id="cx-hl">—</span>
+        <span class="cross-sub">current rate</span>
+      </div>
+      <div class="cross-metric">
+        <span class="cross-lbl">dYdX v4 BTC-USD</span>
+        <span class="cross-val" id="cx-dydx">—</span>
+        <span class="cross-sub">next funding rate</span>
+      </div>
+      <div class="cross-metric spread">
+        <span class="cross-lbl">Spread (abs)</span>
+        <span class="cross-val" id="cx-spread">—</span>
+        <span class="cross-sub">|HL − dYdX|</span>
+      </div>
+    </div>
+    <div class="cross-footer">
+      <span id="cx-hl-age">HL: —</span>
+      <span id="cx-dydx-age">dYdX: —</span>
+      <span style="margin-left:auto;color:var(--muted)">dYdX testnet indexer · read-only · updates every 60s</span>
+    </div>
+  </div>
 
   <!-- ── Notional calculator ── -->
   <div class="calc-panel">
@@ -275,6 +347,7 @@
   'use strict';
 
   // ── State ─────────────────────────────────────────────────────────────────
+  let dydxRate     = null;   // most recent dYdX BTC rate (decimal)
   let allData      = [];
   let sortCol      = 'annualizedRate';
   let sortDir      = -1;          // -1 desc, 1 asc
@@ -506,6 +579,7 @@
 
       renderTable();
       updateCalc();
+      updateComparison();
       refreshLbl.textContent = 'Updated just now';
     } catch (err) {
       refreshLbl.textContent = 'Error: ' + err.message;
@@ -526,11 +600,65 @@
   });
   calcAmt.addEventListener('input', updateCalc);
 
+  // ── Cross-exchange comparison ─────────────────────────────────────────────
+  const cxHl     = document.getElementById('cx-hl');
+  const cxDydx   = document.getElementById('cx-dydx');
+  const cxSpread = document.getElementById('cx-spread');
+  const cxHlAge  = document.getElementById('cx-hl-age');
+  const cxDydxAge = document.getElementById('cx-dydx-age');
+
+  function updateComparison() {
+    // HL BTC rate comes from allData (already loaded) — avoids a second HL call
+    const hlEntry = allData.find(d => d.coin === 'BTC');
+    const hlRate  = hlEntry ? hlEntry.currentRate : null;
+
+    if (hlRate != null) {
+      cxHl.textContent  = fmtRate(hlRate);
+      cxHl.className    = 'cross-val ' + rClr(hlRate);
+      cxHlAge.textContent = 'HL: live';
+    }
+
+    if (dydxRate != null) {
+      cxDydx.textContent  = fmtRate(dydxRate);
+      cxDydx.className    = 'cross-val ' + rClr(dydxRate);
+    }
+
+    if (hlRate != null && dydxRate != null) {
+      const spread = Math.abs(hlRate - dydxRate);
+      cxSpread.textContent = fmtRate(spread);
+      cxSpread.className   = 'cross-val';
+    }
+  }
+
+  async function loadDydxRate() {
+    try {
+      const resp = await fetch('/api/dydx-funding');
+      if (!resp.ok) throw new Error(resp.statusText);
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      dydxRate = data.rate;
+      const ts = data.lastUpdated ? new Date(data.lastUpdated) : null;
+      const sAgo = ts ? Math.round((Date.now() - ts.getTime()) / 1000) : null;
+      cxDydxAge.textContent = sAgo != null ? `dYdX: ${sAgo}s ago` : 'dYdX: —';
+      if (data.rate == null) {
+        cxDydx.textContent = 'no data';
+        cxDydx.className = 'cross-val';
+      }
+    } catch (err) {
+      cxDydx.textContent = 'error';
+      cxDydx.className = 'cross-val text-red';
+      cxDydxAge.textContent = 'dYdX: ' + err.message;
+    }
+    updateComparison();
+  }
+
   // ── Init ──────────────────────────────────────────────────────────────────
   updateSortUI();
   loadData();
+  loadDydxRate();
   startCountdown();
   setInterval(loadData, 60_000);
+  setInterval(loadDydxRate, 60_000);
 
 })();
 </script>
