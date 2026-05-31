@@ -100,14 +100,18 @@ export class CrossVenueFundingBasis {
     notionalUsd = 1_000,
     logger?:    Logger,
   ) {
-    this.venueA          = venueA;
-    this.venueB          = venueB;
-    this.coin            = coin;
-    this.notional        = notionalUsd;
-    this.equity          = notionalUsd;
+    this.venueA           = venueA;
+    this.venueB           = venueB;
+    this.coin             = coin;
+    this.notional         = notionalUsd;
+    this.equity           = notionalUsd;
     this.dailyStartEquity = notionalUsd;
-    this.logger          = logger;
-    this.rates           = { [venueA.name]: null, [venueB.name]: null };
+    this.logger           = logger;
+    this.rates            = { [venueA.name]: null, [venueB.name]: null };
+    console.log(
+      `[cross-venue] Constructed — ${venueA.name} ↔ ${venueB.name}` +
+      ` coin=${coin} notional=$${notionalUsd} mode=paper`,
+    );
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────

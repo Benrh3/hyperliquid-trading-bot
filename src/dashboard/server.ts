@@ -1,6 +1,6 @@
 import express from "express";
 import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import { dirname, resolve } from "path";
 import { bus } from "../events.js";
 import { config, coins } from "../config.js";
 import type { Candle, OrderbookSnapshot } from "../events.js";
@@ -104,12 +104,16 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
     state.orderbooks[snapshot.coin] = snapshot;
   });
 
+  // __dirname here is dist/dashboard/ at runtime; resolve back to the source tree
+  // so Express reads .ejs files directly from src/ — no copy step ever needed.
   const __dirname = dirname(fileURLToPath(import.meta.url));
+  const viewsDir  = resolve(__dirname, "../../src/dashboard/views");
 
   const app = express();
   app.set("view engine", "ejs");
-  app.set("views", join(__dirname, "../../src/dashboard/views"));
+  app.set("views", viewsDir);
   app.use(express.json());
+  console.log(`[dashboard] Views directory: ${viewsDir}`);
 
   app.use("/", createRouter(logger, state, strategies, feed, executor, laneManager, dydxPoller, crossVenue));
 

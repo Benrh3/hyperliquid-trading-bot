@@ -49,18 +49,18 @@ if (keyReady) {
   executor = new Executor(hlVenue, dryRun);
 }
 
-// 2b. Cross-venue funding basis — uses read-only HL venue + dYdX venue with optional mnemonic
-const hlReadOnly = new HyperliquidVenue(null, isTestnet);
-
+// 2b. Cross-venue funding basis (HL ↔ dYdX, BTC, $1000 notional, paper mode by default).
+//     Uses a read-only HyperliquidVenue (no wallet needed for rate reads) and a DydxVenue
+//     that accepts an optional mnemonic for testnet execution.
+const hlReadOnly   = new HyperliquidVenue(null, isTestnet);
 const dydxMnemonic = process.env.DYDX_TESTNET_MNEMONIC?.trim();
-if (dydxMnemonic) {
-  console.log("[init] DYDX_TESTNET_MNEMONIC loaded — dYdX testnet trading available");
-} else {
-  console.log("[init] DYDX_TESTNET_MNEMONIC not set — cross-venue strategy runs paper-only");
-}
-
-const dydxTradingVenue = new DydxVenue(dydxMnemonic);
-const crossVenue       = new CrossVenueFundingBasis(hlReadOnly, dydxTradingVenue, "BTC", 1_000, logger);
+const dydxVenue    = new DydxVenue(dydxMnemonic);
+const crossVenue   = new CrossVenueFundingBasis(hlReadOnly, dydxVenue, "BTC", 1_000, logger);
+console.log(
+  dydxMnemonic
+    ? "[init] Cross-venue strategy created — DYDX_TESTNET_MNEMONIC present (testnet execution available)"
+    : "[init] Cross-venue strategy created — no DYDX_TESTNET_MNEMONIC (paper mode only)",
+);
 
 // 3. Strategies visible to the Strategies page (funding-rate poller only)
 //    Candle strategies are managed by LaneManager below.
@@ -105,11 +105,19 @@ for (const s of strategies) {
   if (s.init) await s.init([]);
 }
 
-// ─── Start feed, lane manager, and dYdX poller ───────────
+// ─── Start feed, lane manager, dYdX poller, and cross-venue strategy ─────
 await feed.start();
 await laneManager.start();
 await dydxPoller.start();
-await crossVenue.start();
+
+// Start cross-venue strategy independently — a network error on the first
+// poll must not abort the rest of startup.
+try {
+  await crossVenue.start();
+  console.log("[init] Cross-venue funding strategy started in paper mode (BTC · $1000 notional)");
+} catch (e) {
+  console.error("[init] Cross-venue strategy failed to start:", (e as Error).message);
+}
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
