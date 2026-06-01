@@ -14,6 +14,7 @@ import { config, coins } from "./config.js";
 import { STRATEGY_REGISTRY, getStrategyEntry } from "./strategy/registry.js";
 import type { Strategy } from "./strategy/base.js";
 import type { Candle, Signal } from "./events.js";
+import type { Venue } from "./venue.js";
 
 const BOTS_PATH       = resolve(process.cwd(), "config", "bots.json");
 const INITIAL_EQUITY  = 1000;
@@ -159,8 +160,11 @@ export class BotManager {
 
   private wsClient: SubscriptionClient | null = null;
   private info:     InfoClient;
+  /** Optional venue used to place real orders for LIVE bots (any coin in the universe). */
+  private readonly venue: Venue | undefined;
 
-  constructor() {
+  constructor(venue?: Venue) {
+    this.venue       = venue;
     this.primaryCoin = coins[0];
     const isTestnet  = config.exchange.network === "testnet";
     this.info        = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
@@ -674,28 +678,50 @@ export class BotManager {
         ? (pos.entryPrice - candle.low)  / pos.entryPrice * 100
         : (candle.high - pos.entryPrice) / pos.entryPrice * 100;
     if (loss < stopPct) return;
-    const exitPx =
-      pos.side === "long"
-        ? pos.entryPrice * (1 - stopPct / 100) * (1 - SLIPPAGE)
-        : pos.entryPrice * (1 + stopPct / 100) * (1 + SLIPPAGE);
-    this.closePosition(bot, exitPx, `Stop-loss ${loss.toFixed(1)}%`);
+    const reason = `Stop-loss ${loss.toFixed(1)}%`;
+    if (bot.config.live) {
+      // Fire-and-forget: venue fetches its own mark price, works for any coin
+      void this.executeLiveClose(bot, reason).catch((err: Error) =>
+        console.error(`[bot-manager] LIVE stop-loss close failed ${bot.config.id}: ${err.message}`),
+      );
+    } else {
+      const exitPx =
+        pos.side === "long"
+          ? pos.entryPrice * (1 - stopPct / 100) * (1 - SLIPPAGE)
+          : pos.entryPrice * (1 + stopPct / 100) * (1 + SLIPPAGE);
+      this.paperClosePosition(bot, exitPx, reason);
+    }
   }
 
   private applySignal(bot: BotRuntime, signal: Signal, candle: Candle): void {
+    // Signal counter and logger always see every bot's signals.
+    // paper:true tells the risk manager and executor to skip execution.
+    bus.emit("signal", { ...signal, paper: !bot.config.live });
+
+    if (bot.config.live) {
+      // Real execution path — async, venue fetches its own price for any coin.
+      // State updates (bot.position, equity) happen ONLY after confirmed fill.
+      void this.executeLiveSignal(bot, signal, candle).catch((err: Error) =>
+        console.error(`[bot-manager] LIVE signal failed ${bot.config.id}: ${err.message}`),
+      );
+      return;
+    }
+
+    // ── Paper simulation path ─────────────────────────────────────────────
     if (signal.side === "close") {
       if (!bot.position) return;
       const exitPx =
         bot.position.side === "long"
           ? candle.close * (1 - SLIPPAGE)
           : candle.close * (1 + SLIPPAGE);
-      this.closePosition(bot, exitPx, signal.reason);
+      this.paperClosePosition(bot, exitPx, signal.reason);
     } else {
       if (bot.position && bot.position.side !== signal.side) {
         const exitPx =
           bot.position.side === "long"
             ? candle.close * (1 - SLIPPAGE)
             : candle.close * (1 + SLIPPAGE);
-        this.closePosition(bot, exitPx, `Reversed to ${signal.side}`);
+        this.paperClosePosition(bot, exitPx, `Reversed to ${signal.side}`);
       }
       if (!bot.position) {
         const entryPx =
@@ -712,29 +738,14 @@ export class BotManager {
         };
         console.log(
           `[bot-manager] ${bot.config.id}/${bot.config.coin}/${bot.config.timeframe}` +
-          ` OPEN ${signal.side.toUpperCase()} @ ${entryPx.toFixed(2)}`,
+          ` PAPER OPEN ${signal.side.toUpperCase()} @ ${entryPx.toFixed(2)}`,
         );
-        if (bot.config.live) {
-          bus.emit("trade", {
-            orderId:   `bm-open-${bot.config.id}-${Date.now()}`,
-            coin:      bot.config.coin,
-            side:      signal.side,
-            size,
-            price:     entryPx,
-            timestamp: candle.timestamp,
-            success:   true,
-            reason:    signal.reason,
-            strategy:  bot.config.strategyId,
-          });
-        }
       }
     }
-    // Always emit so the Overview signal counter and logger see every bot's signals.
-    // paper:true tells the risk manager and executor to skip execution.
-    bus.emit("signal", { ...signal, paper: !bot.config.live });
   }
 
-  private closePosition(bot: BotRuntime, exitPx: number, reason: string): void {
+  /** Paper-only position close — updates equity/tradeCount in memory, no exchange call. */
+  private paperClosePosition(bot: BotRuntime, exitPx: number, reason: string): void {
     const pos = bot.position;
     if (!pos) return;
     const pnl =
@@ -748,21 +759,121 @@ export class BotManager {
     bot.unrealisedPnl  = 0;
     console.log(
       `[bot-manager] ${bot.config.id}/${bot.config.coin}/${bot.config.timeframe}` +
-      ` CLOSE @ ${exitPx.toFixed(2)} PnL ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} (${reason})`,
+      ` PAPER CLOSE @ ${exitPx.toFixed(2)} PnL ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} (${reason})`,
     );
-    if (bot.config.live) {
+  }
+
+  // ── Live execution (real exchange orders via Venue) ────────────────────────
+
+  /**
+   * Orchestrates the full live-signal flow: close existing position if needed,
+   * then open a new one. Called fire-and-forget; all state updates happen here
+   * only after a confirmed exchange response.
+   */
+  private async executeLiveSignal(bot: BotRuntime, signal: Signal, candle: Candle): Promise<void> {
+    if (!this.venue) {
+      console.warn(
+        `[bot-manager] ${bot.config.id} is LIVE but no venue configured — ` +
+        `skipping exchange order (set HL_PRIVATE_KEY to enable live trading)`,
+      );
+      return;
+    }
+
+    if (signal.side === "close") {
+      if (!bot.position) return;
+      await this.executeLiveClose(bot, signal.reason);
+      return;
+    }
+
+    // Reversal: close existing first, then open the opposite side
+    if (bot.position && bot.position.side !== signal.side) {
+      await this.executeLiveClose(bot, `Reversed to ${signal.side}`);
+      if (bot.position) {
+        // Close failed — abort the reversal rather than risk both sides being open
+        return;
+      }
+    }
+
+    if (!bot.position) {
+      await this.executeLiveOpen(bot, signal, candle.timestamp);
+    }
+  }
+
+  private async executeLiveOpen(bot: BotRuntime, signal: Signal, candleTs: number): Promise<void> {
+    if (signal.side === "close") return;
+    const coin = bot.config.coin;
+    const tag  = `${bot.config.id}/${coin}/${bot.config.timeframe}`;
+    try {
+      const receipt = await this.venue!.openPosition(coin, signal.side, config.risk.maxPositionSizeUsd);
+      // Update paper state with real fill data so equity tracks the actual position
+      bot.position = {
+        side:          signal.side,
+        entryPrice:    receipt.fillPrice,
+        size:          receipt.fillSize,
+        entryTime:     candleTs,
+        unrealisedPnl: 0,
+      };
+      console.log(
+        `[bot-manager] ${tag} LIVE OPEN ${signal.side.toUpperCase()}` +
+        ` oid=${receipt.orderId} fillPx=${receipt.fillPrice.toFixed(4)} sz=${receipt.fillSize}`,
+      );
       bus.emit("trade", {
-        orderId:   `bm-close-${bot.config.id}-${Date.now()}`,
-        coin:      bot.config.coin,
+        orderId:   receipt.orderId,
+        coin,
+        side:      signal.side,
+        size:      receipt.fillSize,
+        price:     receipt.fillPrice,
+        timestamp: Date.now(),
+        success:   true,
+        reason:    signal.reason,
+        strategy:  bot.config.strategyId,
+      });
+    } catch (e) {
+      const msg = (e as Error).message;
+      // Do NOT update bot.position or emit a trade — no fill occurred
+      console.error(`[bot-manager] ${tag} LIVE OPEN failed: ${msg}`);
+      bus.emit("error", "bot-manager", e as Error);
+    }
+  }
+
+  private async executeLiveClose(bot: BotRuntime, reason: string): Promise<void> {
+    const pos = bot.position;
+    if (!pos) return;
+    const coin = bot.config.coin;
+    const tag  = `${bot.config.id}/${coin}/${bot.config.timeframe}`;
+    try {
+      const receipt = await this.venue!.closePosition(coin);
+      const pnl =
+        pos.side === "long"
+          ? (receipt.fillPrice - pos.entryPrice) * pos.size
+          : (pos.entryPrice - receipt.fillPrice) * pos.size;
+      bot.equity        += pnl;
+      bot.sessionPnl    += pnl;
+      bot.tradeCount++;
+      bot.position       = null;
+      bot.unrealisedPnl  = 0;
+      console.log(
+        `[bot-manager] ${tag} LIVE CLOSE` +
+        ` oid=${receipt.orderId} fillPx=${receipt.fillPrice.toFixed(4)}` +
+        ` PnL=${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} (${reason})`,
+      );
+      bus.emit("trade", {
+        orderId:   receipt.orderId,
+        coin,
         side:      pos.side,
-        size:      pos.size,
-        price:     exitPx,
+        size:      receipt.fillSize,
+        price:     receipt.fillPrice,
         timestamp: Date.now(),
         success:   true,
         pnl,
         reason,
         strategy:  bot.config.strategyId,
       });
+    } catch (e) {
+      const msg = (e as Error).message;
+      // Do NOT clear bot.position or emit a trade — the position may still be open on exchange
+      console.error(`[bot-manager] ${tag} LIVE CLOSE failed: ${msg}`);
+      bus.emit("error", "bot-manager", e as Error);
     }
   }
 

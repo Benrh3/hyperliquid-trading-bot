@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# deploy.sh — pull latest, build, restart pm2.
+# Exits immediately on any failure; never prints "Deployed." unless every step succeeded.
+
+set -euo pipefail
+
+# ── 1. Pull latest changes (fast-forward only) ───────────────────────────────
+echo "[deploy] Pulling latest changes..."
+
+# Detect local modifications before attempting the pull
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo ""
+  echo "[deploy] ERROR: Working tree has uncommitted changes."
+  echo "         Stash or reset them before deploying:"
+  echo ""
+  echo "             git stash          # to save and restore later"
+  echo "             git checkout -- .  # to discard all local changes"
+  echo ""
+  exit 1
+fi
+
+# --ff-only refuses to auto-merge; it fails if the pull would require a merge commit
+if ! git pull --ff-only; then
+  echo ""
+  echo "[deploy] ERROR: git pull --ff-only failed."
+  echo "         This usually means the local branch has diverged from origin."
+  echo "         Resolve the divergence manually, then re-run deploy.sh:"
+  echo ""
+  echo "             git fetch origin"
+  echo "             git log --oneline HEAD..origin/main  # see what's incoming"
+  echo "             git reset --hard origin/main         # discard local commits"
+  echo ""
+  exit 1
+fi
+
+# ── 2. Install dependencies ───────────────────────────────────────────────────
+echo "[deploy] Installing dependencies..."
+npm ci --omit=dev
+
+# ── 3. Build TypeScript ───────────────────────────────────────────────────────
+echo "[deploy] Building..."
+npm run build
+
+# ── 4. Restart pm2 ───────────────────────────────────────────────────────────
+echo "[deploy] Restarting pm2 process..."
+pm2 restart hl-trading-bot --update-env
+
+echo ""
+echo "[deploy] Deployed successfully."

@@ -41,11 +41,14 @@ initNotifications();
 
 const isTestnet = config.exchange.network === "testnet";
 
-// 2. Venue + Executor (only when a real key is present; dry-run by default)
-let executor: Executor | undefined;
+// 2. Venue + Executor (only when a real key is present; dry-run by default).
+//    hlVenue is kept in scope so it can be passed to BotManager too — live bots
+//    call venue.openPosition/closePosition directly for any coin in the universe.
+let executor: Executor            | undefined;
+let hlVenue:  HyperliquidVenue    | undefined;
 if (keyReady) {
-  const dryRun  = process.env.DRY_RUN !== "false";
-  const hlVenue = new HyperliquidVenue(getPrivateKey(), isTestnet);
+  const dryRun = process.env.DRY_RUN !== "false";
+  hlVenue  = new HyperliquidVenue(getPrivateKey(), isTestnet);
   executor = new Executor(hlVenue, dryRun);
 }
 
@@ -74,8 +77,8 @@ for (const def of loadCustomDefs()) {
 }
 console.log(`[init] Custom strategies loaded: ${STRATEGY_REGISTRY.filter(e => e.isCustom).length}`);
 
-// 3b. Bot manager — one independent paper bot per (strategy + coin + timeframe)
-const laneManager = new BotManager();
+// 3b. Bot manager — passes hlVenue so LIVE bots can place real orders on any HL coin
+const laneManager = new BotManager(hlVenue);
 
 // 3c. dYdX v4 funding rate poller (read-only, no wallet required)
 const dydxPoller = new DydxFundingPoller();
