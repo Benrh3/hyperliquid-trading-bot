@@ -1,26 +1,17 @@
-import {
-  CompositeClient,
-  Network,
-  LocalWallet,
-  SubaccountInfo,
-  OrderType,
-  OrderSide,
-  OrderTimeInForce,
-  OrderExecution,
-  PositionStatus,
-} from "@dydxprotocol/v4-client-js";
+// NOTE: no static imports from @dydxprotocol/v4-client-js here.
+// The SDK is loaded lazily inside initClient() so a broken ESM resolution in
+// the package never crashes the process in paper-only mode.
+
+// Type-only imports are erased at compile time — they generate no runtime
+// import statement and therefore cannot trigger ERR_MODULE_NOT_FOUND.
+import type { CompositeClient, SubaccountInfo } from "@dydxprotocol/v4-client-js";
 import type { Venue, VenuePosition, OrderReceipt } from "../venue.js";
 
 const INDEXER_BASE  = "https://indexer.v4testnet.dydx.exchange/v4";
 const FETCH_TIMEOUT = 10_000;
-const SLIPPAGE      = 0.02;   // 2% slippage cushion on IOC limit price
-const BECH32_PREFIX = "dydx"; // Cosmos address prefix for dYdX testnet
+const SLIPPAGE      = 0.02;
+const BECH32_PREFIX = "dydx";
 
-/**
- * Convert a Hyperliquid-style coin symbol (e.g. "BTC") into the dYdX
- * perpetual ticker format (e.g. "BTC-USD").  Symbols that already contain
- * a hyphen are returned unchanged.
- */
 function toDydxTicker(coin: string): string {
   const upper = coin.toUpperCase();
   return upper.includes("-") ? upper : `${upper}-USD`;
@@ -35,11 +26,9 @@ async function indexerGet<T>(path: string): Promise<T> {
   return resp.json() as Promise<T>;
 }
 
-/** Extract a hex tx hash from any broadcast-response shape the SDK may return. */
 function extractTxHash(resp: unknown): string {
   if (!resp || typeof resp !== "object") return `dydx-${Date.now()}`;
   const r = resp as Record<string, unknown>;
-  // IndexedTx has `transactionHash` (string); BroadcastTxSyncResponse has `hash` (Uint8Array)
   if (typeof r["transactionHash"] === "string") return r["transactionHash"];
   if (r["hash"] instanceof Uint8Array) return Buffer.from(r["hash"]).toString("hex");
   return `dydx-${Date.now()}`;
@@ -48,32 +37,34 @@ function extractTxHash(resp: unknown): string {
 /**
  * dYdX v4 venue.
  *
- * Read methods (getFundingRate, getMarkPrice) always work — they query the
- * public testnet Indexer and require no auth.
+ * Read methods (getFundingRate, getMarkPrice) use plain fetch — no SDK, always available.
  *
- * Trading methods (openPosition, closePosition, getPosition) require a
- * mnemonic, loaded from the DYDX_TESTNET_MNEMONIC environment variable.
- * Pass the mnemonic at construction time; the CompositeClient is
- * initialised lazily on the first trading call.
+ * Trading methods require DYDX_TESTNET_MNEMONIC.  The SDK is loaded via a
+ * dynamic import the first time a trading call is made; in paper mode the SDK
+ * is never loaded, so a broken package installation has no effect.
  */
 export class DydxVenue implements Venue {
   readonly name = "dydx";
 
-  private readonly mnemonic:  string | undefined;
+  private readonly mnemonic: string | undefined;
+
+  // These fields use type-only references (CompositeClient, SubaccountInfo).
+  // The 'import type' at the top is erased at runtime — only the initialiser
+  // null matters at runtime.
   private client:     CompositeClient | null = null;
   private subaccount: SubaccountInfo  | null = null;
   private address     = "";
   private initPromise: Promise<void>  | null = null;
 
-  /**
-   * @param mnemonic  BIP-39 mnemonic phrase from DYDX_TESTNET_MNEMONIC.
-   *                  Omit (or pass undefined) for read-only use.
-   */
+  // Cached SDK module (populated by initClient, used by trading methods for enums)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private sdk: Record<string, any> | null = null;
+
   constructor(mnemonic?: string) {
     this.mnemonic = mnemonic;
   }
 
-  // ── Market data (public, no auth) ─────────────────────────────────────────
+  // ── Market data — plain fetch, no SDK ─────────────────────────────────────
 
   async getFundingRate(coin: string): Promise<number | null> {
     const ticker = toDydxTicker(coin);
@@ -88,7 +79,6 @@ export class DydxVenue implements Venue {
       if (Number.isFinite(rate)) return rate;
     }
 
-    // nextFundingRate absent during low-activity — fall back to most recent settled rate
     type HistEntry = { rate?: string };
     type HistResp  = { historicalFunding?: HistEntry[] };
     const hist     = await indexerGet<HistResp>(
@@ -121,8 +111,9 @@ export class DydxVenue implements Venue {
     const ticker = toDydxTicker(coin);
     type PerpPos = { market: string; side: string; size: string; entryPrice: string };
     type Resp    = { positions?: PerpPos[] };
-    const resp   = await this.client!.indexerClient.account.getSubaccountPerpetualPositions(
-      this.address, 0, PositionStatus.OPEN,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resp = await (this.client as any).indexerClient.account.getSubaccountPerpetualPositions(
+      this.address, 0, this.sdk!["PositionStatus"].OPEN,
     ) as Resp;
     const pos = (resp.positions ?? []).find((p) => p.market === ticker);
     if (!pos) return null;
@@ -136,7 +127,7 @@ export class DydxVenue implements Venue {
     return { coin, side, size, entryPrice, markPrice, unrealisedPnl };
   }
 
-  // ── Trade execution (requires wallet) ────────────────────────────────────
+  // ── Trade execution (requires wallet + SDK) ───────────────────────────────
 
   async openPosition(coin: string, side: "long" | "short", sizeUsd: number): Promise<OrderReceipt> {
     await this.ensureClient();
@@ -144,12 +135,11 @@ export class DydxVenue implements Venue {
     const markPrice = await this.getMarkPrice(coin);
     if (!markPrice) throw new Error(`[dydx-venue] No mark price for ${coin}`);
 
+    const sdk       = this.sdk!;
     const ticker    = toDydxTicker(coin);
     const isBuy     = side === "long";
-    const baseSize  = parseFloat((sizeUsd / markPrice).toFixed(4)); // 4 dp = 0.0001 BTC min step
-    const limitPx   = isBuy
-      ? markPrice * (1 + SLIPPAGE)   // willing to pay up to slippage above oracle
-      : markPrice * (1 - SLIPPAGE);  // willing to sell down to slippage below oracle
+    const baseSize  = parseFloat((sizeUsd / markPrice).toFixed(4));
+    const limitPx   = isBuy ? markPrice * (1 + SLIPPAGE) : markPrice * (1 - SLIPPAGE);
     const clientId  = Math.floor(Math.random() * 1e9);
 
     console.log(
@@ -157,19 +147,20 @@ export class DydxVenue implements Venue {
       ` limitPx=${limitPx.toFixed(2)} clientId=${clientId}`,
     );
 
-    const resp = await this.client!.placeOrder(
-      this.subaccount!,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resp = await (this.client as any).placeOrder(
+      this.subaccount,
       ticker,
-      OrderType.LIMIT,
-      isBuy ? OrderSide.BUY : OrderSide.SELL,
+      sdk["OrderType"].LIMIT,
+      isBuy ? sdk["OrderSide"].BUY : sdk["OrderSide"].SELL,
       limitPx,
       baseSize,
       clientId,
-      OrderTimeInForce.IOC,   // fills immediately or cancels
-      undefined,              // goodTilTimeInSeconds — not used for IOC
-      OrderExecution.DEFAULT,
-      false,   // postOnly
-      false,   // reduceOnly
+      sdk["OrderTimeInForce"].IOC,
+      undefined,
+      sdk["OrderExecution"].DEFAULT,
+      false,
+      false,
     );
 
     const orderId = extractTxHash(resp);
@@ -183,14 +174,13 @@ export class DydxVenue implements Venue {
     const pos = await this.getPosition(coin);
     if (!pos) throw new Error(`[dydx-venue] closePosition: no open position for ${coin}`);
 
-    const ticker    = toDydxTicker(coin);
-    const isClosingBuy = pos.side === "short";  // buy to close short, sell to close long
-    const markPrice = pos.markPrice || ((await this.getMarkPrice(coin)) ?? 0);
+    const sdk        = this.sdk!;
+    const ticker     = toDydxTicker(coin);
+    const isClosingBuy = pos.side === "short";
+    const markPrice  = pos.markPrice || ((await this.getMarkPrice(coin)) ?? 0);
     if (markPrice === 0) throw new Error(`[dydx-venue] No mark price for ${coin}`);
 
-    const limitPx  = isClosingBuy
-      ? markPrice * (1 + SLIPPAGE)
-      : markPrice * (1 - SLIPPAGE);
+    const limitPx  = isClosingBuy ? markPrice * (1 + SLIPPAGE) : markPrice * (1 - SLIPPAGE);
     const clientId = Math.floor(Math.random() * 1e9);
 
     console.log(
@@ -198,19 +188,20 @@ export class DydxVenue implements Venue {
       ` limitPx=${limitPx.toFixed(2)} clientId=${clientId}`,
     );
 
-    const resp = await this.client!.placeOrder(
-      this.subaccount!,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resp = await (this.client as any).placeOrder(
+      this.subaccount,
       ticker,
-      OrderType.LIMIT,
-      isClosingBuy ? OrderSide.BUY : OrderSide.SELL,
+      sdk["OrderType"].LIMIT,
+      isClosingBuy ? sdk["OrderSide"].BUY : sdk["OrderSide"].SELL,
       limitPx,
       pos.size,
       clientId,
-      OrderTimeInForce.IOC,
+      sdk["OrderTimeInForce"].IOC,
       undefined,
-      OrderExecution.DEFAULT,
-      false,  // postOnly
-      true,   // reduceOnly — never accidentally opens a new position
+      sdk["OrderExecution"].DEFAULT,
+      false,
+      true,  // reduceOnly
     );
 
     const orderId = extractTxHash(resp);
@@ -221,11 +212,9 @@ export class DydxVenue implements Venue {
     return { orderId, fillPrice: markPrice, fillSize: pos.size, pnl };
   }
 
-  // ── Wallet address (for display) ──────────────────────────────────────────
-
   get walletAddress(): string { return this.address; }
 
-  // ── Private: lazy client initialisation ──────────────────────────────────
+  // ── Lazy client initialisation ────────────────────────────────────────────
 
   async ensureClient(): Promise<void> {
     if (this.client) return;
@@ -240,14 +229,33 @@ export class DydxVenue implements Venue {
   }
 
   private async initClient(): Promise<void> {
+    // ── Lazy dynamic import ───────────────────────────────────────────────
+    // Loaded here (not at module top-level) so a broken ESM path inside the
+    // package never crashes the process when no mnemonic is configured.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let sdk: Record<string, any>;
     try {
-      const wallet      = await LocalWallet.fromMnemonic(this.mnemonic!, BECH32_PREFIX);
-      this.client       = await CompositeClient.connect(Network.testnet());
-      this.subaccount   = SubaccountInfo.forLocalWallet(wallet);
-      this.address      = wallet.address!;
+      sdk = await import("@dydxprotocol/v4-client-js") as Record<string, any>;
+    } catch (e) {
+      this.initPromise = null; // allow a future retry after a package fix
+      const msg = (e as Error).message;
+      console.error(
+        `[dydx-venue] Failed to load @dydxprotocol/v4-client-js: ${msg}\n` +
+        `             dYdX trading is unavailable; the bot continues in paper mode.`,
+      );
+      throw new Error(`[dydx-venue] SDK load failed (${msg}) — trading disabled`);
+    }
+
+    // ── Connect wallet and client ─────────────────────────────────────────
+    try {
+      const wallet      = await sdk["LocalWallet"].fromMnemonic(this.mnemonic!, BECH32_PREFIX);
+      this.client       = await sdk["CompositeClient"].connect(sdk["Network"].testnet()) as CompositeClient;
+      this.subaccount   = sdk["SubaccountInfo"].forLocalWallet(wallet) as SubaccountInfo;
+      this.address      = (wallet as { address: string }).address;
+      this.sdk          = sdk; // cache for enum access in trading methods
       console.log(`[dydx-venue] Wallet ${this.address} connected (testnet)`);
     } catch (e) {
-      this.initPromise = null; // allow retry
+      this.initPromise = null;
       throw new Error(`[dydx-venue] Failed to connect: ${(e as Error).message}`);
     }
   }
