@@ -19,6 +19,6 @@
     "stopLossPercent": 2
   },
   "dashboard": {
-    "port": 3001
+    "port": 3002
   }
 }

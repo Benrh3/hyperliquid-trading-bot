@@ -117,7 +117,9 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
 
   app.use("/", createRouter(logger, state, strategies, feed, executor, laneManager, dydxPoller, crossVenue));
 
-  const port = config.dashboard.port;
+  // env var takes precedence over the JSON config default so that DASHBOARD_PORT
+  // in .env is respected without touching config files.
+  const port = Number(process.env.DASHBOARD_PORT) || config.dashboard.port || 3002;
   app.listen(port, () => {
     console.log(`[dashboard] Listening on http://localhost:${port}`);
   });

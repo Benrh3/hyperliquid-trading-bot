@@ -34,8 +34,11 @@ if ! git pull --ff-only; then
 fi
 
 # ── 2. Install dependencies ───────────────────────────────────────────────────
+# Must include devDependencies: TypeScript type packages (@types/*) are dev deps
+# but are required at compile time. --omit=dev is only safe when deploying a
+# pre-built artifact; here we build on the deploy machine, so all deps are needed.
 echo "[deploy] Installing dependencies..."
-npm ci --omit=dev
+npm ci
 
 # ── 3. Build TypeScript ───────────────────────────────────────────────────────
 echo "[deploy] Building..."
