@@ -2,7 +2,7 @@ import { config as loadEnv } from "dotenv";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-loadEnv();
+loadEnv({ override: true });
 
 export interface BotConfig {
   exchange: {
