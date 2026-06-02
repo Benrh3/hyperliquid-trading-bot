@@ -563,7 +563,7 @@ export class LaneManager {
           : candle.close * (1 - SLIPPAGE);
         lane.state.position = {
           side: signal.side, entryPrice: entryPx,
-          size: config.risk.maxPositionSizeUsd / entryPx,
+          size: 500 / entryPx,
           entryTime: candle.timestamp, unrealisedPnl: 0,
         };
         console.log(

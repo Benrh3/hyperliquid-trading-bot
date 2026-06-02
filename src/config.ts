@@ -17,10 +17,21 @@ export interface BotConfig {
     [key: string]: unknown;
   };
   risk: {
-    maxPositionSizeUsd: number;
-    maxDailyLossPercent: number;
-    maxLeverage: number;
-    stopLossPercent: number;
+    /** % of account equity at risk per trade (if stop-loss fires). Default 2.0. */
+    riskPerTradePercent:           number;
+    /** Maximum total open risk across all live bots as % of equity. Default 10.0. */
+    maxConcurrentRiskPercent:      number;
+    maxDailyLossPercent:           number;
+    maxLeverage:                   number;
+    stopLossPercent:               number;
+    /**
+     * If an orphaned position's unrealised loss exceeds this % of its notional,
+     * the reconcile loop closes it immediately rather than waiting for the 24-hour
+     * grace period. Protects against flash crashes when no bot is managing the position.
+     * Default 5.0 (5%).
+     */
+    orphanEmergencyCloseLossPct:   number;
+    // maxPositionSizeUsd: REMOVED — dangerous fixed-dollar shape, ignored on load
   };
   dashboard: {
     port: number;
@@ -78,6 +89,14 @@ export const coins: string[] = Array.isArray(config.exchange.coin)
 // Ensure config.exchange.coin is always the primary coin string for existing code
 if (Array.isArray(config.exchange.coin)) {
   (config.exchange as unknown as { coin: string }).coin = coins[0];
+}
+
+// Migration: warn if old fixed-dollar sizing field is present; it is ignored
+if ((config.risk as Record<string, unknown>)["maxPositionSizeUsd"] !== undefined) {
+  console.log(
+    "[config] Deprecated: risk.maxPositionSizeUsd is no longer used. " +
+    "Position sizing now derives from riskPerTradePercent (default 2%) — see config/default.json.",
+  );
 }
 
 // Validate critical env vars

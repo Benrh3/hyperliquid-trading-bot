@@ -8,90 +8,80 @@
   }
   .settings-hdr { margin-bottom: 2rem; }
   .settings-hdr h1 { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.25rem; }
-  .settings-hdr p  { color: var(--muted); font-size: 13px; }
+  .settings-hdr p  { color: var(--muted); font-size: 13px; line-height: 1.6; }
 
-  /* ── Bots table ── */
-  .bots-table-wrap {
+  .settings-section {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
     overflow: hidden;
-    margin-bottom: 1.5rem;
   }
-  .bots-table { width: 100%; border-collapse: collapse; }
-  .bots-table th {
-    font-size: 11px; font-weight: 500; color: var(--muted);
-    text-align: left; padding: 0.55rem 1rem;
-    border-bottom: 1px solid var(--border);
-  }
-  .bots-table td {
-    padding: 0.6rem 1rem; font-size: 13px;
-    border-bottom: 1px solid var(--border); vertical-align: middle;
-  }
-  .bots-table tbody tr:last-child td { border-bottom: none; }
-  .bots-table tbody tr.bot-inactive { opacity: 0.45; }
-
-  .strat-badge {
-    display: inline-block; font-size: 10px; padding: 1px 5px;
-    border-radius: 3px; margin-left: 5px;
-    color: var(--muted); border: 1px solid var(--border);
-  }
-  .coin-label { font-family: monospace; font-size: 12px; font-weight: 600; }
-  .tf-label {
-    display: inline-block; font-size: 11px; padding: 1px 6px;
-    border: 1px solid var(--border); border-radius: 3px; color: var(--muted);
-  }
-
-  /* Toggle */
-  .toggle {
-    position: relative; width: 36px; height: 20px;
-    cursor: pointer; display: inline-block;
-  }
-  .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
-  .toggle-slider {
-    position: absolute; inset: 0;
-    background: var(--border); border-radius: 20px; transition: background 0.15s;
-  }
-  .toggle-slider::after {
-    content: ""; position: absolute;
-    width: 14px; height: 14px; background: #fff;
-    border-radius: 50%; top: 3px; left: 3px; transition: transform 0.15s;
-  }
-  .toggle input:checked + .toggle-slider { background: var(--blue); }
-  .toggle input:checked + .toggle-slider::after { transform: translateX(16px); }
-  .toggle input:disabled + .toggle-slider { opacity: 0.4; cursor: default; }
-  .toggle-live input:checked + .toggle-slider { background: var(--green); }
-
-  .bots-empty {
-    padding: 1.5rem 1rem; text-align: center;
-    color: var(--muted); font-size: 13px;
-  }
-
-  /* ── Funding basis ── */
-  .funding-section {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+  .section-header {
     padding: 0.875rem 1.25rem;
-    margin-bottom: 1.5rem;
-    display: flex; align-items: flex-start; gap: 1rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.75rem;
   }
-  .funding-info { flex: 1; min-width: 0; }
-  .funding-info strong { font-size: 13px; display: block; margin-bottom: 0.2rem; }
-  .funding-info p { font-size: 11px; color: var(--muted); margin: 0; line-height: 1.5; }
+  .section-header h2 {
+    font-size: 13px; font-weight: 600; margin: 0; flex: 1;
+  }
+  .section-body { padding: 1rem 1.25rem; }
 
-  /* ── Save row ── */
-  .save-row { display: flex; align-items: center; gap: 1rem; }
-  .btn-save {
-    background: var(--blue); color: #fff; border: none;
-    border-radius: 5px; padding: 0.5rem 1.25rem;
-    font-size: 13px; font-weight: 500; cursor: pointer;
+  .setting-row {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
   }
-  .btn-save:hover { opacity: 0.88; }
-  .btn-save:disabled { opacity: 0.5; cursor: default; }
-  #save-msg { font-size: 12px; color: var(--muted); display: none; }
-  #save-msg.ok    { color: var(--green); display: block; }
-  #save-msg.error { color: var(--red);   display: block; }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-lbl { flex: 1; color: var(--text); }
+  .setting-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .setting-val { color: var(--muted); font-size: 13px; font-family: monospace; }
+
+  /* Network badge */
+  .net-badge {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+    padding: 0.2rem 0.6rem; border-radius: 99px; text-transform: uppercase;
+  }
+  .net-testnet { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .net-mainnet { background: rgba(63,185,80,0.15);  color: var(--green); }
+
+  /* Safety gates */
+  .safety-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+  .safety-item {
+    display: flex; align-items: flex-start; gap: 0.75rem;
+    padding: 0.5rem 0.75rem; border-radius: 5px; font-size: 12px;
+  }
+  .safety-item.pass    { background: rgba(63,185,80,0.07);  border: 1px solid rgba(63,185,80,0.2); }
+  .safety-item.fail    { background: rgba(248,81,73,0.07);   border: 1px solid rgba(248,81,73,0.2); }
+  .safety-item.warn    { background: rgba(210,153,34,0.07);  border: 1px solid rgba(210,153,34,0.2); }
+  .safety-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+  .safety-name { font-weight: 500; margin-bottom: 2px; }
+  .safety-detail { color: var(--muted); font-size: 11px; }
+  .safety-loading { color: var(--muted); font-size: 12px; font-style: italic; padding: 0.5rem 0; }
+
+  /* Wallet key display */
+  .key-row { display: flex; align-items: center; gap: 0.75rem; }
+  .key-mono { font-family: monospace; font-size: 12px; color: var(--text); }
+  .key-badge {
+    font-size: 10px; font-weight: 600; padding: 0.1rem 0.5rem;
+    border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .key-set    { background: rgba(63,185,80,0.15);  color: var(--green); }
+  .key-notset { background: rgba(139,148,158,0.15); color: var(--muted); }
+
+  /* Mainnet button */
+  .btn-mainnet {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 4px; padding: 0.3rem 0.85rem; font-size: 12px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-mainnet:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
+  .btn-mainnet:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  @media (max-width: 600px) {
+    .settings-page { padding: 1.25rem 0.75rem 3rem; }
+  }
 </style>
 
 <nav class="nav">
@@ -119,43 +109,134 @@
 
   <div class="settings-hdr">
     <h1>Settings</h1>
-    <p>Toggle active/live flags for each bot and control global settings. To add or delete bots, use the <a href="/bots" style="color:var(--blue)">Bots page</a>.</p>
+    <p>Global configuration. Bot management is on the <a href="/bots" style="color:var(--blue)">Bots page</a>.</p>
   </div>
 
-  <!-- Bots table — active / live toggles only; add/delete on the Bots page -->
-  <div class="bots-table-wrap">
-    <table class="bots-table">
-      <thead>
-        <tr>
-          <th>Strategy</th>
-          <th>Coin</th>
-          <th>Timeframe</th>
-          <th>Active</th>
-          <th title="Live bots place real testnet orders. Max one live bot per coin.">Live</th>
-        </tr>
-      </thead>
-      <tbody id="bots-tbody">
-        <tr><td colspan="5" class="bots-empty">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- Funding basis -->
-  <div class="funding-section">
-    <div class="funding-info">
-      <strong>Funding Basis (paper simulation)</strong>
-      <p>Simulates both legs (long spot + short perp). Entry/exit fees deducted; funding rate accrues hourly. Cannot place real orders.</p>
+  <!-- ── Network ── -->
+  <div class="settings-section">
+    <div class="section-header">
+      <h2>Network</h2>
+      <span class="net-badge net-<%= network %>"><%= network %></span>
     </div>
-    <label class="toggle" title="Enable funding basis simulation">
-      <input type="checkbox" id="funding-toggle">
-      <span class="toggle-slider"></span>
-    </label>
+    <div class="section-body">
+      <div class="setting-row">
+        <div class="setting-lbl">
+          Current network
+          <div class="setting-sub">Set via <code>HL_NETWORK</code> in .env · requires restart to change</div>
+        </div>
+        <span class="setting-val"><%= network %></span>
+      </div>
+      <% if (network === 'testnet') { %>
+      <div class="setting-row">
+        <div class="setting-lbl">
+          Switch to mainnet
+          <div class="setting-sub">All safety gates below must pass before this is enabled</div>
+        </div>
+        <button class="btn-mainnet" id="btn-mainnet" disabled title="Safety gates must all pass first">
+          Enable Mainnet
+        </button>
+      </div>
+      <% } %>
+
+      <!-- Safety gates (loaded async) -->
+      <div style="margin-top:0.5rem">
+        <p style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:0.5rem">
+          Mainnet Safety Gates
+        </p>
+        <div id="safety-list">
+          <div class="safety-loading">Checking…</div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <!-- Save -->
-  <div class="save-row">
-    <button class="btn-save" id="btn-save">Save changes</button>
-    <span id="save-msg"></span>
+  <!-- ── Risk Defaults ── -->
+  <div class="settings-section">
+    <div class="section-header">
+      <h2>Risk Defaults</h2>
+      <span style="font-size:11px;color:var(--muted)">Edit in config/default.json · restart to apply</span>
+    </div>
+    <div class="section-body">
+      <div class="setting-row">
+        <div class="setting-lbl">Risk per trade
+          <div class="setting-sub">Maximum loss per trade if the stop-loss fires, as % of account equity.
+            Determines position size: a 2% risk with a 2% stop puts 1× leverage on the trade.</div>
+        </div>
+        <span class="setting-val"><%= risk.riskPerTradePercent ?? 2.0 %>%</span>
+      </div>
+      <div class="setting-row">
+        <div class="setting-lbl">Max concurrent risk
+          <div class="setting-sub">Maximum simultaneous open risk across all live bots, as % of equity.
+            New trades are rejected once this cap is reached.</div>
+        </div>
+        <span class="setting-val"><%= risk.maxConcurrentRiskPercent ?? 10.0 %>%</span>
+      </div>
+      <div class="setting-row">
+        <div class="setting-lbl">Stop-loss %
+          <div class="setting-sub">Executor triggers a reduce-only close when unrealised loss hits this threshold.
+            Also used in the position-sizing formula: tighter stop → larger position for the same dollar risk.</div>
+        </div>
+        <span class="setting-val"><%= risk.stopLossPercent ?? 2 %>%</span>
+      </div>
+      <div class="setting-row">
+        <div class="setting-lbl">Max leverage
+          <div class="setting-sub">Maximum leverage on any single position. If the sizing formula would produce
+            a higher leverage, the position is scaled down to fit.</div>
+        </div>
+        <span class="setting-val"><%= risk.maxLeverage ?? 5 %>×</span>
+      </div>
+      <div class="setting-row">
+        <div class="setting-lbl">Max daily loss %
+          <div class="setting-sub">Risk manager blocks all new entry signals once daily drawdown reaches this level.
+            Resets at midnight UTC.</div>
+        </div>
+        <span class="setting-val"><%= risk.maxDailyLossPercent ?? 5 %>%</span>
+      </div>
+      <div style="margin-top:0.5rem;padding:0.6rem 0.75rem;background:var(--bg);border-radius:5px;font-size:11px;color:var(--muted);line-height:1.6">
+        <strong style="color:var(--text)">Sizing formula:</strong>
+        dollarRisk = equity × riskPerTrade% ·
+        size = dollarRisk ÷ (price × stopLoss%) ·
+        leverage = riskPerTrade% ÷ stopLoss%
+        (capped at maxLeverage)
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Wallet Status ── -->
+  <div class="settings-section">
+    <div class="section-header">
+      <h2>Wallet Status</h2>
+    </div>
+    <div class="section-body">
+      <div class="setting-row">
+        <div class="setting-lbl">HL_PRIVATE_KEY (testnet executor)</div>
+        <div class="key-row">
+          <% if (hlKeyLoaded) { %>
+            <span class="key-badge key-set">Loaded</span>
+            <span class="key-mono"><%= hlKeyMasked %></span>
+          <% } else { %>
+            <span class="key-badge key-notset">Not set</span>
+          <% } %>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-lbl">HL_MAINNET_PRIVATE_KEY</div>
+        <div class="key-row">
+          <% if (hlMainnetKeyLoaded) { %>
+            <span class="key-badge key-set">Loaded</span>
+            <span class="key-mono"><%= hlMainnetKeyMasked %></span>
+          <% } else { %>
+            <span class="key-badge key-notset">Not set</span>
+          <% } %>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-lbl">DYDX_TESTNET_MNEMONIC</div>
+        <span class="key-badge <%= dydxMnemonicLoaded ? 'key-set' : 'key-notset' %>">
+          <%= dydxMnemonicLoaded ? 'Loaded (24 words)' : 'Not set' %>
+        </span>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -164,110 +245,47 @@
 (function () {
   'use strict';
 
-  // Server-seeded data (snapshot at page-load time — Save is merge-only so unseen bots are safe)
-  const initialBots  = <%- JSON.stringify(botsFile.bots) %>;
-  const fundingInit  = <%- JSON.stringify(botsFile.fundingActive ?? false) %>;
-  const candleStrats = <%- JSON.stringify(registry.filter(e => e.isCandleStrategy).map(e => ({ id: e.id, displayName: e.displayName, categoryLabel: e.categoryLabel }))) %>;
-
-  // Local copy — only active/live flags are editable here; add/delete on the Bots page
-  let bots = initialBots.map(b => Object.assign({}, b));
-
-  const tbody         = document.getElementById('bots-tbody');
-  const fundingToggle = document.getElementById('funding-toggle');
-  const btnSave       = document.getElementById('btn-save');
-  const saveMsg       = document.getElementById('save-msg');
-
-  fundingToggle.checked = fundingInit;
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  function stratLabel(id) {
-    const e = candleStrats.find(s => s.id === id);
-    return e ? e.displayName : id;
-  }
-  function stratCat(id) {
-    const e = candleStrats.find(s => s.id === id);
-    return e ? e.categoryLabel : '';
-  }
-
-  // ── Render table ──────────────────────────────────────────────────────────
-  function render() {
-    if (!bots.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="bots-empty">No bots — <a href="/bots" style="color:var(--blue)">add one on the Bots page</a>.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = bots.map((bot, idx) => [
-      `<tr class="bot-row${bot.active ? '' : ' bot-inactive'}" data-idx="${idx}">`,
-        `<td>${stratLabel(bot.strategyId)} <span class="strat-badge">${stratCat(bot.strategyId)}</span></td>`,
-        `<td><span class="coin-label">${bot.coin}</span></td>`,
-        `<td><span class="tf-label">${bot.timeframe}</span></td>`,
-        `<td><label class="toggle"><input type="checkbox" class="chk-active" data-idx="${idx}"${bot.active ? ' checked' : ''}><span class="toggle-slider"></span></label></td>`,
-        `<td><label class="toggle toggle-live"><input type="checkbox" class="chk-live" data-idx="${idx}"${bot.live && bot.active ? ' checked' : ''}${!bot.active ? ' disabled' : ''}><span class="toggle-slider"></span></label></td>`,
-      '</tr>',
-    ].join('')).join('');
-
-    tbody.querySelectorAll('.chk-active').forEach(chk => {
-      chk.addEventListener('change', function () {
-        const i = +this.dataset.idx;
-        bots[i].active = this.checked;
-        if (!this.checked) bots[i].live = false;
-        render();
-      });
-    });
-    tbody.querySelectorAll('.chk-live').forEach(chk => {
-      chk.addEventListener('change', function () {
-        bots[+this.dataset.idx].live = this.checked;
-      });
-    });
-  }
-
-  // ── Validate ─────────────────────────────────────────────────────────────
-  function validate() {
-    const counts = {};
-    for (const bot of bots) {
-      if (bot.active && bot.live) {
-        counts[bot.coin] = (counts[bot.coin] || 0) + 1;
-        if (counts[bot.coin] > 1) return `Coin ${bot.coin} has ${counts[bot.coin]} live bots (max 1 per coin)`;
-      }
-    }
-    return null;
-  }
-
-  // ── Save — sends the active/live changes for known bots + fundingActive.
-  //    The server merges with any bots added after this page loaded (addBot API),
-  //    so they are never lost.
-  btnSave.addEventListener('click', async function () {
-    const err = validate();
-    if (err) {
-      saveMsg.className = 'error';
-      saveMsg.textContent = err;
-      saveMsg.style.display = 'block';
-      setTimeout(() => { saveMsg.className = ''; saveMsg.style.display = 'none'; }, 5000);
-      return;
-    }
-    btnSave.disabled = true;
-    saveMsg.className = '';
-    saveMsg.textContent = 'Saving…';
-    saveMsg.style.display = 'block';
+  // ── Safety gates ──────────────────────────────────────────────────────────
+  async function loadSafetyStatus() {
+    const container = document.getElementById('safety-list');
     try {
-      const resp = await fetch('/api/bots/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bots, fundingActive: fundingToggle.checked }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || resp.statusText);
-      saveMsg.className = 'ok';
-      saveMsg.textContent = 'Saved';
-    } catch (e) {
-      saveMsg.className = 'error';
-      saveMsg.textContent = e.message;
-    } finally {
-      btnSave.disabled = false;
-      setTimeout(() => { saveMsg.className = ''; saveMsg.style.display = 'none'; }, 4000);
-    }
-  });
+      const resp = await fetch('/api/safety-status');
+      if (!resp.ok) throw new Error(resp.statusText);
+      const { checks, allPass } = await resp.json();
 
-  render();
+      container.innerHTML = checks.map(c => {
+        const icon = c.status === 'pass' ? '✓' : c.status === 'warn' ? '⚠' : '✗';
+        return `<div class="safety-item ${c.status}">
+          <span class="safety-icon">${icon}</span>
+          <div>
+            <div class="safety-name">${c.name}</div>
+            <div class="safety-detail">${c.detail}</div>
+          </div>
+        </div>`;
+      }).join('');
+
+      const btn = document.getElementById('btn-mainnet');
+      if (btn) btn.disabled = !allPass;
+    } catch (e) {
+      container.innerHTML = `<div class="safety-loading">Error loading safety status: ${e.message}</div>`;
+    }
+  }
+
+  loadSafetyStatus();
+
+  // ── Mainnet toggle (just writes a hint to the user for now) ───────────────
+  const btnMainnet = document.getElementById('btn-mainnet');
+  if (btnMainnet) {
+    btnMainnet.addEventListener('click', function () {
+      alert(
+        'To switch to mainnet:\n\n' +
+        '1. Set HL_NETWORK=mainnet in your .env file\n' +
+        '2. Set HL_MAINNET_PRIVATE_KEY to your mainnet wallet key\n' +
+        '3. Restart the bot process (pm2 restart hl-trading-bot)\n\n' +
+        'Confirm all safety gates pass before doing this.'
+      );
+    });
+  }
 })();
 </script>
 

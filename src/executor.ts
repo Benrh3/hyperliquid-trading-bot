@@ -1,5 +1,6 @@
 import { bus } from "./events.js";
 import { config } from "./config.js";
+import { computePositionSize } from "./position-sizing.js";
 import type { Signal } from "./events.js";
 import type { Venue } from "./venue.js";
 
@@ -123,19 +124,28 @@ export class Executor {
     const currentPrice = this.currentPrices.get(coin) ?? 0;
 
     try {
+      // Fetch real account equity for position sizing — works for both dry-run and live
+      // (the venue has a wallet even in dry-run mode, so clearinghouseState succeeds)
+      const accountEquity = (await this.venue.getAccountEquity()) ?? 1_000;
+      const sizing        = computePositionSize(accountEquity, currentPrice || 1);
+
       if (this.dryRun) {
         if (currentPrice === 0) {
           console.warn(`[executor] DRY-RUN: no price for ${coin} yet — skipping`);
           return;
         }
-        const size = config.risk.maxPositionSizeUsd / currentPrice;
-        console.log(`[executor] DRY-RUN OPEN ${signal.side.toUpperCase()} ${size.toFixed(5)} ${coin} @ ~$${currentPrice.toFixed(2)} (${signal.reason})`);
-        this.position = { coin, side: signal.side, size, entryPrice: currentPrice };
+        console.log(
+          `[executor] DRY-RUN OPEN ${signal.side.toUpperCase()}` +
+          ` ${sizing.sizeBase.toFixed(5)} ${coin} @ ~$${currentPrice.toFixed(2)}` +
+          ` notional=$${sizing.notionalUsd.toFixed(2)} leverage=${sizing.leverage.toFixed(2)}x` +
+          ` risk=$${sizing.dollarRisk.toFixed(2)} (${signal.reason})`,
+        );
+        this.position = { coin, side: signal.side, size: sizing.sizeBase, entryPrice: currentPrice };
         bus.emit("trade", {
           orderId:   `dry-${Date.now()}`,
           coin,
           side:      signal.side,
-          size,
+          size:      sizing.sizeBase,
           price:     currentPrice,
           timestamp: Date.now(),
           success:   true,
@@ -144,8 +154,12 @@ export class Executor {
         return;
       }
 
-      const receipt = await this.venue.openPosition(coin, signal.side, config.risk.maxPositionSizeUsd);
+      const receipt = await this.venue.openPosition(coin, signal.side, sizing.notionalUsd);
       this.position  = { coin, side: signal.side, size: receipt.fillSize, entryPrice: receipt.fillPrice };
+      console.log(
+        `[executor] OPEN ${signal.side} ${coin}` +
+        ` notional=$${sizing.notionalUsd.toFixed(2)} leverage=${sizing.leverage.toFixed(2)}x risk=$${sizing.dollarRisk.toFixed(2)}`,
+      );
       bus.emit("trade", {
         orderId:   receipt.orderId,
         coin,
@@ -164,7 +178,7 @@ export class Executor {
         orderId:   `failed-${Date.now()}`,
         coin,
         side:      signal.side,
-        size:      currentPrice > 0 ? config.risk.maxPositionSizeUsd / currentPrice : 0,
+        size:      0,
         price:     currentPrice,
         timestamp: Date.now(),
         success:   false,

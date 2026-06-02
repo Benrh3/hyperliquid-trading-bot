@@ -153,6 +153,32 @@ export class HyperliquidVenue implements Venue {
     return this.parseReceipt(resp, midPx, actualSize, pnl);
   }
 
+  async getAccountEquity(): Promise<number | null> {
+    if (!this.walletAddress) return null; // read-only mode
+    const state  = await this.info.clearinghouseState({ user: this.walletAddress as `0x${string}` });
+    const equity = parseFloat(state.marginSummary.accountValue);
+    return Number.isFinite(equity) && equity > 0 ? equity : null;
+  }
+
+  async getAllPositions(): Promise<import("../venue.js").VenuePosition[]> {
+    if (!this.walletAddress) return [];
+    const state = await this.info.clearinghouseState({ user: this.walletAddress as `0x${string}` });
+    const results: import("../venue.js").VenuePosition[] = [];
+    for (const ap of state.assetPositions) {
+      const szi = parseFloat(ap.position.szi);
+      if (szi === 0) continue;
+      const side: "long" | "short" = szi > 0 ? "long" : "short";
+      const size       = Math.abs(szi);
+      const entryPrice = parseFloat(ap.position.entryPx ?? "0");
+      const markPrice  = (await this.getMarkPrice(ap.position.coin)) ?? 0;
+      const unrealisedPnl = side === "long"
+        ? (markPrice - entryPrice) * size
+        : (entryPrice - markPrice) * size;
+      results.push({ coin: ap.position.coin, side, size, entryPrice, markPrice, unrealisedPnl });
+    }
+    return results;
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private findCoin(universe: { name: string }[], coin: string): number {

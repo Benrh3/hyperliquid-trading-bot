@@ -4,12 +4,11 @@ import { Logger } from "./logger.js";
 import { startDashboard } from "./dashboard/server.js";
 import { Executor } from "./executor.js";
 import { HyperliquidVenue } from "./venues/hyperliquid.js";
+import { DydxVenue } from "./venues/dydx.js";
 import { Feed } from "./feed.js";
 import { FundingRateStrategy } from "./strategy/funding-rate.js";
 import { BotManager } from "./bot-manager.js";
 import { DydxFundingPoller } from "./dydx-funding.js";
-import { CrossVenueFundingBasis } from "./cross-venue-funding.js";
-import { DydxVenue } from "./venues/dydx.js";
 import { loadCustomDefs, customDefToRegistryEntry } from "./strategy/custom-strategy.js";
 import { STRATEGY_REGISTRY } from "./strategy/registry.js";
 import { RiskManager } from "./risk.js";
@@ -29,7 +28,9 @@ console.log(`
 
 // ─── Validate config ──────────────────────────────────────
 const keyReady = hasValidPrivateKey();
-console.log(keyReady ? "[init] Private key loaded" : "[init] No valid private key — executor disabled, running in observe-only mode");
+console.log(keyReady
+  ? "[init] Private key loaded"
+  : "[init] No valid private key — executor disabled, running in observe-only mode");
 
 // ─── Initialise modules ───────────────────────────────────
 
@@ -41,57 +42,52 @@ initNotifications();
 
 const isTestnet = config.exchange.network === "testnet";
 
-// 2. Venue + Executor (only when a real key is present; dry-run by default).
-//    hlVenue is kept in scope so it can be passed to BotManager too — live bots
-//    call venue.openPosition/closePosition directly for any coin in the universe.
-let executor: Executor            | undefined;
-let hlVenue:  HyperliquidVenue    | undefined;
+// 2. HL venue + Executor (only when a real key is present; dry-run by default).
+//    hlVenue is reused by BotManager so live bots on any coin can place real orders.
+let executor: Executor         | undefined;
+let hlVenue:  HyperliquidVenue | undefined;
 if (keyReady) {
   const dryRun = process.env.DRY_RUN !== "false";
   hlVenue  = new HyperliquidVenue(getPrivateKey(), isTestnet);
   executor = new Executor(hlVenue, dryRun);
 }
 
-// 2b. Cross-venue funding basis (HL ↔ dYdX, BTC, $1000 notional, paper mode by default).
-//     Uses a read-only HyperliquidVenue (no wallet needed for rate reads) and a DydxVenue
-//     that accepts an optional mnemonic for testnet execution.
-const hlReadOnly   = new HyperliquidVenue(null, isTestnet);
+// 3. dYdX venue — read-only for funding rates; trading arm requires DYDX_TESTNET_MNEMONIC
 const dydxMnemonic = process.env.DYDX_TESTNET_MNEMONIC?.trim();
 const dydxVenue    = new DydxVenue(dydxMnemonic);
-const crossVenue   = new CrossVenueFundingBasis(hlReadOnly, dydxVenue, "BTC", 1_000, logger);
 console.log(
   dydxMnemonic
-    ? "[init] Cross-venue strategy created — DYDX_TESTNET_MNEMONIC present (testnet execution available)"
-    : "[init] Cross-venue strategy created — no DYDX_TESTNET_MNEMONIC (paper mode only)",
+    ? "[init] DYDX_TESTNET_MNEMONIC loaded — cross-venue live trading available"
+    : "[init] No DYDX_TESTNET_MNEMONIC — cross-venue bots default to paper mode",
 );
 
-// 3. Strategies visible to the Strategies page (funding-rate poller only)
-//    Candle strategies are managed by LaneManager below.
+// 4. Strategies page (funding-rate strategy only — candle/cross-venue bots in BotManager)
 const strategies: Strategy[] = [new FundingRateStrategy()];
 console.log(`[init] Strategies: ${strategies.map((s) => s.name).join(", ")}`);
 
-// 3a-custom. Load user-built strategies from config/custom-strategies.json into the registry
-//            They live in the same registry, so they appear everywhere automatically.
+// 4a. Load user-built strategies from config/custom-strategies.json
 for (const def of loadCustomDefs()) {
   STRATEGY_REGISTRY.push(customDefToRegistryEntry(def));
 }
 console.log(`[init] Custom strategies loaded: ${STRATEGY_REGISTRY.filter(e => e.isCustom).length}`);
 
-// 3b. Bot manager — passes hlVenue so LIVE bots can place real orders on any HL coin
-const laneManager = new BotManager(hlVenue);
+// 5. Bot manager — manages all candle bots AND cross-venue bots.
+//    Receives hlVenue (for live order placement) and dydxVenue (for cross-venue).
+//    If no HL key, hlVenue is undefined and live bots warn on each trade attempt.
+const laneManager = new BotManager(hlVenue, dydxVenue, logger);
 
-// 3c. dYdX v4 funding rate poller (read-only, no wallet required)
+// 6. dYdX funding poller (cross-exchange comparison on Strategies page)
 const dydxPoller = new DydxFundingPoller();
 
-// 4. Risk manager
+// 7. Risk manager
 const risk = new RiskManager(1000);
 console.log("[init] Risk manager ready");
 
-// 5. Feed — create before dashboard so the dashboard can reference it for interval changes
+// 8. Feed
 const feed = new Feed();
 
-// 6. Dashboard — pass strategies, feed, executor, lane manager, dYdX poller, and cross-venue strategy
-startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller, crossVenue);
+// 9. Dashboard
+startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller);
 
 // ─── Event wiring ─────────────────────────────────────────
 
@@ -103,32 +99,21 @@ bus.on("error", (module: string, error: Error) => {
   console.error(`[${module}] ERROR:`, error.message);
 });
 
-// ─── Initialise strategies ────────────────────────────────
+// ─── Start ────────────────────────────────────────────────
 for (const s of strategies) {
   if (s.init) await s.init([]);
 }
 
-// ─── Start feed, lane manager, dYdX poller, and cross-venue strategy ─────
 await feed.start();
-await laneManager.start();
+await laneManager.start(); // starts candle bots AND cross-venue bots
 await dydxPoller.start();
-
-// Start cross-venue strategy independently — a network error on the first
-// poll must not abort the rest of startup.
-try {
-  await crossVenue.start();
-  console.log("[init] Cross-venue funding strategy started in paper mode (BTC · $1000 notional)");
-} catch (e) {
-  console.error("[init] Cross-venue strategy failed to start:", (e as Error).message);
-}
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\n[init] Shutting down...");
   await feed.stop();
-  await laneManager.stop();
+  await laneManager.stop(); // stops all bots including cross-venue
   dydxPoller.stop();
-  crossVenue.stop();
   for (const s of strategies) {
     if ("stop" in s && typeof (s as { stop?: () => void }).stop === "function") {
       (s as { stop: () => void }).stop();

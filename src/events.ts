@@ -65,6 +65,13 @@ export interface BotEvents {
   trade: [result: TradeResult];
   orderbook: [snapshot: OrderbookSnapshot];
   error: [module: string, error: Error];
+  /**
+   * Emitted by the reconciliation loop after each full detectOrphans() cycle.
+   * Carries the complete list of positions currently open on the exchange so the
+   * RiskManager can rebuild its openRisks map from ground truth and correct any
+   * drift caused by missed trade events (process crash, bus event loss, etc.).
+   */
+  "reconcile:positions": [positions: ReadonlyArray<{ coin: string; size: number; price: number }>];
 }
 
 // Typed event bus — all modules import this single instance

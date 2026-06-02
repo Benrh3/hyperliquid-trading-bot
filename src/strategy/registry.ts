@@ -95,27 +95,30 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
   },
 
   {
-    id:            "funding-basis",
-    displayName:   "Funding Basis",
+    id:            "cross-venue-funding-basis",
+    displayName:   "Cross-Venue Funding Basis",
     category:      "market-neutral",
-    categoryLabel: "Market-neutral (carry)",
+    categoryLabel: "Market-neutral (HL ↔ dYdX)",
     summary:
-      "Holds offsetting spot and perpetual positions to earn the funding rate without betting on price direction.",
+      "Shorts the venue with the higher funding rate and longs the venue with the lower rate, earning the spread on both legs simultaneously.",
     howItWorks:
-      "It holds a long spot position and an equal short perpetual position, so gains and losses " +
-      "from price movement cancel out. Income comes from the perpetual funding rate — when funding " +
-      "is positive, short positions are paid by longs each funding period (hourly on Hyperliquid). " +
-      "The return is the accumulated funding minus trading fees.",
+      "Each hour it compares the BTC (or other coin) funding rate on Hyperliquid against dYdX v4. " +
+      "It opens a short perp on the high-rate venue (collecting funding) and a long perp on the " +
+      "low-rate venue (paying less). The net income is the spread × notional per hour. Direction " +
+      "flips when the spread reverses and exceeds 30% of the current spread, subject to a 1-hour " +
+      "cooldown. A 2% daily-loss circuit breaker pauses the bot if P&L drops too far. " +
+      "Paper mode simulates fills; Live mode places real orders on both venues.",
     signals: [
-      "Perpetual funding rate (hourly accrual)",
+      "Hyperliquid perpetual funding rate",
+      "dYdX v4 perpetual funding rate",
+      "Spread between venues (rate_high − rate_low)",
     ],
     whenItWorks:
-      "When funding rates stay positive over the holding period.",
+      "When one venue consistently pays higher funding than the other — a persistent dislocation.",
     whenItStruggles:
-      "When funding turns negative, meaning the position pays funding instead of collecting it; " +
-      "it also carries liquidation risk on the short leg if margin isn't managed.",
+      "When the spread is near zero (no edge), or flip fees erode gains in rapidly oscillating rate environments.",
     params: [
-      { key: "notionalUsd", label: "Notional size (USD)", default: 1000, min: 100, max: 100_000, step: 100 },
+      { key: "notionalUsd", label: "Notional per leg (USD)", default: 1000, min: 100, max: 100_000, step: 100 },
     ],
     isCandleStrategy: false,
     factory: null,

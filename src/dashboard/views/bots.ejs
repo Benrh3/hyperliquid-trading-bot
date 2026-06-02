@@ -66,6 +66,42 @@
     border-top: 1px solid rgba(248,81,73,0.2); background: rgba(248,81,73,0.04);
     word-break: break-word;
   }
+  .bc-reconcile-warn {
+    font-size: 11px; color: var(--amber, #d29922); padding: 0.35rem 0.875rem 0.5rem;
+    border-top: 1px solid rgba(210,153,34,0.25); background: rgba(210,153,34,0.06);
+    display: flex; align-items: flex-start; gap: 0.4rem; line-height: 1.4;
+  }
+
+  /* ── Orphaned positions panel ── */
+  .orphans-panel {
+    background: var(--surface);
+    border: 1px solid rgba(248,81,73,0.35);
+    border-radius: 8px;
+    margin-top: 1.5rem;
+    overflow: hidden;
+  }
+  .orphans-hdr {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgba(248,81,73,0.2);
+    background: rgba(248,81,73,0.06);
+    display: flex; align-items: center; gap: 0.5rem;
+    font-size: 13px; font-weight: 600; color: var(--red);
+  }
+  .orphan-row {
+    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+    padding: 0.65rem 1rem; font-size: 13px;
+    border-bottom: 1px solid var(--border);
+  }
+  .orphan-row:last-child { border-bottom: none; }
+  .orphan-coin { font-weight: 600; font-family: monospace; min-width: 3rem; }
+  .orphan-detail { flex: 1; color: var(--muted); font-size: 12px; }
+  .orphan-age { font-size: 11px; color: var(--muted); }
+  .btn-close-orphan {
+    background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.3);
+    color: var(--red); border-radius: 4px; padding: 0.25rem 0.75rem;
+    font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+  .btn-close-orphan:hover { background: rgba(248,81,73,0.2); }
 
   .bc-body {
     padding: 0.7rem 0.875rem;
@@ -312,12 +348,24 @@
   <div class="bots-page-hdr">
     <h1>Bots</h1>
     <div class="hdr-right">
+      <span id="risk-indicator" style="
+        font-size:12px;color:var(--muted);
+        padding:0.25rem 0.6rem;border-radius:4px;
+        border:1px solid var(--border);background:var(--surface);
+        display:none;
+      ">Open risk: —</span>
       <span id="refresh-badge">Loading…</span>
       <button class="bc-btn primary" id="btn-add-bot">+ Add Bot</button>
     </div>
   </div>
   <div class="bots-grid" id="bots-grid">
     <div class="bots-empty">Loading bots…</div>
+  </div>
+
+  <!-- Orphaned positions panel (hidden when empty) -->
+  <div class="orphans-panel" id="orphans-panel" style="display:none">
+    <div class="orphans-hdr">⚠ Orphaned Exchange Positions</div>
+    <div id="orphans-list"></div>
   </div>
 </div>
 
@@ -413,8 +461,8 @@
     const grossFunding = b.capturedFunding ?? 0;
     const netPnl       = b.sessionPnl ?? 0;
     const feePaid      = grossFunding - netPnl;
-    const mode         = b.executionMode ?? 'paper';
-    const isTestnet    = mode === 'testnet';
+    const mode     = b.executionMode ?? 'paper';
+    const isLive   = mode === 'live';
 
     const legsHtml = legs.length === 2
       ? legs.map(l =>
@@ -422,12 +470,12 @@
         ).join('')
       : '<span class="pos-badge pos-flat">WAITING</span>';
 
-    const modeBadge = isTestnet
-      ? `<span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:99px;background:rgba(240,136,62,.15);color:#f0883e;border:1px solid rgba(240,136,62,.35)">TESTNET</span>`
+    const modeBadge = isLive
+      ? `<span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:99px;background:rgba(240,136,62,.15);color:#f0883e;border:1px solid rgba(240,136,62,.35)">LIVE</span>`
       : `<span style="font-size:10px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:99px;background:rgba(139,148,158,.15);color:var(--muted)">PAPER</span>`;
 
     const toggleBtn = `<button class="bc-btn cv-mode-toggle" data-id="${b.id}" data-current="${mode}" style="font-size:11px;padding:2px 8px">
-      ${isTestnet ? 'Switch to Paper' : 'Switch to Testnet'}
+      ${isLive ? 'Switch to PAPER' : 'Switch to LIVE'}
     </button>`;
 
     return `
@@ -473,9 +521,9 @@
       </div>` : ''}
       <div class="bc-row" style="margin-top:0.25rem">
         <span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">
-          ${isTestnet
-            ? 'Testnet execution — real orders on HL &amp; dYdX testnet. Flip: +30%, max 1/hr.'
-            : 'Paper simulation — no real orders. Min spread: 0.005%/hr. Flip: +30%, max 1/hr.'}
+          ${isLive
+            ? 'LIVE — real orders on HL &amp; dYdX testnet. Flip: +30%, max 1/hr.'
+            : 'PAPER — no real orders. Min spread: 0.005%/hr. Flip: +30%, max 1/hr.'}
         </span>
       </div>
       <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>`;
@@ -528,6 +576,9 @@
     const errorBanner = isError
       ? `<div class="bc-error-msg">&#9888; ${esc(b.error || 'Unknown error')}</div>`
       : '';
+    const reconcileBanner = (!isError && b.hadRecentMismatch && b.lastReconcileEvent)
+      ? `<div class="bc-reconcile-warn">⚠ <span><strong>State reconciled</strong> — ${esc(b.lastReconcileEvent)}</span></div>`
+      : '';
 
     return `<div class="bot-card${b.status === 'paused' ? ' paused' : ''}" data-id="${b.id}">
       <div class="bc-header">
@@ -536,7 +587,7 @@
         ${tfBadge}${liveBadge}
         <span class="bc-status ${statusCls}">${statusLabel}</span>
       </div>
-      ${errorBanner}
+      ${errorBanner}${reconcileBanner}
       <div class="bc-body">
         ${isCrossVenue ? renderCrossVenueBody(b) : renderStandardBody(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml)}
       </div>
@@ -574,10 +625,10 @@
     grid.querySelectorAll('.cv-mode-toggle').forEach(btn => {
       btn.addEventListener('click', async function () {
         const current = this.dataset.current;
-        const next    = current === 'testnet' ? 'paper' : 'testnet';
-        if (next === 'testnet') {
+        const next    = current === 'live' ? 'paper' : 'live';
+        if (next === 'live') {
           if (!confirm(
-            'Switch to TESTNET mode?\n\n' +
+            'Switch to LIVE mode?\n\n' +
             'Real orders will be placed on Hyperliquid testnet and dYdX testnet.\n' +
             'DYDX_TESTNET_MNEMONIC must be set in .env.\n\n' +
             'Existing paper positions will be reset.'
@@ -585,7 +636,7 @@
         }
         this.disabled = true;
         try {
-          const resp = await fetch('/api/cross-venue/mode', {
+          const resp = await fetch('/api/bots/' + encodeURIComponent(this.dataset.id) + '/mode', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ mode: next }),
@@ -599,6 +650,8 @@
   }
 
   // ── Data fetch ────────────────────────────────────────────────────────────
+  const riskIndicator = document.getElementById('risk-indicator');
+
   async function load() {
     try {
       const resp = await fetch('/api/bots');
@@ -610,6 +663,64 @@
     } catch (err) {
       badge.textContent = 'Error: ' + err.message;
     }
+    // Update portfolio risk indicator (non-blocking)
+    try {
+      const rr = await fetch('/api/portfolio-risk');
+      if (rr.ok && riskIndicator) {
+        const rd = await rr.json();
+        const pct = rd.openRiskPct.toFixed(1);
+        const cap = rd.maxConcurrentRiskPct.toFixed(0);
+        const overCap = rd.openRiskPct >= rd.maxConcurrentRiskPct * 0.9;
+        riskIndicator.textContent = `Open risk: ${pct}% / ${cap}% cap`;
+        riskIndicator.style.color    = overCap ? 'var(--amber, #d29922)' : 'var(--muted)';
+        riskIndicator.style.display  = 'inline';
+      }
+    } catch (_) { /* non-critical */ }
+
+    // Orphaned positions (non-blocking)
+    try {
+      const or = await fetch('/api/orphans');
+      if (or.ok) {
+        const orphans = await or.json();
+        const panel = document.getElementById('orphans-panel');
+        const list  = document.getElementById('orphans-list');
+        if (panel && list) {
+          if (!orphans.length) {
+            panel.style.display = 'none';
+          } else {
+            panel.style.display = 'block';
+            list.innerHTML = orphans.map(o => {
+              const age   = Math.round((Date.now() - o.detectedAt) / 60_000);
+              const upnl  = o.unrealisedPnl >= 0 ? `+$${o.unrealisedPnl.toFixed(2)}` : `-$${Math.abs(o.unrealisedPnl).toFixed(2)}`;
+              const uClr  = o.unrealisedPnl >= 0 ? 'var(--green)' : 'var(--red)';
+              return `<div class="orphan-row">
+                <span class="orphan-coin">${esc(o.coin)}</span>
+                <span class="orphan-detail">
+                  ${o.side.toUpperCase()} ${o.size.toFixed(5)} @ $${o.entryPrice.toFixed(2)} mark $${o.markPrice.toFixed(2)}
+                  &nbsp;<span style="color:${uClr}">${upnl}</span>
+                </span>
+                <span class="orphan-age">${age}m ago</span>
+                <button class="btn-close-orphan" data-coin="${esc(o.coin)}">Close position</button>
+              </div>`;
+            }).join('');
+
+            list.querySelectorAll('.btn-close-orphan').forEach(btn => {
+              btn.addEventListener('click', async function () {
+                const coin = this.dataset.coin;
+                if (!confirm(`Close orphaned ${coin} position on the exchange?\n\nThis places a real reduce-only order.`)) return;
+                this.disabled = true;
+                try {
+                  const resp = await fetch('/api/orphans/' + encodeURIComponent(coin) + '/close', { method: 'POST' });
+                  const data = await resp.json();
+                  if (!resp.ok) alert('Error: ' + (data.error || resp.statusText));
+                  else await load();
+                } catch (e) { alert('Error: ' + e.message); }
+              });
+            });
+          }
+        }
+      }
+    } catch (_) { /* non-critical */ }
   }
 
   // ── Modal: coin list (prefetched, cached) ─────────────────────────────────

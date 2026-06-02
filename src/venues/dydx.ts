@@ -105,6 +105,14 @@ export class DydxVenue implements Venue {
 
   // ── Position query (requires wallet) ─────────────────────────────────────
 
+  async getAccountEquity(): Promise<number | null> {
+    return null; // requires configured subaccount
+  }
+
+  async getAllPositions(): Promise<import("../venue.js").VenuePosition[]> {
+    return []; // requires configured subaccount
+  }
+
   async getPosition(coin: string): Promise<VenuePosition | null> {
     if (!this.mnemonic) return null;
     await this.ensureClient();

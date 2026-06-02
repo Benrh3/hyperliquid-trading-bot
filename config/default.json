@@ -13,10 +13,12 @@
     "minConfluence": 2
   },
   "risk": {
-    "maxPositionSizeUsd": 500,
+    "riskPerTradePercent": 2.0,
+    "maxConcurrentRiskPercent": 10.0,
     "maxDailyLossPercent": 5,
     "maxLeverage": 5,
-    "stopLossPercent": 2
+    "stopLossPercent": 2,
+    "orphanEmergencyCloseLossPct": 5.0
   },
   "dashboard": {
     "port": 3002

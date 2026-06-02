@@ -11,18 +11,19 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { bus } from "./events.js";
 import { config, coins } from "./config.js";
+import { computePositionSize } from "./position-sizing.js";
 import { STRATEGY_REGISTRY, getStrategyEntry } from "./strategy/registry.js";
+import { CrossVenueFundingBasis } from "./cross-venue-funding.js";
+import type { ExecutionMode } from "./cross-venue-funding.js";
 import type { Strategy } from "./strategy/base.js";
 import type { Candle, Signal } from "./events.js";
 import type { Venue } from "./venue.js";
+import type { Logger } from "./logger.js";
 
-const BOTS_PATH       = resolve(process.cwd(), "config", "bots.json");
-const INITIAL_EQUITY  = 1000;
-const SLIPPAGE        = 0.0005;
-const TAKER_FEE       = 0.00045;
-const MAX_HISTORY     = 600;
-const FUNDING_POLL_MS = 60_000;
-const HOUR_MS         = 3_600_000;
+const BOTS_PATH      = resolve(process.cwd(), "config", "bots.json");
+const INITIAL_EQUITY = 1000;
+const SLIPPAGE       = 0.0005;
+const MAX_HISTORY    = 600;
 
 const TF_MS: Record<string, number> = {
   "1m":  60_000,
@@ -43,11 +44,12 @@ export interface BotConfig {
   active:          boolean;
   live:            boolean;
   startingEquity?: number;  // virtual USD balance at bot creation; defaults to INITIAL_EQUITY
+  notional?:       number;  // USD notional for cross-venue bots; defaults to INITIAL_EQUITY
 }
 
 export interface BotsFile {
-  bots:           BotConfig[];
-  fundingActive?: boolean;
+  bots: BotConfig[];
+  // fundingActive removed — single-venue FundingLane is deprecated
 }
 
 export interface BotState {
@@ -85,7 +87,7 @@ export interface BotState {
   /** Cross-venue only: current funding spread rate (decimal per hour). */
   currentSpread?:    number;
   /** Cross-venue only: current execution mode. */
-  executionMode?:    "paper" | "testnet";
+  executionMode?:    "paper" | "live";
   /** Cross-venue only: average hours between leg-direction flips. */
   avgFlipFrequencyHours?: number;
   /** Cross-venue only: average hold duration per direction in hours. */
@@ -94,6 +96,22 @@ export interface BotState {
   rolling7dCapturePct?:   number;
   /** Cross-venue only: human-readable reason the daily-loss circuit breaker tripped. */
   crossVenuePausedReason?: string;
+  /** Set when the last reconcile cycle found a mismatch vs the exchange. */
+  hadRecentMismatch?:  boolean;
+  /** Human-readable description of the most recent reconcile event. */
+  lastReconcileEvent?: string;
+}
+
+// ── Orphaned position (on exchange, no live bot owns it) ──────────────────────
+
+export interface OrphanedPosition {
+  coin:          string;
+  side:          "long" | "short";
+  size:          number;
+  entryPrice:    number;
+  markPrice:     number;
+  unrealisedPnl: number;
+  detectedAt:    number; // epoch ms
 }
 
 // ── Internal types ────────────────────────────────────────────────────────────
@@ -113,7 +131,10 @@ interface BotRuntime {
   config:        BotConfig;
   displayName:   string;
   categoryLabel: string;
-  strategy:      Strategy;
+  /** null for cross-venue bots which have their own poll loop */
+  strategy:      Strategy | null;
+  /** Set for cross-venue-funding-basis bots */
+  crossVenue?:   CrossVenueFundingBasis;
   history:       Candle[];
   equity:        number;
   sessionPnl:    number;
@@ -125,48 +146,48 @@ interface BotRuntime {
     entryTime:     number;
     unrealisedPnl: number;
   } | null;
-  unrealisedPnl: number;
-  startedAt:     number;
-  error?:        string;
-}
-
-interface FundingLane {
-  /** "long"  = long spot + short perp (earns when rate > 0)
-   *  "short" = long perp + short spot (earns when rate < 0) */
-  side:       "long" | "short";
-  notional:   number;
-  entryPrice: number;
-  openTime:   number;
-  equity:     number;
-  sessionPnl: number;
-  periods:    number;
-  lastRate:   number;
-  lastBucket: number;
-  flipCount:  number;
-  pollTimer:  ReturnType<typeof setInterval>;
+  unrealisedPnl:      number;
+  startedAt:          number;
+  error?:             string;
+  hadRecentMismatch?: boolean;
+  lastReconcileEvent?: string;
 }
 
 // ── BotManager ────────────────────────────────────────────────────────────────
 
-export class BotManager {
-  private bots      = new Map<string, BotRuntime>();     // id → runtime
-  private coinData  = new Map<string, CoinData>();        // coin → shared data
-  private coinSubs  = new Map<string, ISubscription>();   // coin → WS sub
-  private fundingLane: FundingLane | null = null;
+/** How long an orphaned position can exist before it is auto-closed (24 h). */
+const ORPHAN_AUTO_CLOSE_MS = 24 * 60 * 60_000;
+/** Reconcile every 60 seconds. */
+const RECONCILE_INTERVAL_MS = 60_000;
+/** After this many ms a "recent mismatch" indicator clears itself. */
+const MISMATCH_STALE_MS = 5 * 60_000;
 
-  private botsFile:     BotsFile;
-  private readonly primaryCoin: string;
+export class BotManager {
+  private bots      = new Map<string, BotRuntime>();
+  private coinData  = new Map<string, CoinData>();
+  private coinSubs  = new Map<string, ISubscription>();
+
+  private botsFile: BotsFile;
   private isWarming = false;
 
   private wsClient: SubscriptionClient | null = null;
   private info:     InfoClient;
-  /** Optional venue used to place real orders for LIVE bots (any coin in the universe). */
-  private readonly venue: Venue | undefined;
+  /** HL venue for live candle-bot trading and cross-venue rate reads. */
+  private readonly venue:     Venue | undefined;
+  /** dYdX venue injected for cross-venue bots. */
+  private readonly dydxVenue: Venue | undefined;
+  /** Logger used for cross-venue flip event persistence. */
+  private readonly logger:    Logger | undefined;
+  /** Orphaned positions on the exchange that no live bot claims. key=coin */
+  private orphans = new Map<string, OrphanedPosition>();
+  /** Reconcile loop timer handle. */
+  private reconcileTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(venue?: Venue) {
-    this.venue       = venue;
-    this.primaryCoin = coins[0];
-    const isTestnet  = config.exchange.network === "testnet";
+  constructor(venue?: Venue, dydxVenue?: Venue, logger?: Logger) {
+    this.venue     = venue;
+    this.dydxVenue = dydxVenue;
+    this.logger    = logger;
+    const isTestnet = config.exchange.network === "testnet";
     this.info        = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
     this.botsFile    = this.loadFile();
     this.buildRuntimes(this.botsFile, new Map());
@@ -177,7 +198,21 @@ export class BotManager {
   private loadFile(): BotsFile {
     try {
       if (existsSync(BOTS_PATH)) {
-        return JSON.parse(readFileSync(BOTS_PATH, "utf-8")) as BotsFile;
+        const raw = JSON.parse(readFileSync(BOTS_PATH, "utf-8")) as BotsFile & { fundingActive?: boolean };
+        // ── Migration: remove deprecated fundingActive and single-venue funding-basis bots ──
+        const hadFundingActive = raw.fundingActive === true;
+        const hadFundingBasisBot = raw.bots.some((b) => b.strategyId === "funding-basis");
+        if (hadFundingActive || hadFundingBasisBot) {
+          console.log(
+            "[bot-manager] Migrating bots.json: removing deprecated single-venue FundingBasis " +
+            "(replaced by CrossVenueFundingBasis). Re-add it via the Bots page if needed.",
+          );
+          raw.bots = raw.bots.filter((b) => b.strategyId !== "funding-basis");
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          delete (raw as any)["fundingActive"];
+          writeFileSync(BOTS_PATH, JSON.stringify({ bots: raw.bots }, null, 2));
+        }
+        return { bots: raw.bots };
       }
     } catch { /* fall through */ }
     // Default: one candle bot per registered candle strategy on primary coin
@@ -187,12 +222,11 @@ export class BotManager {
         .map((e, i) => ({
           id:         `bot-${e.id}`,
           strategyId: e.id,
-          coin:       this.primaryCoin,
+          coin:       coins[0],
           timeframe:  "1h",
           active:     i === 0,
           live:       i === 0,
         })),
-      fundingActive: false,
     };
   }
 
@@ -205,22 +239,49 @@ export class BotManager {
   private buildRuntimes(file: BotsFile, oldBots: Map<string, BotRuntime>): void {
     this.bots.clear();
     for (const bc of file.bots) {
-      // Build runtime for ALL bots (active and paused) so equity/position survives pause/resume
+      const old = oldBots.get(bc.id);
+
+      // ── Cross-venue bots ─────────────────────────────────────────────────
+      if (bc.strategyId === "cross-venue-funding-basis") {
+        const notional = bc.notional ?? INITIAL_EQUITY;
+        // Reuse existing CrossVenueFundingBasis instance to preserve accumulated state
+        const cv = old?.crossVenue ?? new CrossVenueFundingBasis(
+          this.venue!, this.dydxVenue!, bc.coin, notional, this.logger,
+        );
+        // Sync mode from config
+        cv.setExecutionMode(bc.live ? "live" : "paper");
+        this.bots.set(bc.id, {
+          config:        bc,
+          displayName:   "Cross-Venue Funding Basis",
+          categoryLabel: `HL ↔ dYdX · ${bc.coin}`,
+          strategy:      null,
+          crossVenue:    cv,
+          history:       [],
+          equity:        old?.equity ?? notional,
+          sessionPnl:    old?.sessionPnl ?? 0,
+          tradeCount:    old?.tradeCount ?? 0,
+          position:      null,
+          unrealisedPnl: 0,
+          startedAt:     old?.startedAt ?? Date.now(),
+        });
+        continue;
+      }
+
+      // ── Candle-strategy bots ─────────────────────────────────────────────
       const entry = getStrategyEntry(bc.strategyId);
       if (!entry?.isCandleStrategy || !entry.factory) continue;
-      const old = oldBots.get(bc.id);
       this.bots.set(bc.id, {
         config:        bc,
         displayName:   entry.displayName,
         categoryLabel: entry.categoryLabel,
-        strategy:      old ? old.strategy      : entry.factory(),
-        history:       old ? old.history       : [],
-        equity:        old ? old.equity        : (bc.startingEquity ?? INITIAL_EQUITY),
-        sessionPnl:    old ? old.sessionPnl    : 0,
-        tradeCount:    old ? old.tradeCount    : 0,
-        position:      old ? old.position      : null,
-        unrealisedPnl: old ? old.unrealisedPnl : 0,
-        startedAt:     old ? old.startedAt     : Date.now(),
+        strategy:      old?.strategy ?? entry.factory(),
+        history:       old?.history       ?? [],
+        equity:        old?.equity        ?? (bc.startingEquity ?? INITIAL_EQUITY),
+        sessionPnl:    old?.sessionPnl    ?? 0,
+        tradeCount:    old?.tradeCount    ?? 0,
+        position:      old?.position      ?? null,
+        unrealisedPnl: old?.unrealisedPnl ?? 0,
+        startedAt:     old?.startedAt     ?? Date.now(),
       });
     }
   }
@@ -229,17 +290,34 @@ export class BotManager {
 
   getBotsFile(): BotsFile { return this.botsFile; }
 
+  getOrphanedPositions(): OrphanedPosition[] {
+    return [...this.orphans.values()];
+  }
+
   getBotStates(): BotState[] {
     const states: BotState[] = [];
 
     for (const bot of this.bots.values()) {
+      // ── Cross-venue bots: delegate entirely to CrossVenueFundingBasis ─────
+      if (bot.crossVenue) {
+        const cvState = bot.crossVenue.getBotState();
+        // Override id/coin/active from BotConfig so pause/resume state is authoritative
+        states.push({
+          ...cvState,
+          id:     bot.config.id,
+          coin:   bot.config.coin,
+          active: bot.config.active,
+          status: !bot.config.active ? "paused" : cvState.status,
+        });
+        continue;
+      }
+
+      // ── Candle-strategy bots ──────────────────────────────────────────────
       const cd        = this.coinData.get(bot.config.coin);
       const lastPrice = cd && cd.hist1m.length > 0
         ? cd.hist1m[cd.hist1m.length - 1].close
         : 0;
 
-      // Recompute unrealised P&L with the freshest price (important for paused bots
-      // whose markPosition() hasn't been called since the last candle)
       let unrealisedPnl = 0;
       let position      = bot.position ? { ...bot.position } : null;
       if (position && lastPrice > 0) {
@@ -267,46 +345,8 @@ export class BotManager {
         tradeCount:    bot.tradeCount,
         startedAt:     bot.startedAt,
         error:         bot.error,
-      });
-    }
-
-    if (this.fundingLane) {
-      const fl = this.fundingLane;
-      const msIntoHour     = Date.now() % HOUR_MS;
-      // Always earn abs(rate) × notional regardless of which legs are open
-      const partialAccrual = Math.abs(fl.lastRate) * fl.notional * (msIntoHour / HOUR_MS);
-      const cd             = this.coinData.get(this.primaryCoin);
-      const lastPrice      = cd && cd.hist1m.length > 0
-        ? cd.hist1m[cd.hist1m.length - 1].close
-        : fl.entryPrice;
-      const dirLabel = fl.side === "long"
-        ? "Long spot / Short perp"
-        : "Long perp / Short spot";
-      states.push({
-        id:            "funding-basis",
-        strategyId:    "funding-basis",
-        displayName:   "Funding Basis",
-        categoryLabel: "Market-neutral (carry)",
-        coin:          this.primaryCoin,
-        timeframe:     "—",
-        live:          false,
-        active:        true,
-        status:        "running",
-        equity:        fl.equity + partialAccrual,
-        unrealisedPnl: partialAccrual,
-        lastPrice,
-        position: {
-          side:          "neutral",
-          entryPrice:    fl.entryPrice,
-          size:          fl.notional / fl.entryPrice,
-          entryTime:     fl.openTime,
-          unrealisedPnl: partialAccrual,
-        },
-        sessionPnl:       fl.sessionPnl + partialAccrual,
-        tradeCount:       fl.periods,
-        startedAt:        fl.openTime,
-        fundingDirection: dirLabel,
-        fundingFlips:     fl.flipCount,
+        hadRecentMismatch:  bot.hadRecentMismatch,
+        lastReconcileEvent: bot.lastReconcileEvent,
       });
     }
 
@@ -314,27 +354,32 @@ export class BotManager {
   }
 
   async applyConfig(newFile: BotsFile): Promise<void> {
-    // Validate: no two active+live bots may share the same coin
-    const liveCountByCoin = new Map<string, number>();
     for (const b of newFile.bots) {
       if (!b.id) throw new Error("Bot is missing an id");
-      if (b.active && b.live) {
-        const n = (liveCountByCoin.get(b.coin) ?? 0) + 1;
-        if (n > 1) throw new Error(`Coin ${b.coin} has ${n} live bots — max 1 live bot per coin`);
-        liveCountByCoin.set(b.coin, n);
-      }
     }
 
-    const oldBots          = new Map(this.bots);
-    const wasFundingActive = this.botsFile.fundingActive ?? false;
-    const nowFundingActive = newFile.fundingActive ?? false;
+    const oldBots = new Map(this.bots);
+    // Stop cross-venue bots that are being removed
+    for (const [id, old] of oldBots) {
+      if (old.crossVenue && !newFile.bots.find((b) => b.id === id)) {
+        old.crossVenue.stop();
+      }
+    }
 
     this.botsFile = newFile;
     this.saveFile();
     this.buildRuntimes(newFile, oldBots);
 
+    // Start any new cross-venue bots
+    for (const bot of this.bots.values()) {
+      if (bot.crossVenue && !oldBots.has(bot.config.id)) {
+        void bot.crossVenue.start().catch((e: Error) =>
+          console.error(`[bot-manager] Cross-venue start failed ${bot.config.id}: ${e.message}`),
+        );
+      }
+    }
+
     if (this.wsClient) {
-      // Close all existing coin subscriptions; rebuild from scratch after warmup
       for (const sub of this.coinSubs.values()) {
         try { await sub.unsubscribe(); } catch { /* ignore */ }
       }
@@ -370,24 +415,26 @@ export class BotManager {
           this.markCoinError(coin, `Subscription failed: ${msg}`);
         }
       }
-
-      if (!wasFundingActive && nowFundingActive) {
-        await this.openFundingLane();
-      } else if (wasFundingActive && !nowFundingActive) {
-        this.closeFundingLane();
-      }
-      // If funding stays active, preserve existing lane state
     }
 
-    console.log(
-      `[bot-manager] Config applied — ${this.bots.size} active bot(s),` +
-      ` funding: ${nowFundingActive ? "on" : "off"}`,
-    );
+    console.log(`[bot-manager] Config applied — ${this.bots.size} bot(s)`);
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
 
   async start(): Promise<void> {
+    // Start all cross-venue bots first (they poll independently)
+    for (const bot of this.bots.values()) {
+      if (bot.crossVenue && bot.config.active) {
+        try {
+          await bot.crossVenue.start();
+        } catch (e) {
+          console.error(`[bot-manager] Cross-venue start failed ${bot.config.id}: ${(e as Error).message}`);
+          bot.error = `Start failed: ${(e as Error).message}`;
+        }
+      }
+    }
+
     const isTestnet = config.exchange.network === "testnet";
     const transport = new WebSocketTransport({
       isTestnet,
@@ -425,37 +472,79 @@ export class BotManager {
       }
     }
 
-    if (this.botsFile.fundingActive) await this.openFundingLane();
-
+    const cvCount = [...this.bots.values()].filter((b) => b.crossVenue).length;
     console.log(
-      `[bot-manager] Live — ${this.bots.size} active bot(s),` +
-      ` funding: ${this.fundingLane ? "on" : "off"}`,
+      `[bot-manager] Live — ${this.bots.size} bot(s) (${cvCount} cross-venue)`,
     );
+
+    // Start reconciliation loop — runs independently of the candle feed
+    if (this.venue) {
+      this.reconcileTimer = setInterval(() => void this.runReconcile(), RECONCILE_INTERVAL_MS);
+      // Run an initial check shortly after startup so early mismatches are caught immediately
+      setTimeout(() => void this.runReconcile(), 5_000);
+
+      // ── Per-trade trigger (improvement 1) ─────────────────────────────────
+      // In addition to the 60 s backstop, run a single-coin reconcile every time
+      // a trade event fires so state drift is caught within seconds of any fill.
+      // Guard against the feedback loop where "adopted_from_exchange" trade events
+      // (emitted by reconcileBot itself) would immediately re-trigger a reconcile.
+      bus.on("trade", (result) => {
+        if (!result.success || !this.venue || this.isWarming) return;
+        if (result.reason === "adopted_from_exchange") return;
+        const bot = [...this.bots.values()].find(
+          (b) => b.config.live && b.config.coin === result.coin && !b.crossVenue,
+        );
+        if (!bot) return;
+        void this.reconcileBot(bot).catch((e: Error) =>
+          console.error(`[reconcile] Post-trade reconcile failed for ${result.coin}: ${e.message}`),
+        );
+      });
+    }
   }
 
   async stop(): Promise<void> {
+    if (this.reconcileTimer) { clearInterval(this.reconcileTimer); this.reconcileTimer = null; }
     for (const sub of this.coinSubs.values()) {
       try { await sub.unsubscribe(); } catch { /* ignore */ }
     }
     this.coinSubs.clear();
-    if (this.fundingLane) this.closeFundingLane();
+    for (const bot of this.bots.values()) {
+      if (bot.crossVenue) bot.crossVenue.stop();
+    }
+  }
+
+  // ── Public orphan operations ─────────────────────────────────────────────
+
+  async closeOrphan(coin: string): Promise<void> {
+    if (!this.venue) throw new Error("No venue configured");
+    const orphan = this.orphans.get(coin);
+    if (!orphan) throw new Error(`No orphaned position tracked for ${coin}`);
+    console.log(`[reconcile] Manually closing orphan ${coin}`);
+    const receipt = await this.venue.closePosition(coin);
+    this.orphans.delete(coin);
+    console.log(`[reconcile] Orphan ${coin} closed — txHash=${receipt.orderId} fillPx=${receipt.fillPrice}`);
+    this.logger?.logEvent("reconcile", "info", `Orphan closed: ${coin}`, {
+      coin, receipt, trigger: "manual",
+    });
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
-  /** Coins that have at least one active candle-strategy bot. */
+  /** Coins that have at least one active candle-strategy bot (excludes cross-venue). */
   private activeCanCoins(file: BotsFile): Set<string> {
     const s = new Set<string>();
     for (const b of file.bots) {
+      if (b.strategyId === "cross-venue-funding-basis") continue;
       if (b.active && getStrategyEntry(b.strategyId)?.isCandleStrategy) s.add(b.coin);
     }
     return s;
   }
 
-  /** Active (non-paused) bots for a coin — used for candle dispatch and warmup. */
+  /** Active candle-strategy bots for a coin (excludes cross-venue bots). */
   private botsForCoin(coin: string): BotRuntime[] {
     const out: BotRuntime[] = [];
     for (const bot of this.bots.values()) {
+      if (bot.crossVenue) continue; // cross-venue bots poll independently
       if (bot.config.coin === coin && bot.config.active) out.push(bot);
     }
     return out;
@@ -496,6 +585,7 @@ export class BotManager {
     }
 
     for (const bot of coinBots) {
+      if (!bot.strategy) continue; // cross-venue bots have no candle strategy
       const hist =
         bot.config.timeframe === "1m"
           ? cd.hist1m
@@ -587,7 +677,7 @@ export class BotManager {
 
       bot.history.push(candle);
       if (bot.history.length > MAX_HISTORY) bot.history.shift();
-      const signal = bot.strategy.onCandle(candle, bot.history.slice());
+      const signal = bot.strategy!.onCandle(candle, bot.history.slice());
       if (signal) this.applySignal(bot, signal, candle);
       this.markPosition(bot, candle.close);
     }
@@ -655,7 +745,7 @@ export class BotManager {
       this.checkStopLoss(bot, completed);
       bot.history.push(completed);
       if (bot.history.length > MAX_HISTORY) bot.history.shift();
-      const signal = bot.strategy.onCandle(completed, bot.history.slice());
+      const signal = bot.strategy!.onCandle(completed, bot.history.slice());
       if (signal) this.applySignal(bot, signal, completed);
       this.markPosition(bot, completed.close);
     }
@@ -724,21 +814,22 @@ export class BotManager {
         this.paperClosePosition(bot, exitPx, `Reversed to ${signal.side}`);
       }
       if (!bot.position) {
-        const entryPx =
-          signal.side === "long"
-            ? candle.close * (1 + SLIPPAGE)
-            : candle.close * (1 - SLIPPAGE);
-        const size = config.risk.maxPositionSizeUsd / entryPx;
-        bot.position = {
+        const entryPx = signal.side === "long"
+          ? candle.close * (1 + SLIPPAGE)
+          : candle.close * (1 - SLIPPAGE);
+        // Paper sizing uses bot.equity as the "account" so maths mirrors live behaviour
+        const sizing  = computePositionSize(bot.equity, entryPx);
+        bot.position  = {
           side:          signal.side,
           entryPrice:    entryPx,
-          size,
+          size:          sizing.sizeBase,
           entryTime:     candle.timestamp,
           unrealisedPnl: 0,
         };
         console.log(
           `[bot-manager] ${bot.config.id}/${bot.config.coin}/${bot.config.timeframe}` +
-          ` PAPER OPEN ${signal.side.toUpperCase()} @ ${entryPx.toFixed(2)}`,
+          ` PAPER OPEN ${signal.side.toUpperCase()} @ ${entryPx.toFixed(2)}` +
+          ` notional=$${sizing.notionalUsd.toFixed(2)} lev=${sizing.leverage.toFixed(2)}x risk=$${sizing.dollarRisk.toFixed(2)}`,
         );
       }
     }
@@ -804,8 +895,14 @@ export class BotManager {
     const coin = bot.config.coin;
     const tag  = `${bot.config.id}/${coin}/${bot.config.timeframe}`;
     try {
-      const receipt = await this.venue!.openPosition(coin, signal.side, config.risk.maxPositionSizeUsd);
-      // Update paper state with real fill data so equity tracks the actual position
+      // Use real account equity for sizing — falls back to bot.equity if unavailable
+      const accountEquity = (await this.venue!.getAccountEquity()) ?? bot.equity;
+      const markPrice     = (await this.venue!.getMarkPrice(coin)) ?? 0;
+      if (markPrice === 0) throw new Error(`No mark price for ${coin}`);
+
+      const sizing  = computePositionSize(accountEquity, markPrice);
+      const receipt = await this.venue!.openPosition(coin, signal.side, sizing.notionalUsd);
+
       bot.position = {
         side:          signal.side,
         entryPrice:    receipt.fillPrice,
@@ -815,7 +912,8 @@ export class BotManager {
       };
       console.log(
         `[bot-manager] ${tag} LIVE OPEN ${signal.side.toUpperCase()}` +
-        ` oid=${receipt.orderId} fillPx=${receipt.fillPrice.toFixed(4)} sz=${receipt.fillSize}`,
+        ` oid=${receipt.orderId} fillPx=${receipt.fillPrice.toFixed(4)} sz=${receipt.fillSize}` +
+        ` notional=$${sizing.notionalUsd.toFixed(2)} lev=${sizing.leverage.toFixed(2)}x risk=$${sizing.dollarRisk.toFixed(2)}`,
       );
       bus.emit("trade", {
         orderId:   receipt.orderId,
@@ -830,7 +928,6 @@ export class BotManager {
       });
     } catch (e) {
       const msg = (e as Error).message;
-      // Do NOT update bot.position or emit a trade — no fill occurred
       console.error(`[bot-manager] ${tag} LIVE OPEN failed: ${msg}`);
       bus.emit("error", "bot-manager", e as Error);
     }
@@ -888,78 +985,6 @@ export class BotManager {
     bot.unrealisedPnl = upnl;
   }
 
-  // ── Funding lane ─────────────────────────────────────────────────────────
-
-  private async openFundingLane(): Promise<void> {
-    if (this.fundingLane) return;
-
-    // Resolve entry price: prefer primary coin's live hist1m, fall back to a fresh fetch
-    let entryPrice = 0;
-    const cd = this.coinData.get(this.primaryCoin);
-    if (cd && cd.hist1m.length > 0) {
-      entryPrice = cd.hist1m[cd.hist1m.length - 1].close;
-    } else {
-      const candles = await this.fetchHistory(this.primaryCoin, "1m");
-      if (candles.length > 0) entryPrice = candles[candles.length - 1].close;
-    }
-
-    if (entryPrice <= 0) {
-      console.warn("[bot-manager] Funding lane: no price yet — retrying in 5 s");
-      setTimeout(() => void this.openFundingLane(), 5_000);
-      return;
-    }
-
-    // Fetch current rate to pick the correct starting direction
-    let initialRate = 0;
-    try {
-      const [meta, assetCtxs] = await this.info.metaAndAssetCtxs();
-      const idx = meta.universe.findIndex((u) => u.name === this.primaryCoin);
-      if (idx !== -1) initialRate = parseFloat(assetCtxs[idx].funding);
-    } catch (e) {
-      console.warn("[bot-manager] Funding lane: could not fetch initial rate, defaulting to long-spot");
-    }
-
-    // long  = long spot + short perp → earns when rate > 0
-    // short = long perp + short spot → earns when rate < 0
-    const initialSide: "long" | "short" = initialRate < 0 ? "short" : "long";
-
-    const now       = Date.now();
-    const entryFees = 2 * TAKER_FEE * INITIAL_EQUITY;
-    this.fundingLane = {
-      side:       initialSide,
-      notional:   INITIAL_EQUITY,
-      entryPrice,
-      openTime:   now,
-      equity:     INITIAL_EQUITY - entryFees,
-      sessionPnl: -entryFees,
-      periods:    0,
-      lastRate:   initialRate,
-      lastBucket: Math.floor(now / HOUR_MS),
-      flipCount:  0,
-      pollTimer:  setInterval(() => void this.pollFunding(), FUNDING_POLL_MS),
-    };
-    console.log(
-      `[bot-manager] Funding lane OPEN @ $${entryPrice.toFixed(2)}` +
-      ` side=${initialSide} rate=${(initialRate * 100).toFixed(4)}%` +
-      ` notional=$${INITIAL_EQUITY} entry fees=$${entryFees.toFixed(4)}`,
-    );
-    void this.pollFunding();
-  }
-
-  private closeFundingLane(): void {
-    const fl = this.fundingLane;
-    if (!fl) return;
-    clearInterval(fl.pollTimer);
-    const exitFees  = 2 * TAKER_FEE * fl.notional;
-    fl.equity      -= exitFees;
-    fl.sessionPnl  -= exitFees;
-    console.log(
-      `[bot-manager] Funding lane CLOSE` +
-      ` periods=${fl.periods} netPnl=${fl.sessionPnl >= 0 ? "+" : ""}${fl.sessionPnl.toFixed(4)}`,
-    );
-    this.fundingLane = null;
-  }
-
   // ── Per-bot surgical operations ──────────────────────────────────────────
 
   async addBot(input: {
@@ -968,22 +993,56 @@ export class BotManager {
     timeframe:       string;
     live?:           boolean;
     startingEquity?: number;
+    notional?:       number;
   }): Promise<string> {
-    const coin       = input.coin.trim().toUpperCase();
-    const timeframe  = input.timeframe;
-    const live       = input.live ?? false;
-    const equity     = Math.max(1, input.startingEquity ?? INITIAL_EQUITY);
+    const coin    = input.coin.trim().toUpperCase();
+    const live    = input.live ?? false;
+    const equity  = Math.max(1, input.startingEquity ?? INITIAL_EQUITY);
 
-    if (!TF_MS[timeframe]) {
-      throw new Error(`Invalid timeframe: ${timeframe}`);
+    // ── Cross-venue bot ──────────────────────────────────────────────────────
+    if (input.strategyId === "cross-venue-funding-basis") {
+      if (!this.venue || !this.dydxVenue) {
+        throw new Error("Cross-venue strategy requires both HL and dYdX venues to be configured");
+      }
+      // Validate coin exists on Hyperliquid
+      const { universe } = await this.info.meta();
+      if (!universe.find((u) => u.name.toUpperCase() === coin)) {
+        throw new Error(`"${coin}" is not listed on Hyperliquid perpetuals`);
+      }
+      const notional = Math.max(1, input.notional ?? INITIAL_EQUITY);
+      const id = "cv-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const bc: BotConfig = {
+        id, strategyId: "cross-venue-funding-basis", coin,
+        timeframe: "—", active: true, live, notional,
+      };
+      this.botsFile.bots.push(bc);
+      this.saveFile();
+
+      const cv = new CrossVenueFundingBasis(this.venue, this.dydxVenue, coin, notional, this.logger);
+      cv.setExecutionMode(live ? "live" : "paper");
+      const runtime: BotRuntime = {
+        config: bc, displayName: "Cross-Venue Funding Basis",
+        categoryLabel: `HL ↔ dYdX · ${coin}`,
+        strategy: null, crossVenue: cv,
+        history: [], equity: notional, sessionPnl: 0, tradeCount: 0,
+        position: null, unrealisedPnl: 0, startedAt: Date.now(),
+      };
+      this.bots.set(id, runtime);
+      void cv.start().catch((e: Error) =>
+        console.error(`[bot-manager] Cross-venue start failed ${id}: ${e.message}`),
+      );
+      console.log(`[bot-manager] Added cross-venue ${id} (${coin} notional=$${notional} mode=${live ? "live" : "paper"})`);
+      return id;
     }
+
+    // ── Candle-strategy bot ──────────────────────────────────────────────────
+    const timeframe = input.timeframe;
+    if (!TF_MS[timeframe]) throw new Error(`Invalid timeframe: ${timeframe}`);
     const entry = getStrategyEntry(input.strategyId);
     if (!entry?.isCandleStrategy || !entry.factory) {
       throw new Error(`Unknown candle strategy: ${input.strategyId}`);
     }
 
-    // Validate against live universe — catches phantom tickers like "HYP" before
-    // they get persisted and crash the WebSocket subscription on next startup.
     const { universe } = await this.info.meta();
     const validCoin = universe.find((u) => u.name.toUpperCase() === coin);
     if (!validCoin) {
@@ -997,31 +1056,15 @@ export class BotManager {
       throw new Error(`"${coin}" is not listed on Hyperliquid perpetuals.${hint}`);
     }
 
-    if (live) {
-      const conflict = this.botsFile.bots.find(
-        (b) => b.coin === coin && b.active && b.live,
-      );
-      if (conflict) throw new Error(`Coin ${coin} already has a live bot`);
-    }
-
     const id = "bot-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     const bc: BotConfig = { id, strategyId: input.strategyId, coin, timeframe, active: true, live, startingEquity: equity };
-
     this.botsFile.bots.push(bc);
     this.saveFile();
 
     const runtime: BotRuntime = {
-      config:        bc,
-      displayName:   entry.displayName,
-      categoryLabel: entry.categoryLabel,
-      strategy:      entry.factory(),
-      history:       [],
-      equity,
-      sessionPnl:    0,
-      tradeCount:    0,
-      position:      null,
-      unrealisedPnl: 0,
-      startedAt:     Date.now(),
+      config: bc, displayName: entry.displayName, categoryLabel: entry.categoryLabel,
+      strategy: entry.factory(), history: [], equity,
+      sessionPnl: 0, tradeCount: 0, position: null, unrealisedPnl: 0, startedAt: Date.now(),
     };
     this.bots.set(id, runtime);
 
@@ -1031,18 +1074,14 @@ export class BotManager {
           this.coinData.set(coin, { hist1m: [], aggBuffers: new Map(), aggHistories: new Map() });
         }
         this.isWarming = true;
-        try {
-          await this.warmupCoin(coin);
-        } catch (e) {
+        try { await this.warmupCoin(coin); }
+        catch (e) {
           const msg = (e as Error).message;
           console.error(`[bot-manager] Warmup failed for ${coin}: ${msg}`);
           this.markCoinError(coin, `Warmup failed: ${msg}`);
-        } finally {
-          this.isWarming = false;
-        }
-        try {
-          await this.subscribeToCoin(coin);
-        } catch (e) {
+        } finally { this.isWarming = false; }
+        try { await this.subscribeToCoin(coin); }
+        catch (e) {
           const msg = (e as Error).message;
           console.error(`[bot-manager] Subscription failed for ${coin}: ${msg}`);
           this.markCoinError(coin, `Subscription failed: ${msg}`);
@@ -1056,15 +1095,32 @@ export class BotManager {
     return id;
   }
 
+  /** Toggle execution mode for a cross-venue bot (paper ↔ live). */
+  setBotMode(id: string, mode: ExecutionMode): void {
+    const runtime = this.bots.get(id);
+    if (!runtime?.crossVenue) throw new Error(`Bot ${id} is not a cross-venue bot`);
+    runtime.crossVenue.setExecutionMode(mode);
+    // Persist the live flag to bots.json
+    const bc = this.botsFile.bots.find((b) => b.id === id);
+    if (bc) {
+      bc.live = mode === "live";
+      this.saveFile();
+    }
+    console.log(`[bot-manager] Bot ${id} mode → ${mode}`);
+  }
+
   async pauseBot(id: string): Promise<void> {
     const bc = this.botsFile.bots.find((b) => b.id === id);
     if (!bc || !bc.active) return;
     bc.active = false;
     this.saveFile();
     const runtime = this.bots.get(id);
-    if (runtime) runtime.config.active = false;
-    // Keep subscription open so lastPrice stays fresh; close only when last bot on coin is deleted
-    console.log(`[bot-manager] Paused ${id} (${bc.coin}/${bc.timeframe})`);
+    if (!runtime) return;
+    runtime.config.active = false;
+    if (runtime.crossVenue) {
+      runtime.crossVenue.pause();
+    }
+    console.log(`[bot-manager] Paused ${id} (${bc.coin})`);
   }
 
   async resumeBot(id: string): Promise<void> {
@@ -1076,10 +1132,16 @@ export class BotManager {
     if (!runtime) return;
     runtime.config.active = true;
 
-    if (!this.wsClient) return;
+    if (runtime.crossVenue) {
+      void runtime.crossVenue.resume().catch((e: Error) =>
+        console.error(`[bot-manager] Cross-venue resume failed ${id}: ${e.message}`),
+      );
+      console.log(`[bot-manager] Resumed ${id} (cross-venue ${bc.coin})`);
+      return;
+    }
 
+    if (!this.wsClient) return;
     if (!this.coinSubs.has(bc.coin)) {
-      // Coin was never subscribed (e.g. bot added while engine was pausing)
       if (!this.coinData.has(bc.coin)) {
         this.coinData.set(bc.coin, { hist1m: [], aggBuffers: new Map(), aggHistories: new Map() });
       }
@@ -1091,7 +1153,6 @@ export class BotManager {
       }
       await this.subscribeToCoin(bc.coin);
     } else {
-      // Coin already has a live feed — just rebuild this bot's strategy state
       await this.warmupSingleBot(runtime);
     }
     console.log(`[bot-manager] Resumed ${id} (${bc.coin}/${bc.timeframe})`);
@@ -1100,12 +1161,49 @@ export class BotManager {
   async deleteBot(id: string): Promise<void> {
     const idx = this.botsFile.bots.findIndex((b) => b.id === id);
     if (idx === -1) return;
-    const bc = this.botsFile.bots[idx];
+    const bc      = this.botsFile.bots[idx];
+    const runtime = this.bots.get(id);
+
+    // ── For LIVE bots: close any open exchange position BEFORE deregistering ──
+    // This prevents the orphan condition at the source.
+    if (bc.live && runtime && !runtime.crossVenue && this.venue) {
+      // Query real exchange state (don't trust bot.position — it may be stale)
+      let exchangePos = null;
+      try { exchangePos = await this.venue.getPosition(bc.coin); } catch { /* best-effort */ }
+      if (exchangePos) {
+        console.log(
+          `[bot-manager] deleteBot ${id}: closing open ${bc.coin} position ` +
+          `(${exchangePos.side} ${exchangePos.size.toFixed(5)} @ $${exchangePos.entryPrice.toFixed(2)}) before delete`,
+        );
+        try {
+          const receipt = await this.venue.closePosition(bc.coin);
+          console.log(`[bot-manager] deleteBot ${id}: position closed — txHash=${receipt.orderId}`);
+          this.logger?.logEvent("bot-manager", "info",
+            `Position closed on bot delete: ${bc.coin}`,
+            { id, coin: bc.coin, receipt },
+          );
+        } catch (e) {
+          console.error(
+            `[bot-manager] deleteBot ${id}: close failed — ${(e as Error).message}. ` +
+            `Bot will be deregistered but position remains on exchange (check Orphaned Positions panel).`,
+          );
+        }
+      }
+    }
+
     this.botsFile.bots.splice(idx, 1);
     this.saveFile();
     this.bots.delete(id);
-    // Close subscription only when no bots remain on this coin
-    const coinStillUsed = this.botsFile.bots.some((b) => b.coin === bc.coin);
+
+    if (runtime?.crossVenue) {
+      runtime.crossVenue.stop();
+      console.log(`[bot-manager] Deleted cross-venue bot ${id} (${bc.coin})`);
+      return;
+    }
+    // Close candle subscription only when no candle bots remain on this coin
+    const coinStillUsed = this.botsFile.bots.some(
+      (b) => b.coin === bc.coin && b.strategyId !== "cross-venue-funding-basis",
+    );
     if (!coinStillUsed) {
       const sub = this.coinSubs.get(bc.coin);
       if (sub) {
@@ -1117,7 +1215,239 @@ export class BotManager {
     console.log(`[bot-manager] Deleted ${id} (${bc.coin}/${bc.timeframe})`);
   }
 
+  // ── Reconciliation loop ──────────────────────────────────────────────────
+
+  /**
+   * Top-level reconcile cycle: checks every live candle-strategy bot against
+   * the real exchange state, then scans for orphaned positions.
+   */
+  private async runReconcile(): Promise<void> {
+    if (!this.venue || this.isWarming) return;
+    try {
+      // Per-bot reconcile (staggered 200 ms apart to avoid rate-limit bursts)
+      let delay = 0;
+      for (const bot of this.bots.values()) {
+        if (!bot.config.live || bot.crossVenue) continue;
+        await new Promise<void>((res) => setTimeout(res, delay));
+        delay += 200;
+        await this.reconcileBot(bot);
+      }
+      // Orphan scan uses one clearinghouseState call for the full position list
+      await this.detectOrphans();
+    } catch (e) {
+      console.error("[reconcile] Cycle failed:", (e as Error).message);
+    }
+  }
+
+  private async reconcileBot(bot: BotRuntime): Promise<void> {
+    let exchangePos: import("./venue.js").VenuePosition | null = null;
+    try {
+      exchangePos = await this.venue!.getPosition(bot.config.coin);
+    } catch (e) {
+      // If the venue call fails don't wipe the bot state — just log
+      console.warn(`[reconcile] ${bot.config.id}: could not fetch exchange position: ${(e as Error).message}`);
+      return;
+    }
+
+    const botPos = bot.position;
+
+    // Case A: exchange FLAT, bot thinks OPEN
+    if (!exchangePos && botPos) {
+      const desc = `${botPos.side} ${botPos.size.toFixed(5)} @ $${botPos.entryPrice.toFixed(2)}`;
+      console.warn(
+        `[reconcile] ${bot.config.id}/${bot.config.coin}: expected ${desc} ` +
+        `but exchange is FLAT — clearing bot state (exchange is source of truth)`,
+      );
+      bot.position           = null;
+      bot.unrealisedPnl      = 0;
+      bot.hadRecentMismatch  = true;
+      bot.lastReconcileEvent = `Cleared stale position (bot had ${desc}, exchange flat)`;
+      this.logger?.logEvent("reconcile", "warn",
+        `Position cleared: ${bot.config.coin} — bot had ${desc}, exchange flat`,
+        { id: bot.config.id, botPosition: botPos },
+      );
+      return;
+    }
+
+    // Case B: exchange OPEN, bot thinks FLAT — adopt it
+    if (exchangePos && !botPos) {
+      console.warn(
+        `[reconcile] ${bot.config.id}/${bot.config.coin}: expected FLAT but exchange shows ` +
+        `${exchangePos.side} ${exchangePos.size.toFixed(5)} @ $${exchangePos.entryPrice.toFixed(2)} — adopting`,
+      );
+      bot.position = {
+        side:          exchangePos.side,
+        entryPrice:    exchangePos.entryPrice,
+        size:          exchangePos.size,
+        entryTime:     Date.now(),
+        unrealisedPnl: exchangePos.unrealisedPnl,
+      };
+      bot.unrealisedPnl      = exchangePos.unrealisedPnl;
+      bot.hadRecentMismatch  = true;
+      bot.lastReconcileEvent =
+        `Adopted from exchange: ${exchangePos.side} ${exchangePos.size.toFixed(5)} ` +
+        `@ $${exchangePos.entryPrice.toFixed(2)}`;
+      // Write an "adopted" trade event so it appears in the Trades log
+      bus.emit("trade", {
+        orderId:   `adopted-${Date.now()}`,
+        coin:      bot.config.coin,
+        side:      exchangePos.side,
+        size:      exchangePos.size,
+        price:     exchangePos.entryPrice,
+        timestamp: Date.now(),
+        success:   true,
+        reason:    "adopted_from_exchange",
+        strategy:  bot.config.strategyId,
+      });
+      this.logger?.logEvent("reconcile", "warn",
+        `Position adopted: ${bot.config.coin} — exchange shows ${exchangePos.side} ${exchangePos.size.toFixed(5)} @ $${exchangePos.entryPrice.toFixed(2)}`,
+        { id: bot.config.id, exchangePosition: exchangePos },
+      );
+      return;
+    }
+
+    // Case C: both have a position — check for meaningful drift
+    if (exchangePos && botPos) {
+      const sideDiff  = exchangePos.side !== botPos.side;
+      const sizeDelta = botPos.size > 0 ? Math.abs(exchangePos.size - botPos.size) / botPos.size : 1;
+      if (sideDiff || sizeDelta > 0.01) {
+        const was = `${botPos.side} ${botPos.size.toFixed(5)} @ $${botPos.entryPrice.toFixed(2)}`;
+        const now = `${exchangePos.side} ${exchangePos.size.toFixed(5)} @ $${exchangePos.entryPrice.toFixed(2)}`;
+        console.warn(
+          `[reconcile] ${bot.config.id}/${bot.config.coin}: position drift — ` +
+          `bot: ${was}, exchange: ${now} — adopting exchange`,
+        );
+        bot.position = {
+          side:          exchangePos.side,
+          entryPrice:    exchangePos.entryPrice,
+          size:          exchangePos.size,
+          entryTime:     botPos.entryTime, // preserve original entry time
+          unrealisedPnl: exchangePos.unrealisedPnl,
+        };
+        bot.hadRecentMismatch  = true;
+        bot.lastReconcileEvent = `Drift corrected: was ${was}, now ${now}`;
+        this.logger?.logEvent("reconcile", "warn",
+          `Position drift corrected: ${bot.config.coin}`,
+          { id: bot.config.id, was: botPos, now: exchangePos },
+        );
+      } else {
+        // In sync — live-update the mark-to-market P&L
+        if (bot.position) bot.position.unrealisedPnl = exchangePos.unrealisedPnl;
+        bot.unrealisedPnl          = exchangePos.unrealisedPnl;
+        // Clear stale mismatch flag after a clean check
+        if (bot.hadRecentMismatch) {
+          bot.hadRecentMismatch = false;
+        }
+      }
+    }
+  }
+
+  private async detectOrphans(): Promise<void> {
+    if (!this.venue) return;
+    let allPos: import("./venue.js").VenuePosition[];
+    try {
+      allPos = await this.venue.getAllPositions();
+    } catch (e) {
+      console.warn("[reconcile] detectOrphans: could not fetch all positions:", (e as Error).message);
+      return;
+    }
+
+    // Coins claimed by a currently-live candle-strategy bot with an open position
+    const claimed = new Set<string>();
+    for (const bot of this.bots.values()) {
+      if (bot.config.live && bot.position && !bot.crossVenue) {
+        claimed.add(bot.config.coin);
+      }
+    }
+
+    // Register newly discovered orphans; refresh P&L for existing ones.
+    // Refreshing every cycle is critical for the emergency-close threshold check below.
+    for (const pos of allPos) {
+      if (!claimed.has(pos.coin)) {
+        const existing = this.orphans.get(pos.coin);
+        if (!existing) {
+          console.warn(
+            `[reconcile] Orphaned position detected: ${pos.side} ${pos.size.toFixed(5)} ` +
+            `${pos.coin} @ $${pos.entryPrice.toFixed(2)} — no bot owns this`,
+          );
+          this.orphans.set(pos.coin, { ...pos, detectedAt: Date.now() });
+          this.logger?.logEvent("reconcile", "warn",
+            `Orphan detected: ${pos.coin}`,
+            { ...pos, detectedAt: Date.now() },
+          );
+        } else {
+          // Refresh mark price and P&L from the exchange so the emergency-close
+          // check always sees current numbers, not stale detection-time values.
+          this.orphans.set(pos.coin, { ...pos, detectedAt: existing.detectedAt });
+        }
+      }
+    }
+
+    // Evict orphans that are no longer on the exchange
+    const exchangeCoins = new Set(allPos.map((p) => p.coin));
+    for (const [coin] of this.orphans) {
+      if (!exchangeCoins.has(coin)) this.orphans.delete(coin);
+    }
+
+    // ── Orphan close decisions (improvement 2) ─────────────────────────────
+    // Iterate over a snapshot so we can delete from this.orphans safely.
+    const emergencyLossPct = config.risk.orphanEmergencyCloseLossPct ?? 5;
+    for (const [coin, orphan] of [...this.orphans]) {
+      const notional = orphan.size * orphan.entryPrice;
+      if (notional > 0) {
+        // Positive lossPct = losing money (unrealisedPnl is negative when losing)
+        const lossPct = -(orphan.unrealisedPnl / notional) * 100;
+        if (lossPct >= emergencyLossPct) {
+          // Catastrophic move — close immediately, don't wait for the 24-hour grace period
+          console.warn(
+            `[reconcile] Orphan emergency close — ` +
+            `${orphan.side} ${orphan.size.toFixed(5)} ${coin} ` +
+            `down ${lossPct.toFixed(1)}% (notional $${notional.toFixed(0)})`,
+          );
+          try {
+            const receipt = await this.venue!.closePosition(coin);
+            this.orphans.delete(coin);
+            console.log(`[reconcile] Orphan emergency-closed ${coin} — txHash=${receipt.orderId}`);
+            this.logger?.logEvent("reconcile", "warn",
+              `Orphan emergency closed: ${coin}`,
+              { coin, receipt, lossPct, notional, trigger: "emergency_loss" },
+            );
+          } catch (e) {
+            console.error(`[reconcile] Orphan emergency close failed for ${coin}:`, (e as Error).message);
+          }
+          continue; // don't also try the 24-hour auto-close for this coin
+        }
+      }
+
+      // 24-hour grace-period auto-close
+      if (Date.now() - orphan.detectedAt >= ORPHAN_AUTO_CLOSE_MS) {
+        console.warn(`[reconcile] Auto-closing orphan ${coin} (older than 24 h)`);
+        try {
+          const receipt = await this.venue!.closePosition(coin);
+          this.orphans.delete(coin);
+          console.log(`[reconcile] Auto-closed orphan ${coin} — txHash=${receipt.orderId}`);
+          this.logger?.logEvent("reconcile", "info",
+            `Orphan auto-closed: ${coin}`,
+            { coin, receipt, trigger: "auto_24h" },
+          );
+        } catch (e) {
+          console.error(`[reconcile] Auto-close of orphan ${coin} failed:`, (e as Error).message);
+        }
+      }
+    }
+
+    // ── Risk-map sync (improvement 3) ──────────────────────────────────────
+    // Emit the full exchange position list so RiskManager can rebuild openRisks
+    // from ground truth, correcting any drift from missed trade events.
+    bus.emit("reconcile:positions", allPos.map((p) => ({
+      coin:  p.coin,
+      size:  p.size,
+      price: p.markPrice > 0 ? p.markPrice : p.entryPrice,
+    })));
+  }
+
   private async warmupSingleBot(bot: BotRuntime): Promise<void> {
+    if (bot.crossVenue) return; // cross-venue bots don't need candle warmup
     const cd  = this.coinData.get(bot.config.coin);
     const tf  = bot.config.timeframe;
     const entry = getStrategyEntry(bot.config.strategyId);
@@ -1141,54 +1471,4 @@ export class BotManager {
     console.log(`[bot-manager] Warmed ${bot.config.id} — ${hist.length} ${tf} candles`);
   }
 
-  private async pollFunding(): Promise<void> {
-    const fl = this.fundingLane;
-    if (!fl) return;
-    try {
-      const [meta, assetCtxs] = await this.info.metaAndAssetCtxs();
-      const idx = meta.universe.findIndex((u) => u.name === this.primaryCoin);
-      if (idx === -1) return;
-      const rate = parseFloat(assetCtxs[idx].funding);
-
-      // Flip direction when funding sign changes.
-      // long (long-spot/short-perp) earns when rate > 0; flip to short when rate turns negative.
-      // short (long-perp/short-spot) earns when rate < 0; flip to long when rate turns positive.
-      const needsFlip =
-        (fl.side === "long"  && rate < 0) ||
-        (fl.side === "short" && rate > 0);
-
-      if (needsFlip && rate !== 0) {
-        // Close two legs, reopen two opposite legs: 4 × TAKER_FEE × notional total
-        const flipCost    = 4 * TAKER_FEE * fl.notional;
-        fl.equity        -= flipCost;
-        fl.sessionPnl    -= flipCost;
-        fl.side           = fl.side === "long" ? "short" : "long";
-        fl.flipCount++;
-        console.log(
-          `[bot-manager] Funding lane flipped to ${fl.side}` +
-          ` rate=${(rate * 100).toFixed(4)}% flip cost=$${flipCost.toFixed(4)}` +
-          ` (flip #${fl.flipCount})`,
-        );
-      }
-
-      fl.lastRate = rate;
-
-      // Accrue abs(rate) × notional per completed hour — same formula for both directions
-      const currentBucket = Math.floor(Date.now() / HOUR_MS);
-      if (currentBucket > fl.lastBucket) {
-        const n      = currentBucket - fl.lastBucket;
-        const earned = Math.abs(rate) * fl.notional * n;
-        fl.equity    += earned;
-        fl.sessionPnl += earned;
-        fl.periods   += n;
-        fl.lastBucket = currentBucket;
-        console.log(
-          `[bot-manager] Funding accrual ×${n}` +
-          ` rate=${(rate * 100).toFixed(4)}% side=${fl.side} earned=+${earned.toFixed(4)}`,
-        );
-      }
-    } catch (e) {
-      console.error("[bot-manager] Funding poll failed:", (e as Error).message);
-    }
-  }
 }

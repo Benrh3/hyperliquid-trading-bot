@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { join } from "path";
 import { RSI } from "technicalindicators";
 import { config, coins, API_URL } from "../config.js";
 import { runBacktest, fetchCandles, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
@@ -11,9 +12,8 @@ import type { BotState } from "./server.js";
 import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
-import type { BotManager, BotsFile } from "../bot-manager.js";
+import type { BotManager, BotsFile, OrphanedPosition } from "../bot-manager.js";
 import type { DydxFundingPoller } from "../dydx-funding.js";
-import type { CrossVenueFundingBasis } from "../cross-venue-funding.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
@@ -231,7 +231,6 @@ export function createRouter(
   executor?: Executor,
   laneManager?: BotManager,
   dydxPoller?: DydxFundingPoller,
-  crossVenue?: CrossVenueFundingBasis,
 ): Router {
   const router = Router();
 
@@ -336,7 +335,7 @@ export function createRouter(
 
       const result = runBacktest(strategy, candles, {
         initialEquity,
-        positionSizeUsd: config.risk.maxPositionSizeUsd,
+        positionSizeUsd: Math.round(initialEquity * (config.risk.riskPerTradePercent / config.risk.stopLossPercent)),
         stopLossPct,
         commissionPct: commissionPct / 100,   // convert % → fraction for engine
       });
@@ -373,22 +372,27 @@ export function createRouter(
   });
 
   router.get("/settings", (_req, res) => {
+    const hlKey         = process.env.HL_PRIVATE_KEY ?? "";
+    const hlMainnetKey  = process.env.HL_MAINNET_PRIVATE_KEY ?? "";
+    const maskKey = (k: string) => k.length > 10
+      ? `${k.slice(0, 6)}…${k.slice(-4)}`
+      : k ? "***" : "";
     res.render("settings", {
-      network:   config.exchange.network,
-      coin:      config.exchange.coin,
-      registry:  STRATEGY_REGISTRY,
-      botsFile:  laneManager?.getBotsFile() ?? { bots: [], fundingActive: false },
+      network:             config.exchange.network,
+      coin:                config.exchange.coin,
+      risk:                config.risk,
+      hlKeyLoaded:         hlKey.length > 0,
+      hlKeyMasked:         maskKey(hlKey),
+      hlMainnetKeyLoaded:  hlMainnetKey.length > 0,
+      hlMainnetKeyMasked:  maskKey(hlMainnetKey),
+      dydxMnemonicLoaded:  !!(process.env.DYDX_TESTNET_MNEMONIC?.trim()),
     });
   });
 
   // ── Bot API ───────────────────────────────────────────────────────────────
 
   router.get("/api/bots", (_req, res) => {
-    const raw = [...(laneManager?.getBotStates() ?? [])];
-    // Append cross-venue paper strategy as a synthetic bot entry
-    const cv = crossVenue?.getBotState();
-    if (cv) raw.push(cv);
-    // Enrich each state with the live funding rate for its coin (from the shared cache)
+    const raw = laneManager?.getBotStates() ?? [];
     const enriched = raw.map((b) => {
       const cached = fundingTopCache?.items.find((i) => i.coin === b.coin);
       return { ...b, fundingRate: cached?.currentRate ?? null };
@@ -451,30 +455,53 @@ export function createRouter(
       return;
     }
     try {
-      const body = req.body as { bots?: BotsFile["bots"]; fundingActive?: boolean };
+      const body = req.body as { bots?: BotsFile["bots"] };
       if (!Array.isArray(body?.bots)) {
         res.status(400).json({ error: "bots array required" });
         return;
       }
-
-      // Merge-only: the Settings page may have been loaded before bots were added via
-      // the Bots page (POST /api/bots). A full replacement would silently drop those bots.
-      // Instead: keep any bot whose ID is absent from the submitted list — it was added
-      // after the page loaded and the user never saw it in the form.
-      const currentBots = laneManager.getBotsFile().bots;
+      // Merge-only: keep bots added after the page loaded
+      const currentBots  = laneManager.getBotsFile().bots;
       const submittedIds = new Set(body.bots.map((b) => b.id));
-      const unseen = currentBots.filter((b) => !submittedIds.has(b.id));
-
-      const mergedFile: BotsFile = {
-        bots: [...body.bots, ...unseen],
-        fundingActive: body.fundingActive ?? laneManager.getBotsFile().fundingActive,
-      };
-
-      await laneManager.applyConfig(mergedFile);
+      const unseen       = currentBots.filter((b) => !submittedIds.has(b.id));
+      await laneManager.applyConfig({ bots: [...body.bots, ...unseen] });
       res.json({ ok: true });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       res.status(400).json({ error: error.message });
+    }
+  });
+
+  // ── Orphaned positions (on exchange but not claimed by any live bot) ──────
+
+  router.get("/api/orphans", (_req, res) => {
+    const orphans: OrphanedPosition[] = laneManager?.getOrphanedPositions() ?? [];
+    res.json(orphans);
+  });
+
+  router.post("/api/orphans/:coin/close", async (req, res) => {
+    if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
+    try {
+      await laneManager.closeOrphan(req.params.coin.toUpperCase());
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Toggle execution mode for a cross-venue bot (paper ↔ live)
+  router.post("/api/bots/:id/mode", (req, res) => {
+    if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
+    const { mode } = req.body as { mode?: string };
+    if (mode !== "paper" && mode !== "live") {
+      res.status(400).json({ error: 'mode must be "paper" or "live"' });
+      return;
+    }
+    try {
+      laneManager.setBotMode(req.params.id, mode);
+      res.json({ ok: true, mode });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -703,23 +730,95 @@ export function createRouter(
     res.json(fr.getState());
   });
 
+  router.get("/api/portfolio-risk", (_req, res) => {
+    const stopFrac = config.risk.stopLossPercent / 100;
+    const bots     = laneManager?.getBotStates() ?? [];
+    // Sum dollar-at-risk for every live bot with an open position
+    let openRiskUsd = 0;
+    for (const b of bots) {
+      if (!b.live || !b.position || b.position.side === "neutral") continue;
+      openRiskUsd += b.position.size * b.position.entryPrice * stopFrac;
+    }
+    // Use the first live bot's equity as a proxy for account equity (best we can do client-side)
+    const liveEquity = bots.find((b) => b.live)?.equity ?? 1_000;
+    const openRiskPct = liveEquity > 0 ? (openRiskUsd / liveEquity) * 100 : 0;
+    res.json({
+      openRiskUsd:          parseFloat(openRiskUsd.toFixed(4)),
+      openRiskPct:          parseFloat(openRiskPct.toFixed(2)),
+      maxConcurrentRiskPct: config.risk.maxConcurrentRiskPercent,
+      riskPerTradePct:      config.risk.riskPerTradePercent,
+      stopLossPct:          config.risk.stopLossPercent,
+      maxLeverage:          config.risk.maxLeverage,
+    });
+  });
+
   router.get("/api/dydx-funding", (_req, res) => {
     res.json(dydxPoller?.getState() ?? { rate: null, lastUpdated: null, error: "Poller not initialised" });
   });
 
-  router.post("/api/cross-venue/mode", (req, res) => {
-    if (!crossVenue) { res.status(503).json({ error: "Cross-venue strategy not initialised" }); return; }
-    const { mode } = req.body as { mode?: string };
-    if (mode !== "paper" && mode !== "testnet") {
-      res.status(400).json({ error: 'mode must be "paper" or "testnet"' });
-      return;
-    }
+  router.get("/api/safety-status", async (_req, res) => {
+    const { execSync } = await import("child_process");
+    const { existsSync } = await import("fs");
+    const checks: Array<{ name: string; status: "pass" | "fail" | "warn"; detail: string }> = [];
+
+    // (a) .env exists and is NOT tracked by git
+    const envPath = join(process.cwd(), ".env");
+    const envExists = existsSync(envPath);
+    let envNotTracked = false;
+    try { envNotTracked = execSync("git ls-files .env", { encoding: "utf-8" }).trim() === ""; } catch { /* ok */ }
+    checks.push({
+      name:   ".env file exists and is gitignored",
+      status: envExists && envNotTracked ? "pass" : "fail",
+      detail: !envExists ? ".env file missing" : !envNotTracked ? ".env is tracked by git — DANGER" : "OK",
+    });
+
+    // (b) HL_MAINNET_PRIVATE_KEY is set and distinct from HL_PRIVATE_KEY
+    const mainKey = process.env.HL_MAINNET_PRIVATE_KEY;
+    const testKey = process.env.HL_PRIVATE_KEY;
+    const mainKeyOk = !!mainKey && mainKey !== testKey && /^0x[0-9a-fA-F]{64}$/.test(mainKey);
+    checks.push({
+      name:   "Mainnet private key set and distinct from testnet key",
+      status: mainKeyOk ? "pass" : "fail",
+      detail: !mainKey ? "HL_MAINNET_PRIVATE_KEY not set" : mainKey === testKey ? "Keys are identical!" : !mainKeyOk ? "Invalid format" : "OK",
+    });
+
+    // (c) npm audit — no critical/high
+    let auditStatus: "pass" | "fail" | "warn" = "warn";
+    let auditDetail = "Could not run npm audit";
     try {
-      crossVenue.setExecutionMode(mode);
-      res.json({ ok: true, mode });
-    } catch (err) {
-      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+      execSync("npm audit --audit-level=high --json", { encoding: "utf-8" });
+      auditStatus = "pass"; auditDetail = "No critical/high vulnerabilities";
+    } catch (e: unknown) {
+      const stdout = (e as { stdout?: string }).stdout ?? "";
+      try {
+        const r = JSON.parse(stdout) as { metadata?: { vulnerabilities?: { critical: number; high: number } } };
+        const v = r.metadata?.vulnerabilities;
+        if (v && (v.critical > 0 || v.high > 0)) {
+          auditStatus = "fail"; auditDetail = `${v.critical} critical, ${v.high} high`;
+        } else { auditStatus = "pass"; auditDetail = "No critical/high vulnerabilities"; }
+      } catch { /* leave warn */ }
     }
+    checks.push({ name: "No critical/high npm vulnerabilities", status: auditStatus, detail: auditDetail });
+
+    // (d) position sizing uses percentage-based risk (not the deprecated fixed-dollar field)
+    const riskPct = config.risk?.riskPerTradePercent;
+    checks.push({
+      name:   "Percentage-based position sizing configured",
+      status: riskPct > 0 && riskPct <= 5 ? "pass" : "warn",
+      detail: !riskPct ? "riskPerTradePercent not set" : riskPct > 5 ? `riskPerTradePercent=${riskPct}% is high for mainnet — consider ≤2%` : `${riskPct}% per trade`,
+    });
+
+    // (e) emergency-stop endpoint (not yet implemented)
+    checks.push({
+      name:   "Emergency-stop endpoint implemented",
+      status: "fail",
+      detail: "POST /api/emergency-stop not yet implemented",
+    });
+
+    res.json({
+      allPass: checks.every((c) => c.status === "pass"),
+      checks,
+    });
   });
 
   router.get("/api/prices", (_req, res) => {
@@ -764,7 +863,7 @@ export function createRouter(
 
       const nWin      = Math.min(Math.max(parseInt(String(windows)) || 5, 2), 10);
       const segSize   = Math.floor(allCandles.length / nWin);
-      const btOpts    = { initialEquity, positionSizeUsd: config.risk.maxPositionSizeUsd, stopLossPct, commissionPct: commissionPct / 100 };
+      const btOpts    = { initialEquity, positionSizeUsd: Math.round(initialEquity * (config.risk.riskPerTradePercent / config.risk.stopLossPercent)), stopLossPct, commissionPct: commissionPct / 100 };
       const grid      = generateParamGrid(entry.params, 200);
 
       const windowResults: object[] = [];
@@ -887,9 +986,10 @@ export function createRouter(
         return;
       }
 
+      const btInitialEquity = 1000;
       const btOptions = {
-        initialEquity:   1000,
-        positionSizeUsd: config.risk.maxPositionSizeUsd,
+        initialEquity:   btInitialEquity,
+        positionSizeUsd: Math.round(btInitialEquity * (config.risk.riskPerTradePercent / config.risk.stopLossPercent)),
         stopLossPct:     config.risk.stopLossPercent,
       };
 

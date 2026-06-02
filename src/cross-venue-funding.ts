@@ -15,7 +15,8 @@ const ROLLING_7D_LEN = 24 * 7;        // 168 hourly buckets = rolling 7 days
 const POLL_MS        = 60_000;
 const HOUR_MS        = 3_600_000;
 
-export type ExecutionMode = "paper" | "testnet";
+/** "paper" = simulation only. "live" = real orders on both venues. */
+export type ExecutionMode = "paper" | "live";
 
 // ── Internal types ─────────────────────────────────────────────────────────────
 
@@ -131,6 +132,20 @@ export class CrossVenueFundingBasis {
     if (this.dailyTimer) { clearTimeout(this.dailyTimer); this.dailyTimer = null; }
   }
 
+  /** Pause polling — preserves all state and the daily-reset timer. */
+  pause(): void {
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    console.log(`[cross-venue] Paused ${this.coin}`);
+  }
+
+  /** Resume polling — restarts the 60 s poll loop from current state. */
+  async resume(): Promise<void> {
+    if (this.timer) return; // already running
+    await this.poll();
+    this.timer = setInterval(() => void this.poll(), POLL_MS);
+    console.log(`[cross-venue] Resumed ${this.coin}`);
+  }
+
   // ── Mode toggle ───────────────────────────────────────────────────────────
 
   setExecutionMode(mode: ExecutionMode): void {
@@ -192,10 +207,10 @@ export class CrossVenueFundingBasis {
       id:            "cross-venue-funding",
       strategyId:    "cross-venue-funding-basis",
       displayName:   "Cross-Venue Funding Basis",
-      categoryLabel: `${this.venueA.name.toUpperCase()} ↔ ${this.venueB.name.toUpperCase()} · ${this.executionMode === "testnet" ? "TESTNET" : "paper sim"}`,
+      categoryLabel: `${this.venueA.name.toUpperCase()} ↔ ${this.venueB.name.toUpperCase()} · ${this.executionMode === "live" ? "LIVE" : "paper sim"}`,
       coin:          this.coin,
       timeframe:     "—",
-      live:          this.executionMode === "testnet",
+      live:          this.executionMode === "live",
       active:        !this.paused,
       status:        this.lastError ? "error" : this.paused ? "paused" : "running",
       equity:        this.equity + partialAccrual,
@@ -330,7 +345,7 @@ export class CrossVenueFundingBasis {
   private async openLegs(
     shortId: string, longId: string, spread: number, rateA: number, rateB: number,
   ): Promise<void> {
-    if (this.executionMode === "testnet") {
+    if (this.executionMode === "live") {
       await this.placeRealOrders("open", shortId, longId);
     }
 
@@ -354,14 +369,14 @@ export class CrossVenueFundingBasis {
     console.log(
       `[cross-venue] OPENED short ${shortId}(${(shortRate * 100).toFixed(4)}%)` +
       ` long ${longId}(${(longRate * 100).toFixed(4)}%)` +
-      ` spread=${(spread * 100).toFixed(4)}%/hr fee=$${fee.toFixed(4)} [${this.executionMode}]`,
+      ` spread=${(spread * 100).toFixed(4)}%/hr fee=$${fee.toFixed(4)} [${this.executionMode.toUpperCase()}]`,
     );
   }
 
   private async flipLegs(
     newShortId: string, newLongId: string, newSpread: number, rateA: number, rateB: number,
   ): Promise<void> {
-    if (this.executionMode === "testnet") {
+    if (this.executionMode === "live") {
       await this.placeRealOrders("close", this.shortVenue, this.longVenue);
       await this.placeRealOrders("open",  newShortId,      newLongId);
     }
@@ -403,7 +418,7 @@ export class CrossVenueFundingBasis {
     console.log(
       `[cross-venue] FLIPPED to short ${newShortId} long ${newLongId}` +
       ` spread=${(newSpread * 100).toFixed(4)}%/hr held=${Math.round(holdMs / 60_000)}m` +
-      ` fee=$${fee.toFixed(4)} (flip #${this.flipCount}) [${this.executionMode}]`,
+      ` fee=$${fee.toFixed(4)} (flip #${this.flipCount}) [${this.executionMode.toUpperCase()}]`,
     );
   }
 

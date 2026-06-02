@@ -71,4 +71,18 @@ export interface Venue {
    * on cached data so callers always see the real position.
    */
   getPosition(coin: string): Promise<VenuePosition | null>;
+
+  /**
+   * Returns the total marked account equity in USD, or null if unavailable
+   * (e.g. read-only venue with no wallet configured).  Used by the position-
+   * sizing formula so that trade size scales with real account balance.
+   */
+  getAccountEquity(): Promise<number | null>;
+
+  /**
+   * Returns ALL currently open positions on the account.
+   * Used by the reconciliation loop to detect orphaned positions.
+   * Returns empty array when unavailable (read-only venue, no wallet).
+   */
+  getAllPositions(): Promise<VenuePosition[]>;
 }
