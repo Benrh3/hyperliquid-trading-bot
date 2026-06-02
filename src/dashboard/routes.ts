@@ -756,6 +756,33 @@ export function createRouter(
     res.json(dydxPoller?.getState() ?? { rate: null, lastUpdated: null, error: "Poller not initialised" });
   });
 
+  // dYdX perpetuals universe — used by the +Add Bot coin dropdown intersection filter.
+  // Cached for 5 minutes since the list changes rarely.
+  let dydxMarketsCache: { coins: string[]; expiresAt: number } | null = null;
+  router.get("/api/dydx-markets", async (_req, res) => {
+    try {
+      const now = Date.now();
+      if (!dydxMarketsCache || dydxMarketsCache.expiresAt <= now) {
+        type MktResp = { markets?: Record<string, unknown> };
+        const r = await fetch("https://indexer.v4testnet.dydx.exchange/v4/perpetualMarkets", {
+          headers: { Accept: "application/json" },
+          signal:  AbortSignal.timeout(8_000),
+        });
+        if (!r.ok) throw new Error(`dYdX HTTP ${r.status}`);
+        const data = await r.json() as MktResp;
+        const coins = Object.keys(data.markets ?? {})
+          // Normalise "BTC-USD" → "BTC" so comparisons with HL universe are trivial
+          .map((t) => t.replace(/-USD$/, ""))
+          .filter(Boolean)
+          .sort();
+        dydxMarketsCache = { coins, expiresAt: now + 5 * 60_000 };
+      }
+      res.json(dydxMarketsCache.coins);
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   router.get("/api/safety-status", async (_req, res) => {
     const { execSync } = await import("child_process");
     const { existsSync } = await import("fs");

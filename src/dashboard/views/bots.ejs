@@ -284,7 +284,7 @@
       <div class="m-field">
         <label class="m-label" for="m-strategy">Strategy</label>
         <select class="m-sel" id="m-strategy">
-          <% for (const e of registry.filter(r => r.isCandleStrategy)) { %>
+          <% for (const e of registry) { %>
             <option value="<%= e.id %>"><%= e.displayName %></option>
           <% } %>
         </select>
@@ -293,12 +293,13 @@
       <div class="m-field">
         <label class="m-label" for="m-coin">Coin</label>
         <select class="m-sel" id="m-coin">
-          <option value="" disabled selected>Loading top coins…</option>
+          <option value="" disabled selected>Loading…</option>
         </select>
         <p class="m-hint" id="m-coin-hint"></p>
       </div>
 
-      <div class="m-field">
+      <!-- Timeframe — hidden for non-candle strategies -->
+      <div class="m-field" id="m-tf-field">
         <label class="m-label" for="m-tf">Timeframe</label>
         <select class="m-sel" id="m-tf">
           <option value="1m">1m</option>
@@ -310,19 +311,34 @@
         </select>
       </div>
 
-      <div class="m-field">
-        <label class="m-label" for="m-equity">Starting equity</label>
+      <!-- Notional — shown for cross-venue bots only -->
+      <div class="m-field" id="m-notional-field" style="display:none">
+        <label class="m-label" for="m-notional">Notional per leg ($)</label>
         <div class="m-pfx-wrap">
           <span class="m-pfx">$</span>
-          <input class="m-inp" id="m-equity" type="number" min="1" step="100" value="1000">
+          <input class="m-inp" id="m-notional" type="number" min="1" step="100" value="1000">
         </div>
+        <p class="m-hint">Capital deployed on each venue leg. Position size is computed from this.</p>
+      </div>
+
+      <!-- Account equity — shown for candle-strategy bots (sizing is %-based, not fixed $) -->
+      <div class="m-field" id="m-acct-equity-field">
+        <label class="m-label">Account equity (used for sizing)</label>
+        <div class="m-pfx-wrap">
+          <span class="m-pfx">$</span>
+          <input class="m-inp" id="m-acct-equity-display" type="text" disabled value="Loading…">
+        </div>
+        <p class="m-hint">
+          Position size = equity × riskPerTrade% ÷ (price × stopLoss%).
+          Fetched live — no input needed.
+        </p>
       </div>
 
       <div class="m-field">
         <div class="live-row">
           <div class="live-row-text">
             <label class="m-label">Live mode</label>
-            <p class="m-hint">Places real testnet orders for this bot</p>
+            <p class="m-hint" id="m-live-hint">Places real testnet orders on Hyperliquid</p>
           </div>
           <label class="toggle">
             <input type="checkbox" id="m-live">
@@ -374,9 +390,10 @@
   'use strict';
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let allBots   = [];      // most recent /api/bots response (used by modal)
-  let topCoins  = [];      // cached /api/funding/top response
-  let lastFetch = 0;
+  let allBots    = [];   // most recent /api/bots response (used by modal)
+  let topCoins   = [];   // cached /api/funding/top response (HL top 25)
+  let dydxCoins  = [];   // cached /api/dydx-markets response
+  let lastFetch  = 0;
 
   // ── Elements ─────────────────────────────────────────────────────────────
   const grid    = document.getElementById('bots-grid');
@@ -385,9 +402,14 @@
   const mCoin   = document.getElementById('m-coin');
   const mLive   = document.getElementById('m-live');
   const mLiveW  = document.getElementById('m-live-warn');
+  const mLiveH  = document.getElementById('m-live-hint');
   const mCoinH  = document.getElementById('m-coin-hint');
   const mErr    = document.getElementById('m-err');
   const mSubmit = document.getElementById('modal-submit');
+  const mTfField      = document.getElementById('m-tf-field');
+  const mNotionalF    = document.getElementById('m-notional-field');
+  const mAcctEquityF  = document.getElementById('m-acct-equity-field');
+  const mAcctDisp     = document.getElementById('m-acct-equity-display');
 
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -723,8 +745,9 @@
     } catch (_) { /* non-critical */ }
   }
 
-  // ── Modal: coin list (prefetched, cached) ─────────────────────────────────
-  let coinsLoading = false;
+  // ── Modal: coin lists (prefetched, cached) ────────────────────────────────
+  let dydxLoading  = false;
+
   async function ensureTopCoins() {
     if (topCoins.length > 0 || coinsLoading) return;
     coinsLoading = true;
@@ -733,26 +756,63 @@
       if (!resp.ok) return;
       topCoins = await resp.json();
     } catch (_) {
-    } finally {
-      coinsLoading = false;
-    }
+    } finally { coinsLoading = false; }
+  }
+
+  async function ensureDydxCoins() {
+    if (dydxCoins.length > 0 || dydxLoading) return;
+    dydxLoading = true;
+    try {
+      const resp = await fetch('/api/dydx-markets');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (Array.isArray(data)) dydxCoins = data; // ["BTC","ETH",...]
+    } catch (_) {
+    } finally { dydxLoading = false; }
+  }
+
+  function isCrossVenueSelected() {
+    return document.getElementById('m-strategy').value === 'cross-venue-funding-basis';
   }
 
   function populateCoinDropdown() {
-    if (!topCoins.length) {
-      mCoin.innerHTML = '<option value="" disabled selected>Failed to load — type a coin symbol</option>';
-      // Allow free text by switching to a text input? No — keep select but add manual fallback
-      return;
+    const crossVenue = isCrossVenueSelected();
+
+    if (crossVenue) {
+      // Intersection of HL top coins and dYdX universe
+      const hlCoins   = topCoins.map(c => c.coin);
+      const dydxSet   = new Set(dydxCoins);
+      const common    = hlCoins.filter(c => dydxSet.has(c));
+      if (!common.length) {
+        mCoin.innerHTML = '<option value="" disabled selected>Loading HL∩dYdX coins…</option>';
+        return;
+      }
+      // Build options from topCoins for the HL metadata (displayName, rate), filter to common
+      const topMap = Object.fromEntries(topCoins.map(c => [c.coin, c]));
+      mCoin.innerHTML = common.map(coin => {
+        const c = topMap[coin];
+        const label = c ? `${c.displayName || coin} · HL ${(c.annualizedRate * 100).toFixed(1)}% ann` : coin;
+        return `<option value="${coin}">${label}</option>`;
+      }).join('');
+      mCoin.value = common[0] ?? '';
+      mCoinH.textContent = `${common.length} coins available on both Hyperliquid and dYdX`;
+    } else {
+      // Full HL top-coins list
+      if (!topCoins.length) {
+        mCoin.innerHTML = '<option value="" disabled selected>Failed to load coins</option>';
+        return;
+      }
+      mCoin.innerHTML = topCoins.map(c =>
+        `<option value="${c.coin}">${c.displayName || c.coin} · ${(c.annualizedRate * 100).toFixed(1)}% ann</option>`
+      ).join('');
+      mCoin.value = topCoins[0]?.coin ?? '';
+      updateCoinHint();
     }
-    mCoin.innerHTML = topCoins.map(c =>
-      `<option value="${c.coin}">${c.displayName || c.coin} · ${(c.annualizedRate * 100).toFixed(1)}% ann</option>`
-    ).join('');
-    mCoin.value = topCoins[0]?.coin ?? '';
-    updateCoinHint();
     checkLiveConflict();
   }
 
   function updateCoinHint() {
+    if (isCrossVenueSelected()) return; // hint already set by populateCoinDropdown
     const coin = mCoin.value;
     const data = topCoins.find(c => c.coin === coin);
     if (data) {
@@ -760,6 +820,49 @@
     } else {
       mCoinH.textContent = '';
     }
+  }
+
+  async function onStrategyChange() {
+    const crossVenue = isCrossVenueSelected();
+
+    // ── Show / hide conditional fields ────────────────────────────────────
+    mTfField.style.display      = crossVenue ? 'none' : '';
+    mNotionalF.style.display    = crossVenue ? '' : 'none';
+    mAcctEquityF.style.display  = crossVenue ? 'none' : '';
+
+    // ── Live mode hint text ────────────────────────────────────────────────
+    if (crossVenue) {
+      mLiveH.textContent =
+        'Switch to LIVE mode (places real orders on Hyperliquid and dYdX testnet — requires DYDX_TESTNET_MNEMONIC)';
+    } else {
+      mLiveH.textContent = 'Switch to LIVE mode (places real testnet orders on Hyperliquid)';
+    }
+
+    // ── Account equity display (candle strategies only) ───────────────────
+    if (!crossVenue && mAcctDisp) {
+      mAcctDisp.value = 'Loading…';
+      try {
+        const r = await fetch('/api/portfolio-risk');
+        if (r.ok) {
+          const d = await r.json();
+          mAcctDisp.value = d.currentBalance != null
+            ? '$' + Number(d.currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : 'Unknown';
+        }
+      } catch (_) { mAcctDisp.value = 'Unavailable'; }
+    }
+
+    // ── Repopulate coin dropdown for the new strategy ─────────────────────
+    if (crossVenue) {
+      if (!dydxCoins.length) {
+        mCoin.innerHTML = '<option value="" disabled selected>Loading…</option>';
+        await ensureDydxCoins();
+      }
+    } else if (!topCoins.length) {
+      mCoin.innerHTML = '<option value="" disabled selected>Loading…</option>';
+      await ensureTopCoins();
+    }
+    populateCoinDropdown();
   }
 
   // ── Modal: live-conflict guard ────────────────────────────────────────────
@@ -778,23 +881,18 @@
 
   // ── Modal: open / close ───────────────────────────────────────────────────
   async function openModal() {
-    mErr.style.display    = 'none';
-    mLiveW.style.display  = 'none';
-    mCoinH.textContent    = '';
-    mLive.checked         = false;
-    mLive.disabled        = false;
-    document.getElementById('m-equity').value = '1000';
+    mErr.style.display   = 'none';
+    mLiveW.style.display = 'none';
+    mCoinH.textContent   = '';
+    mLive.checked        = false;
+    mLive.disabled       = false;
+    document.getElementById('m-notional').value = '1000';
 
     modal.style.display = 'flex';
     document.getElementById('m-strategy').focus();
 
-    if (topCoins.length > 0) {
-      populateCoinDropdown();
-    } else {
-      mCoin.innerHTML = '<option value="" disabled selected>Loading…</option>';
-      await ensureTopCoins();
-      populateCoinDropdown();
-    }
+    // Trigger strategy-specific field logic for whatever is currently selected
+    await onStrategyChange();
   }
 
   function closeModal() {
@@ -805,11 +903,10 @@
 
   // ── Modal: submit ─────────────────────────────────────────────────────────
   async function submitModal() {
-    const strategyId     = document.getElementById('m-strategy').value;
-    const coin           = mCoin.value;
-    const timeframe      = document.getElementById('m-tf').value;
-    const startingEquity = parseFloat(document.getElementById('m-equity').value) || 1000;
-    const live           = mLive.checked && !mLive.disabled;
+    const strategyId = document.getElementById('m-strategy').value;
+    const coin       = mCoin.value;
+    const live       = mLive.checked && !mLive.disabled;
+    const crossVenue = isCrossVenueSelected();
 
     mErr.style.display = 'none';
     if (!coin) {
@@ -818,14 +915,30 @@
       return;
     }
 
-    mSubmit.disabled       = true;
-    mSubmit.textContent    = 'Adding…';
+    mSubmit.disabled    = true;
+    mSubmit.textContent = 'Adding…';
 
     try {
+      const body = crossVenue
+        ? {
+            strategyId,
+            coin,
+            timeframe: '—',
+            live,
+            notional: parseFloat(document.getElementById('m-notional').value) || 1000,
+          }
+        : {
+            strategyId,
+            coin,
+            timeframe: document.getElementById('m-tf').value,
+            live,
+            // startingEquity omitted: percentage-based sizing uses account equity
+          };
+
       const resp = await fetch('/api/bots', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ strategyId, coin, timeframe, live, startingEquity }),
+        body:    JSON.stringify(body),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || resp.statusText);
@@ -846,6 +959,7 @@
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   mSubmit.addEventListener('click', submitModal);
   mCoin.addEventListener('change', () => { updateCoinHint(); checkLiveConflict(); });
+  document.getElementById('m-strategy').addEventListener('change', () => void onStrategyChange());
 
   // Close on backdrop click (not on modal box itself)
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
@@ -866,7 +980,8 @@
   // ── Init ──────────────────────────────────────────────────────────────────
   load();
   setInterval(load, 4000);
-  ensureTopCoins(); // prefetch so modal opens instantly
+  ensureTopCoins();  // prefetch so modal opens instantly
+  ensureDydxCoins(); // prefetch dYdX universe for cross-venue coin intersection
 
 })();
 </script>
