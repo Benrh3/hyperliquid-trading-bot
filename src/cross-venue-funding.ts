@@ -92,6 +92,13 @@ export class CrossVenueFundingBasis {
   private lastPollAt: Date   | null = null;
   private lastError:  string | null = null;
 
+  /**
+   * Set during the brief window between leg-1 filling and leg-2 attempting.
+   * If leg-2 fails and the unwind of leg-1 ALSO fails, this captures the naked
+   * position so the card never shows "FLAT" while the exchange has an open order.
+   */
+  private nakedLeg: { venueId: string; side: "long" | "short"; coin: string } | null = null;
+
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -221,11 +228,15 @@ export class CrossVenueFundingBasis {
       tradeCount:    this.periods,
       startedAt:     this.startedAt,
       error:         this.lastError ?? undefined,
-      fundingDirection: this.positioned
-        ? `${this.shortVenue.toUpperCase()} SHORT / ${this.longVenue.toUpperCase()} LONG`
-        : (this.paused ? "PAUSED" : "FLAT — below min spread"),
+      fundingDirection: this.nakedLeg
+        ? `NAKED LEG: ${this.nakedLeg.venueId.toUpperCase()} ${this.nakedLeg.side.toUpperCase()} — UNWIND FAILED`
+        : this.positioned
+          ? `${this.shortVenue.toUpperCase()} SHORT / ${this.longVenue.toUpperCase()} LONG`
+          : (this.paused ? "PAUSED" : "FLAT — below min spread"),
       fundingFlips:    this.flipCount,
-      crossVenueLegs:  this.legs?.map((l) => ({ venue: l.venueId, side: l.side })) ?? [],
+      crossVenueLegs:  this.nakedLeg
+        ? [{ venue: this.nakedLeg.venueId, side: this.nakedLeg.side }]
+        : (this.legs?.map((l) => ({ venue: l.venueId, side: l.side })) ?? []),
       capturedFunding: this.capturedFunding,
       currentSpread:   spread,
       executionMode:   this.executionMode,
@@ -346,9 +357,25 @@ export class CrossVenueFundingBasis {
     shortId: string, longId: string, spread: number, rateA: number, rateB: number,
   ): Promise<void> {
     if (this.executionMode === "live") {
+      // ── Pre-flight checks (abort before ANY order if preconditions fail) ──
+      const preflightError = await this.performPreFlight(shortId, longId);
+      if (preflightError) {
+        this.lastError = `Pre-flight failed — no orders placed: ${preflightError}`;
+        console.error(`[cross-venue] PRE-FLIGHT ABORT: ${this.lastError}`);
+        this.logger?.logEvent("cross-venue", "warn", "preflight-abort", {
+          reason: preflightError, shortId, longId, coin: this.coin,
+        });
+        return; // ← zero orders placed
+      }
+
+      // ── Atomic dual-leg placement ─────────────────────────────────────────
       await this.placeRealOrders("open", shortId, longId);
+      // If placeRealOrders returns normally, both legs filled and any required
+      // unwind on second-leg failure has already been handled internally.
+      // If it throws, the poll() catch block sets lastError and positioned stays false.
     }
 
+    // ── Update internal state (paper and live post-success) ──────────────────
     const fee       = ENTRY_COST * this.notional;
     this.totalFees += fee;
     this.equity    -= fee;
@@ -364,12 +391,14 @@ export class CrossVenueFundingBasis {
     ];
     this.logger?.logEvent("cross-venue", "info",
       `Opened short ${shortId} / long ${longId} spread=${(spread * 100).toFixed(4)}%/hr`,
-      { shortId, longId, spread, rateA, rateB, fee, executionMode: this.executionMode },
+      { shortId, longId, spread, rateA, rateB, fee, executionMode: this.executionMode,
+        notional: this.notional },
     );
     console.log(
       `[cross-venue] OPENED short ${shortId}(${(shortRate * 100).toFixed(4)}%)` +
       ` long ${longId}(${(longRate * 100).toFixed(4)}%)` +
-      ` spread=${(spread * 100).toFixed(4)}%/hr fee=$${fee.toFixed(4)} [${this.executionMode.toUpperCase()}]`,
+      ` spread=${(spread * 100).toFixed(4)}%/hr notional=$${this.notional}` +
+      ` fee=$${fee.toFixed(4)} [${this.executionMode.toUpperCase()}]`,
     );
   }
 
@@ -422,8 +451,23 @@ export class CrossVenueFundingBasis {
     );
   }
 
-  // ── Real-order placement ──────────────────────────────────────────────────
+  // ── Real-order placement ─────────────────────────────────────────────────
 
+  /**
+   * Atomic dual-leg placement.
+   *
+   * Open path:
+   *  1. Place first leg (short venue). If it fails → throw, no unwind needed.
+   *  2. Set nakedLeg to track the live first-leg position while second is pending.
+   *  3. Place second leg (long venue). If it fails → immediately unwind first leg.
+   *  4. If unwind succeeds → clear nakedLeg, throw (caller sees clean failure).
+   *     If unwind ALSO fails → leave nakedLeg set so the card shows the exposure;
+   *     throw with CRITICAL prefix so the operator is alerted.
+   *  5. Both legs filled → clear nakedLeg, return normally.
+   *
+   * Close path: closes both legs best-effort; any failure is logged but does not
+   * cause a partial-close panic (flips are retried next cycle).
+   */
   private async placeRealOrders(
     action:       "open" | "close",
     shortVenueId: string,
@@ -432,33 +476,144 @@ export class CrossVenueFundingBasis {
     const shortVenue = shortVenueId === this.venueA.name ? this.venueA : this.venueB;
     const longVenue  = longVenueId  === this.venueA.name ? this.venueA : this.venueB;
 
-    let shortTx: string | undefined;
+    // ── First leg ──────────────────────────────────────────────────────────
+    let shortTx: string;
     try {
-      const r   = action === "open"
+      const r = action === "open"
         ? await shortVenue.openPosition(this.coin, "short", this.notional)
         : await shortVenue.closePosition(this.coin);
       shortTx = r.orderId;
       console.log(`[cross-venue] ${action} short on ${shortVenueId} → ${shortTx}`);
     } catch (e) {
-      throw new Error(`${action} SHORT on ${shortVenueId} failed: ${(e as Error).message}`);
+      // First leg failed — no exchange exposure, safe to abort
+      throw new Error(`[cross-venue] ${action} SHORT on ${shortVenueId} failed (no orders placed): ${(e as Error).message}`);
     }
 
+    if (action === "open") {
+      // Record the naked first-leg position so the card never shows flat while HL has an open order
+      this.nakedLeg = { venueId: shortVenueId, side: "short", coin: this.coin };
+    }
+
+    // ── Second leg ─────────────────────────────────────────────────────────
     try {
-      const r   = action === "open"
+      const r = action === "open"
         ? await longVenue.openPosition(this.coin, "long", this.notional)
         : await longVenue.closePosition(this.coin);
       console.log(`[cross-venue] ${action} long  on ${longVenueId} → ${r.orderId}`);
-    } catch (e) {
-      console.error(
-        `[cross-venue] ⚠ PARTIAL: ${action} SHORT ${shortVenueId}(${shortTx}) OK` +
-        ` but LONG ${longVenueId} FAILED: ${(e as Error).message}` +
-        ` — manual intervention may be required`,
-      );
-      throw new Error(
-        `${action} LONG on ${longVenueId} failed (short already placed!): ` +
-        (e as Error).message,
-      );
+    } catch (secondErr) {
+      const secondMsg = (secondErr as Error).message;
+
+      if (action === "open") {
+        // ── Unwind first leg immediately ───────────────────────────────────
+        console.error(
+          `[cross-venue] Second leg failed — unwinding first leg to avoid naked exposure. ` +
+          `Second-leg error: ${secondMsg}`,
+        );
+        this.logger?.logEvent("cross-venue", "warn", "second-leg-failed-unwinding", {
+          shortVenueId, longVenueId, secondErr: secondMsg, coin: this.coin,
+        });
+
+        try {
+          const unwind = await shortVenue.closePosition(this.coin);
+          this.nakedLeg = null; // unwind confirmed
+          console.log(`[cross-venue] First leg unwound successfully → ${unwind.orderId}`);
+          this.logger?.logEvent("cross-venue", "info", "first-leg-unwound", {
+            shortVenueId, orderId: unwind.orderId, coin: this.coin,
+          });
+        } catch (unwindErr) {
+          // Both unwind AND second leg failed — naked exposure is real
+          const unwindMsg = (unwindErr as Error).message;
+          console.error(
+            `[cross-venue] CRITICAL: second leg failed AND first-leg unwind failed. ` +
+            `Naked SHORT ${this.coin} on ${shortVenueId} (txHash=${shortTx}). ` +
+            `Manual close required. Unwind error: ${unwindMsg}`,
+          );
+          this.logger?.logEvent("cross-venue", "error", "naked-leg-unwind-failed", {
+            shortVenueId, shortTx, coin: this.coin, secondErr: secondMsg, unwindErr: unwindMsg,
+          });
+          // nakedLeg stays set — the card will show the exposure until operator closes it
+          throw new Error(
+            `[cross-venue] CRITICAL: naked SHORT ${this.coin} on ${shortVenueId} — ` +
+            `close manually. Second leg: ${secondMsg}. Unwind: ${unwindMsg}`,
+          );
+        }
+
+        throw new Error(
+          `[cross-venue] Open aborted — second leg (LONG on ${longVenueId}) failed: ${secondMsg}`,
+        );
+      } else {
+        // Close path: log the partial close but don't panic — flip will retry
+        console.error(
+          `[cross-venue] ⚠ Partial close: SHORT ${shortVenueId}(${shortTx}) closed ` +
+          `but LONG ${longVenueId} failed: ${secondMsg}`,
+        );
+        this.logger?.logEvent("cross-venue", "warn", "partial-close", {
+          shortVenueId, longVenueId, secondErr: secondMsg, coin: this.coin,
+        });
+        throw new Error(`[cross-venue] Partial close — LONG ${longVenueId} failed: ${secondMsg}`);
+      }
     }
+
+    // Both legs succeeded
+    if (action === "open") this.nakedLeg = null;
+  }
+
+  // ── Pre-flight ────────────────────────────────────────────────────────────
+
+  /**
+   * Validate all preconditions before placing any real order.
+   * Returns an error string if a precondition fails, null if all pass.
+   * No exchange orders are placed here.
+   */
+  private async performPreFlight(shortVenueId: string, longVenueId: string): Promise<string | null> {
+    const shortVenue = shortVenueId === this.venueA.name ? this.venueA : this.venueB;
+    const longVenue  = longVenueId  === this.venueA.name ? this.venueA : this.venueB;
+
+    console.log(
+      `[cross-venue] Pre-flight: short=${shortVenueId} long=${longVenueId}` +
+      ` coin=${this.coin} notional=$${this.notional}`,
+    );
+
+    // 0. Notional sanity (fast, synchronous — no API call needed)
+    if (this.notional > 100_000) {
+      return `Notional $${this.notional} exceeds safety limit ($100,000) — check bot configuration`;
+    }
+
+    // 1. Verify both venues can report a mark price (connectivity + coin exists)
+    let shortMark: number | null = null;
+    let longMark:  number | null = null;
+    try {
+      [shortMark, longMark] = await Promise.all([
+        shortVenue.getMarkPrice(this.coin),
+        longVenue.getMarkPrice(this.coin),
+      ]);
+    } catch (e) {
+      return `Mark price fetch failed: ${(e as Error).message}`;
+    }
+    if (shortMark === null || shortMark === 0) {
+      return `No mark price on ${shortVenueId} for ${this.coin} — venue may be unreachable`;
+    }
+    if (longMark === null || longMark === 0) {
+      return `No mark price on ${longVenueId} for ${this.coin} — venue may be unreachable or DYDX_TESTNET_MNEMONIC not initialized`;
+    }
+
+    // 2. Verify the short venue (HL) has sufficient margin
+    let shortEquity: number | null = null;
+    try {
+      shortEquity = await shortVenue.getAccountEquity();
+    } catch (e) {
+      return `Could not fetch ${shortVenueId} account equity: ${(e as Error).message}`;
+    }
+    if (shortEquity !== null && shortEquity < this.notional) {
+      return `Insufficient margin on ${shortVenueId}: have $${shortEquity.toFixed(2)}, need $${this.notional.toFixed(2)}`;
+    }
+
+    console.log(
+      `[cross-venue] Pre-flight passed — ` +
+      `${shortVenueId} mark=$${shortMark.toFixed(2)} equity=$${shortEquity?.toFixed(2) ?? "?"} ` +
+      `${longVenueId} mark=$${longMark.toFixed(2)} notional=$${this.notional}`,
+    );
+    return null;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
