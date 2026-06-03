@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Test (Node 20)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # Install all dependencies (including devDependencies such as TypeScript
+      # and @types/* packages required for the build step).
+      - name: Install dependencies
+        run: npm ci
+
+      # Compile TypeScript — fails the job on any type or syntax error.
+      - name: Build
+        run: npm run build
+
+      # Run the full test suite.
+      # Tests use mocked venues only; no HL_PRIVATE_KEY or DYDX_TESTNET_MNEMONIC
+      # is needed and no live network is contacted.
+      - name: Test
+        run: npm test

@@ -1,5 +1,7 @@
 # Hyperliquid Trading Bot
 
+[![CI](https://github.com/benhowbrook4/hyperliquid-trading-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/benhowbrook4/hyperliquid-trading-bot/actions/workflows/ci.yml)
+
 A modular, event-driven perpetual-futures trading bot for [Hyperliquid](https://hyperliquid.xyz) (DEX) with an optional cross-venue funding-rate arbitrage strategy that spans Hyperliquid and dYdX v4.
 
 > **Testnet-first by default.** Every component defaults to the Hyperliquid testnet and paper-simulation mode. Real orders require explicit opt-in via environment variables and UI toggles.
