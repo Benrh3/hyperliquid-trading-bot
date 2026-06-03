@@ -7,3 +7,13 @@ dist/
 coverage/
 *.db-shm
 *.db-wal
+
+# Runtime config — rewritten by the app at runtime whenever bots/strategies change.
+# Each has a committed .example counterpart; copy it on first run if the real file is absent.
+config/bots.json
+config/custom-strategies.json
+config/lanes.json
+config/server.json
+
+# Runtime logs
+logs/

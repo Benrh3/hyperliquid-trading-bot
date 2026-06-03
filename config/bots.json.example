@@ -1,0 +1,12 @@
+{
+  "bots": [
+    {
+      "id": "bot-confluence",
+      "strategyId": "confluence",
+      "coin": "BTC",
+      "timeframe": "1h",
+      "active": true,
+      "live": false
+    }
+  ]
+}

@@ -1,5 +1,19 @@
+import { copyFileSync, existsSync } from "fs";
+import { resolve } from "path";
 import { bus } from "./events.js";
 import { config, coins, hasValidPrivateKey, getPrivateKey } from "./config.js";
+
+// ── First-run bootstrap ───────────────────────────────────────────────────────
+// If a runtime config file is absent (fresh clone or first deploy), copy its
+// committed .example counterpart so the app can start without manual setup.
+for (const name of ["bots.json", "custom-strategies.json"]) {
+  const target  = resolve(process.cwd(), "config", name);
+  const example = `${target}.example`;
+  if (!existsSync(target) && existsSync(example)) {
+    copyFileSync(example, target);
+    console.log(`[init] Created ${name} from ${name}.example`);
+  }
+}
 import { Logger } from "./logger.js";
 import { startDashboard } from "./dashboard/server.js";
 import { Executor } from "./executor.js";

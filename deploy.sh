@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 # deploy.sh — pull latest, build, restart pm2.
 # Exits immediately on any failure; never prints "Deployed." unless every step succeeded.
+#
+# Runtime config files (config/bots.json, config/custom-strategies.json) are
+# git-ignored so that changes made at runtime never dirty the tracked tree.
+# git pull therefore never touches them — your live bot configuration is safe.
+# On a fresh clone, index.ts copies *.json.example → *.json automatically.
 
 set -euo pipefail
 
 # ── 1. Pull latest changes (fast-forward only) ───────────────────────────────
 echo "[deploy] Pulling latest changes..."
 
-# Detect local modifications before attempting the pull
+# Detect modifications to TRACKED files only.
+# git-ignored files (bots.json, .env, *.db …) are intentionally excluded;
+# they live on the server and must not block deploys.
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo ""
-  echo "[deploy] ERROR: Working tree has uncommitted changes."
+  echo "[deploy] ERROR: Working tree has uncommitted changes to tracked files."
   echo "         Stash or reset them before deploying:"
   echo ""
   echo "             git stash          # to save and restore later"
