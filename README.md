@@ -1,242 +1,187 @@
 # Hyperliquid Trading Bot
 
-A modular, event-driven trading bot for [Hyperliquid](https://hyperliquid.xyz) perpetual futures, built with Node.js and TypeScript.
+A modular, event-driven perpetual-futures trading bot for [Hyperliquid](https://hyperliquid.xyz) (DEX) with an optional cross-venue funding-rate arbitrage strategy that spans Hyperliquid and dYdX v4.
 
-> ⚠️ **Disclaimer**: This bot is for educational and research purposes. Trading cryptocurrencies involves substantial risk of loss. Never trade with funds you cannot afford to lose. Always test on testnet before deploying with real funds.
+> **Testnet-first by default.** Every component defaults to the Hyperliquid testnet and paper-simulation mode. Real orders require explicit opt-in via environment variables and UI toggles.
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│            Hyperliquid Exchange              │
-│         (Testnet / Mainnet API)             │
-└──────────┬──────────────────┬───────────────┘
-           │ Market data      │ Orders
-           ▼                  ▲
-┌─────────────────────────────────────────────┐
-│              Bot Core (Node.js)             │
-│                                             │
-│  ┌──────────────┐    ┌──────────────────┐   │
-│  │  Data Feed   │───▶│ Strategy Engine   │   │
-│  │  (WebSocket) │    │ (Signal Logic)    │   │
-│  └──────────────┘    └────────┬─────────┘   │
-│                               │ Signal      │
-│  ┌──────────────┐    ┌───────▼──────────┐   │
-│  │ Risk Manager │◀───│ Order Executor    │   │
-│  │ (Limits/SL)  │───▶│ (SDK Client)     │   │
-│  └──────────────┘    └──────────────────┘   │
-│                                             │
-│  ┌──────────────────────────────────────┐   │
-│  │   Event Bus (EventEmitter)           │   │
-│  └──────────────────────────────────────┘   │
-└──────────┬──────────────────────────────────┘
-           │
-    ┌──────▼──────┐    ┌──────────────────┐
-    │   SQLite    │    │ Admin Dashboard   │
-    │   Logger    │◀──▶│ (Express + EJS)   │
-    └─────────────┘    └──────────────────┘
-```
+---
 
 ## Features
 
-- **Real-time data feed** — WebSocket subscription for live orderbook, trades, and candle data
-- **Pluggable strategies** — Swap strategies without touching the plumbing (RSI, EMA crossover, grid, etc.)
-- **Risk management** — Configurable max position size, daily loss limits, leverage caps, and automatic stop-loss
-- **Event-driven architecture** — Decoupled modules communicate via Node.js EventEmitter
-- **Trade logging** — Full trade history, P&L tracking, and error logging with SQLite
-- **Admin dashboard** — Local Express web UI for monitoring positions, P&L, and bot health
-- **Testnet first** — Identical API for testnet and mainnet; develop risk-free
+| Area | Detail |
+|---|---|
+| **Strategies** | Confluence (RSI + MACD + Bollinger + Volume), Trend Follow (EMA crossover), Cross-Venue Funding Basis (HL ↔ dYdX) |
+| **Strategy Builder** | Visual form-based composer using 20 built-in indicators |
+| **Backtesting** | Single-run and walk-forward backtest with parameter grid search |
+| **Risk management** | Percentage-based sizing, portfolio concurrent-risk cap, daily-loss circuit breaker |
+| **Dashboard** | Live web UI — bot cards, funding-rate dashboard, trade history, backtest, learn tab |
+| **Multiple bots** | Pause/resume/delete per bot; each bot has independent equity, position, and P&L |
+| **Reconciliation** | 60-second loop + post-trade trigger; orphaned positions detected and surfaced |
+| **Notifications** | Optional Telegram alerts |
 
-## Tech Stack
-
-- **Runtime**: Node.js 20+
-- **Language**: TypeScript
-- **Exchange SDK**: [@nktkas/hyperliquid](https://github.com/nktkas/hyperliquid)
-- **Wallet**: [viem](https://viem.sh) (for account/key management)
-- **Database**: better-sqlite3
-- **Dashboard**: Express + EJS
-- **Process Manager**: PM2 (production deployment)
-- **Indicators**: technicalindicators (RSI, EMA, MACD, Bollinger Bands)
-
-## Project Structure
-
-```
-hyperliquid-trading-bot/
-├── src/
-│   ├── index.ts              # Entry point — wires all modules together
-│   ├── config.ts             # Loads config + env vars
-│   ├── feed.ts               # WebSocket data feed (candles, orderbook, trades)
-│   ├── strategy/
-│   │   ├── base.ts           # Abstract strategy interface
-│   │   ├── rsi.ts            # RSI mean-reversion strategy
-│   │   └── ema-crossover.ts  # EMA crossover trend strategy
-│   ├── risk.ts               # Risk manager (position limits, daily loss, leverage)
-│   ├── executor.ts           # Order execution via ExchangeClient
-│   ├── logger.ts             # SQLite trade/error logging
-│   ├── events.ts             # Typed event bus
-│   └── dashboard/
-│       ├── server.ts         # Express app setup
-│       ├── routes.ts         # API + page routes
-│       └── views/
-│           ├── index.ejs     # Dashboard home
-│           └── trades.ejs    # Trade history
-├── config/
-│   ├── default.json          # Default strategy params + risk limits
-│   └── testnet.json          # Testnet-specific overrides
-├── migrations/
-│   └── 001_init.sql          # SQLite schema
-├── tests/
-│   ├── strategy.test.ts      # Strategy unit tests
-│   └── risk.test.ts          # Risk manager tests
-├── .env.example              # Template for secrets
-├── .gitignore
-├── ecosystem.config.js       # PM2 deployment config
-├── tsconfig.json
-├── package.json
-└── README.md
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+ installed
-- A Hyperliquid testnet account ([get one here](https://app.hyperliquid-testnet.xyz))
-- Testnet API wallet keys (Settings → API on the testnet site)
-
-### Installation
-
-```bash
-# Clone the repo
-git clone https://github.com/YOUR_USERNAME/hyperliquid-trading-bot.git
-cd hyperliquid-trading-bot
-
-# Install dependencies
-npm install
-
-# Copy env template and add your testnet private key
-cp .env.example .env
-# Edit .env with your private key
-```
-
-### Configuration
-
-Edit `config/default.json` to set your strategy parameters:
-
-```json
-{
-  "exchange": {
-    "network": "testnet",
-    "coin": "BTC",
-    "leverage": 3
-  },
-  "strategy": {
-    "type": "rsi",
-    "interval": "15m",
-    "rsiPeriod": 14,
-    "overbought": 70,
-    "oversold": 30
-  },
-  "risk": {
-    "maxPositionSizeUsd": 500,
-    "maxDailyLossPercent": 5,
-    "maxLeverage": 5,
-    "stopLossPercent": 2
-  },
-  "dashboard": {
-    "port": 3000
-  }
-}
-```
-
-### Running
-
-```bash
-# Development (with hot reload)
-npm run dev
-
-# Build + run
-npm run build
-npm start
-
-# Run tests
-npm test
-```
-
-### Production Deployment (Vultr VPS)
-
-```bash
-# On your VPS
-git pull origin main
-npm ci --production
-npm run build
-
-# Start with PM2
-pm2 start ecosystem.config.js
-pm2 save
-```
-
-## API Endpoints
-
-The bot exposes a local dashboard at `http://localhost:3000`:
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /` | Dashboard overview (positions, P&L, bot status) |
-| `GET /trades` | Trade history with filters |
-| `GET /api/status` | Bot health check (JSON) |
-| `GET /api/positions` | Current open positions (JSON) |
-| `POST /api/strategy/pause` | Pause the strategy |
-| `POST /api/strategy/resume` | Resume the strategy |
+---
 
 ## Strategies
 
-### RSI Mean Reversion (default)
-Opens a long when RSI drops below the oversold threshold, shorts when RSI rises above overbought. Closes positions when RSI returns to neutral.
+### Confluence (mean-reversion)
+Requires at least N of 4 indicators to agree before entering: RSI overbought/oversold, MACD crossover, Bollinger Band touch, and volume spike. Exits when RSI returns toward neutral. Default: 2 of 4.
 
-### EMA Crossover
-Goes long when the fast EMA crosses above the slow EMA, shorts on the reverse. Uses configurable periods (default: 9/21).
+### Trend Follow (trend-following)
+EMA(21) / EMA(55) crossover filtered by EMA(200) — only longs when above the 200-period MA, only shorts below. Exits on the opposite crossover.
 
-### Adding a Custom Strategy
+### Cross-Venue Funding Basis (market-neutral carry)
+Compares the BTC-USD (or other coin) perpetual funding rate on Hyperliquid against dYdX v4. Opens a short perp on the high-rate venue and a long perp on the low-rate venue. Net income is `spread × notional per hour`. Direction flips when a better spread appears (30% hurdle, 1-hour cooldown). Guards: 0.005%/hr minimum spread, 2% daily-loss circuit breaker. **Paper mode by default; requires `DYDX_TESTNET_MNEMONIC` for live orders.**
 
-1. Create a new file in `src/strategy/`
-2. Implement the `Strategy` interface from `base.ts`
-3. Register it in `src/index.ts`
+### Strategy Builder
+Compose custom strategies from 20 built-in indicators (SMA, EMA, RSI, MACD, Bollinger, ATR, Stochastic, OBV, VWAP, and more) via a visual UI. Custom strategies appear everywhere built-in ones do.
 
-```typescript
-import { Strategy, Signal } from './base';
+---
 
-export class MyStrategy implements Strategy {
-  name = 'my-strategy';
+## Requirements
 
-  onCandle(candle: Candle): Signal | null {
-    // Your logic here
-    // Return { side: 'long' | 'short', reason: 'why' } or null
-  }
-}
+- Node.js 20+
+- npm 9+
+- A Hyperliquid testnet wallet (free at [app.hyperliquid-testnet.xyz](https://app.hyperliquid-testnet.xyz))
+- *(Optional)* A dYdX v4 testnet wallet for cross-venue live trading
+
+---
+
+## Setup
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/YOUR_USERNAME/hyperliquid-trading-bot
+cd hyperliquid-trading-bot
+npm install
 ```
 
-## Environment Variables
+### 2. Configure environment
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `HL_PRIVATE_KEY` | Hyperliquid API wallet private key | Yes |
-| `HL_NETWORK` | `testnet` or `mainnet` | No (defaults to testnet) |
-| `DASHBOARD_PORT` | Admin dashboard port | No (defaults to 3000) |
+```bash
+cp .env.example .env
+```
 
-## Roadmap
+Edit `.env` and fill in at minimum:
 
-- [ ] Core bot framework (event bus, config, logging)
-- [ ] Data feed module (WebSocket + REST)
-- [ ] RSI strategy implementation
-- [ ] Risk manager
-- [ ] Order executor
-- [ ] SQLite trade logging
-- [ ] Express admin dashboard
-- [ ] EMA crossover strategy
-- [ ] Backtesting engine (replay historical candles)
-- [ ] Telegram/Discord notifications
-- [ ] Multi-coin support
+```
+HL_PRIVATE_KEY=0x<your testnet private key>
+HL_NETWORK=testnet
+DRY_RUN=true
+```
+
+> **Never commit your `.env` file.** It is already listed in `.gitignore`.
+
+### 3. Fund the Hyperliquid testnet wallet
+
+Visit [app.hyperliquid-testnet.xyz](https://app.hyperliquid-testnet.xyz) → Deposit → use the testnet faucet.
+
+### 4. (Optional) Set up the dYdX testnet wallet
+
+Required only for cross-venue **live** mode. Paper mode works without it.
+
+```bash
+# Derives your dYdX address and calls the testnet faucet
+npm run dydx:setup
+```
+
+---
+
+## Running
+
+```bash
+# Development (TypeScript, hot reload)
+npm run dev
+
+# Production (compile then start)
+npm run build
+npm start
+
+# With pm2
+pm2 start dist/index.js --name hl-trading-bot
+```
+
+The dashboard is at `http://localhost:3002` (or your `DASHBOARD_PORT`).
+
+### Deployment
+
+```bash
+./deploy.sh
+```
+
+Runs `git pull --ff-only`, `npm ci`, `npm run build`, and `pm2 restart`. Fast-fails on uncommitted changes to tracked files; runtime config and `.env` are git-ignored and untouched by the pull.
+
+---
+
+## Configuration
+
+| File | Purpose |
+|---|---|
+| `config/default.json` | Strategy, risk, and dashboard defaults |
+| `config/bots.json` | Active bots (runtime, auto-created from `bots.json.example` on first start) |
+| `config/custom-strategies.json` | User-built strategies (runtime) |
+| `.env` | All secrets and environment overrides |
+
+Runtime config files are **never committed** — each has a committed `.example` counterpart copied automatically on first start.
+
+---
+
+## Risk defaults
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `riskPerTradePercent` | 2.0 | % of equity at risk if stop-loss fires |
+| `maxConcurrentRiskPercent` | 10.0 | Max total open risk across all live bots |
+| `stopLossPercent` | 2.0 | Stop-loss threshold (%) |
+| `maxLeverage` | 5 | Position scaled down if computed leverage exceeds this |
+| `maxDailyLossPercent` | 5.0 | New entries blocked after this daily drawdown |
+
+Position size formula: `notional = equity × riskPerTrade% ÷ stopLoss%`, capped at `maxLeverage × equity`.
+
+---
+
+## Testing
+
+```bash
+npm test
+```
+
+Covers cross-venue leg-placement atomicity (pre-flight abort, unwind on second-leg failure, naked-leg detection).
+
+---
+
+## SECURITY
+
+### Secrets management
+
+- **All secrets live only in `.env`**, which is git-ignored and never committed.
+- `.env.example` contains only placeholder values — no real keys, mnemonics, or tokens.
+- The Hyperliquid private key and dYdX mnemonic are loaded via `process.env` at runtime and never appear in source code, logs, or committed config files.
+
+### Testnet by default
+
+- `HL_NETWORK=testnet` is the default in `config/default.json`.
+- `DRY_RUN=true` is the safe starting value — no real orders until explicitly set to `false`.
+- The Settings page shows a mainnet-switch checklist; the toggle is disabled until all safety gates pass.
+- The cross-venue strategy defaults to **paper mode**; live orders require `DYDX_TESTNET_MNEMONIC` AND an explicit per-bot UI toggle.
+
+### Git history scan
+
+The full 36-commit git history has been scanned with trufflehog (entropy + regex modes). **No private keys, mnemonics, or real `.env` files were found.** The only high-entropy findings are npm `sha512-` integrity hashes in `package-lock.json` (false positives).
+
+If you fork this repo and believe a secret was committed in your fork's history, rotate the key immediately and rewrite history with `git filter-repo` or BFG Repo Cleaner before making the repo public.
+
+### Responsible use
+
+- This project is designed for **testnet exploration and education**.
+- Mainnet use with real funds is entirely at your own risk.
+- Keep your private key and mnemonic safe. Rotate immediately if exposed.
+
+### Reporting vulnerabilities
+
+Open a private [GitHub Security Advisory](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability) rather than a public issue.
+
+---
 
 ## License
 
