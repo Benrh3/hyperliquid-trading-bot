@@ -151,6 +151,13 @@ interface BotRuntime {
   error?:             string;
   hadRecentMismatch?: boolean;
   lastReconcileEvent?: string;
+  /**
+   * Set to true at the very start of deleteBot() — before any async cleanup.
+   * Every in-flight async method (executeLiveSignal/Open/Close, reconcileBot)
+   * checks this flag at each await point and short-circuits if true, preventing
+   * the deleted bot from placing any further exchange orders.
+   */
+  deleted?: boolean;
 }
 
 // ── BotManager ────────────────────────────────────────────────────────────────
@@ -862,6 +869,7 @@ export class BotManager {
    * only after a confirmed exchange response.
    */
   private async executeLiveSignal(bot: BotRuntime, signal: Signal, candle: Candle): Promise<void> {
+    if (bot.deleted) return; // bot was deleted while we were queued
     if (!this.venue) {
       console.warn(
         `[bot-manager] ${bot.config.id} is LIVE but no venue configured — ` +
@@ -879,29 +887,42 @@ export class BotManager {
     // Reversal: close existing first, then open the opposite side
     if (bot.position && bot.position.side !== signal.side) {
       await this.executeLiveClose(bot, `Reversed to ${signal.side}`);
+      if (bot.deleted) return; // deleted during the close await
       if (bot.position) {
-        // Close failed — abort the reversal rather than risk both sides being open
-        return;
+        return; // close failed — abort reversal
       }
     }
 
     if (!bot.position) {
+      if (bot.deleted) return; // deleted between close and open
       await this.executeLiveOpen(bot, signal, candle.timestamp);
     }
   }
 
   private async executeLiveOpen(bot: BotRuntime, signal: Signal, candleTs: number): Promise<void> {
-    if (signal.side === "close") return;
+    if (bot.deleted || signal.side === "close") return;
     const coin = bot.config.coin;
     const tag  = `${bot.config.id}/${coin}/${bot.config.timeframe}`;
     try {
-      // Use real account equity for sizing — falls back to bot.equity if unavailable
       const accountEquity = (await this.venue!.getAccountEquity()) ?? bot.equity;
-      const markPrice     = (await this.venue!.getMarkPrice(coin)) ?? 0;
+      if (bot.deleted) return; // deleted while awaiting equity
+      const markPrice = (await this.venue!.getMarkPrice(coin)) ?? 0;
+      if (bot.deleted) return; // deleted while awaiting mark price
       if (markPrice === 0) throw new Error(`No mark price for ${coin}`);
 
       const sizing  = computePositionSize(accountEquity, markPrice);
       const receipt = await this.venue!.openPosition(coin, signal.side, sizing.notionalUsd);
+
+      if (bot.deleted) {
+        // The bot was deleted while openPosition was in flight. The exchange now has a
+        // position that nobody owns — register it as an orphan immediately.
+        console.warn(
+          `[bot-manager] ${tag} Bot deleted mid open-order flight — ` +
+          `position ${signal.side} ${receipt.fillSize} ${coin} @ $${receipt.fillPrice} is now an orphan`,
+        );
+        void this.checkOrphanOnDelete(coin);
+        return;
+      }
 
       bot.position = {
         side:          signal.side,
@@ -934,6 +955,10 @@ export class BotManager {
   }
 
   private async executeLiveClose(bot: BotRuntime, reason: string): Promise<void> {
+    // If the bot is being deleted, deleteBot() handles the close directly via
+    // venue.closePosition(). Allow this to run only when NOT deleted, to avoid
+    // double-close races.
+    if (bot.deleted) return;
     const pos = bot.position;
     if (!pos) return;
     const coin = bot.config.coin;
@@ -1164,10 +1189,21 @@ export class BotManager {
     const bc      = this.botsFile.bots[idx];
     const runtime = this.bots.get(id);
 
-    // ── For LIVE bots: close any open exchange position BEFORE deregistering ──
-    // This prevents the orphan condition at the source.
+    // ── Step 1: Poison the runtime immediately ────────────────────────────────
+    // Any in-flight executeLiveSignal / executeLiveOpen / executeLiveClose /
+    // reconcileBot that is currently awaiting an API response will see this flag
+    // and short-circuit before touching the exchange again.
+    if (runtime) runtime.deleted = true;
+
+    // ── Step 2: Tear down the strategy instance ───────────────────────────────
+    if (runtime?.strategy) {
+      try { (runtime.strategy as { stop?: () => void }).stop?.(); } catch { /* ignore */ }
+      runtime.strategy = null;
+    }
+    if (runtime) runtime.history = []; // release candle history memory
+
+    // ── Step 3: Close any open exchange position for LIVE bots ───────────────
     if (bc.live && runtime && !runtime.crossVenue && this.venue) {
-      // Query real exchange state (don't trust bot.position — it may be stale)
       let exchangePos = null;
       try { exchangePos = await this.venue.getPosition(bc.coin); } catch { /* best-effort */ }
       if (exchangePos) {
@@ -1185,34 +1221,90 @@ export class BotManager {
         } catch (e) {
           console.error(
             `[bot-manager] deleteBot ${id}: close failed — ${(e as Error).message}. ` +
-            `Bot will be deregistered but position remains on exchange (check Orphaned Positions panel).`,
+            `Position may remain on exchange; running immediate orphan check.`,
           );
         }
       }
     }
 
+    // ── Step 4: Remove from registry ─────────────────────────────────────────
     this.botsFile.bots.splice(idx, 1);
     this.saveFile();
     this.bots.delete(id);
 
+    // ── Step 5: Cross-venue teardown ─────────────────────────────────────────
     if (runtime?.crossVenue) {
       runtime.crossVenue.stop();
+      runtime.crossVenue = undefined;
       console.log(`[bot-manager] Deleted cross-venue bot ${id} (${bc.coin})`);
-      return;
+    } else {
+      // ── Step 6: Candle subscription refcount ─────────────────────────────
+      const coinStillUsed = this.botsFile.bots.some(
+        (b) => b.coin === bc.coin && b.strategyId !== "cross-venue-funding-basis",
+      );
+      if (!coinStillUsed) {
+        const sub = this.coinSubs.get(bc.coin);
+        if (sub) {
+          try { await sub.unsubscribe(); } catch { /* ignore */ }
+          this.coinSubs.delete(bc.coin);
+          this.coinData.delete(bc.coin);
+          console.log(`[bot-manager] deleteBot ${id}: unsubscribed from ${bc.coin}/1m`);
+        }
+      } else {
+        console.log(`[bot-manager] deleteBot ${id}: kept ${bc.coin}/1m subscription (other bots still use it)`);
+      }
+      console.log(`[bot-manager] Deleted ${id} (${bc.coin}/${bc.timeframe})`);
     }
-    // Close candle subscription only when no candle bots remain on this coin
-    const coinStillUsed = this.botsFile.bots.some(
-      (b) => b.coin === bc.coin && b.strategyId !== "cross-venue-funding-basis",
+
+    // ── Step 7: Immediate orphan check for this coin ─────────────────────────
+    // Don't wait up to 60 s for the background reconcile to notice the position.
+    if (bc.live && this.venue) {
+      void this.checkOrphanOnDelete(bc.coin);
+    }
+
+    // ── Step 8: Debug assertion — bus listener counts ─────────────────────────
+    // We don't register any per-bot bus.on() listeners, so counts should be stable.
+    // If they grow over time, something is leaking.
+    const knownEvents = ["trade", "signal", "signal:approved", "signal:rejected",
+                         "candle", "tick", "error", "reconcile:positions"] as const;
+    const counts = Object.fromEntries(
+      knownEvents.map((ev) => [ev, bus.listenerCount(ev)]),
     );
-    if (!coinStillUsed) {
-      const sub = this.coinSubs.get(bc.coin);
-      if (sub) {
-        try { await sub.unsubscribe(); } catch { /* ignore */ }
-        this.coinSubs.delete(bc.coin);
-        this.coinData.delete(bc.coin);
+    console.log(`[bot-manager] deleteBot ${id}: bus listener counts after teardown —`, counts);
+    // Warn if any event has an unexpectedly high listener count (suggests a per-bot leak)
+    for (const [ev, n] of Object.entries(counts)) {
+      if (n > 5) {
+        console.warn(`[bot-manager] LEAK SUSPECTED: bus("${ev}") has ${n} listeners after deleting ${id}`);
       }
     }
-    console.log(`[bot-manager] Deleted ${id} (${bc.coin}/${bc.timeframe})`);
+  }
+
+  /** Check immediately after a bot delete whether the coin now has an orphaned
+   *  exchange position, and register it without waiting for the 60-second cycle. */
+  private async checkOrphanOnDelete(coin: string): Promise<void> {
+    if (!this.venue) return;
+    try {
+      const pos = await this.venue.getPosition(coin);
+      if (!pos) return; // exchange is flat — nothing to orphan
+
+      // Is any remaining live candle-bot still claiming this coin?
+      const claimed = [...this.bots.values()].some(
+        (b) => b.config.live && b.config.coin === coin && b.position && !b.crossVenue,
+      );
+      if (!claimed && !this.orphans.has(coin)) {
+        console.warn(
+          `[reconcile] Orphaned position detected immediately after bot delete: ` +
+          `${pos.side} ${pos.size.toFixed(5)} ${coin} @ $${pos.entryPrice.toFixed(2)}`,
+        );
+        this.orphans.set(coin, { ...pos, detectedAt: Date.now() });
+        this.logger?.logEvent("reconcile", "warn",
+          `Orphan detected on bot delete: ${coin}`,
+          { ...pos, detectedAt: Date.now() },
+        );
+      }
+    } catch (e) {
+      console.warn(`[bot-manager] checkOrphanOnDelete failed for ${coin}: ${(e as Error).message}`);
+    }
   }
 
   // ── Reconciliation loop ──────────────────────────────────────────────────
@@ -1240,6 +1332,7 @@ export class BotManager {
   }
 
   private async reconcileBot(bot: BotRuntime): Promise<void> {
+    if (bot.deleted) return; // bot was deleted between scheduling and execution
     let exchangePos: import("./venue.js").VenuePosition | null = null;
     try {
       exchangePos = await this.venue!.getPosition(bot.config.coin);
@@ -1248,6 +1341,8 @@ export class BotManager {
       console.warn(`[reconcile] ${bot.config.id}: could not fetch exchange position: ${(e as Error).message}`);
       return;
     }
+
+    if (bot.deleted) return; // deleted while awaiting getPosition
 
     const botPos = bot.position;
 

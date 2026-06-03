@@ -392,7 +392,8 @@
   // ── State ─────────────────────────────────────────────────────────────────
   let allBots    = [];   // most recent /api/bots response (used by modal)
   let topCoins   = [];   // cached /api/funding/top response (HL top 25)
-  let dydxCoins  = [];   // cached /api/dydx-markets response
+  let dydxCoins    = [];    // cached /api/dydx-markets response
+  let coinsLoading = false; // guard against concurrent /api/funding/top fetches
   let lastFetch  = 0;
 
   // ── Elements ─────────────────────────────────────────────────────────────
