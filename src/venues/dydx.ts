@@ -105,6 +105,17 @@ export class DydxVenue implements Venue {
 
   // ── Position query (requires wallet) ─────────────────────────────────────
 
+  /**
+   * Verifies dYdX trading credentials by initialising the signer.
+   * Throws "DydxVenue trading requires DYDX_TESTNET_MNEMONIC" if the env var
+   * is absent, or a connection error if the chain is unreachable.
+   * Calling this in the pre-flight guarantees the mnemonic check happens
+   * BEFORE any Hyperliquid order is placed.
+   */
+  async checkTradingReady(): Promise<void> {
+    await this.ensureClient();
+  }
+
   async getAccountEquity(): Promise<number | null> {
     return null; // requires configured subaccount
   }
@@ -224,6 +235,7 @@ export class DydxVenue implements Venue {
 
   // ── Lazy client initialisation ────────────────────────────────────────────
 
+  /** Public so checkTradingReady() (and tests) can call it directly. */
   async ensureClient(): Promise<void> {
     if (this.client) return;
     if (!this.mnemonic) {
@@ -261,10 +273,42 @@ export class DydxVenue implements Venue {
       this.subaccount   = sdk["SubaccountInfo"].forLocalWallet(wallet) as SubaccountInfo;
       this.address      = (wallet as { address: string }).address;
       this.sdk          = sdk; // cache for enum access in trading methods
+
+      // ── Startup confirmation: print address + USDC balance ───────────────
+      // This runs on every restart so the operator can confirm the wallet is
+      // funded before any live orders are placed.
       console.log(`[dydx-venue] Wallet ${this.address} connected (testnet)`);
+      void this.logStartupBalance();
     } catch (e) {
       this.initPromise = null;
       throw new Error(`[dydx-venue] Failed to connect: ${(e as Error).message}`);
+    }
+  }
+
+  private async logStartupBalance(): Promise<void> {
+    try {
+      const url  = `${INDEXER_BASE}/subaccounts/${encodeURIComponent(this.address)}/0`;
+      const resp = await fetch(url, {
+        headers: { Accept: "application/json" },
+        signal:  AbortSignal.timeout(8_000),
+      });
+      if (!resp.ok) {
+        console.warn(`[dydx-venue] Could not fetch balance (HTTP ${resp.status}) — run 'npm run dydx:setup' to fund the wallet`);
+        return;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data   = await resp.json() as any;
+      const equity = parseFloat(data?.subaccount?.equity ?? "0");
+      if (!Number.isFinite(equity) || equity === 0) {
+        console.warn(
+          `[dydx-venue] USDC balance is $0 or account not on-chain. ` +
+          `Run 'npm run dydx:setup' to credit test USDC before placing live orders.`,
+        );
+      } else {
+        console.log(`[dydx-venue] Subaccount 0 balance: $${equity.toFixed(2)} USDC — wallet is funded and ready`);
+      }
+    } catch (e) {
+      console.warn(`[dydx-venue] Balance check failed: ${(e as Error).message}`);
     }
   }
 }

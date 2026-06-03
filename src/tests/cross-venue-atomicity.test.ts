@@ -17,32 +17,36 @@ class MockVenue implements Venue {
   openCalls:  Array<{ coin: string; side: "long" | "short"; sizeUsd: number }> = [];
   closeCalls: Array<{ coin: string }> = [];
 
-  private openShouldThrow:  Error | null = null;
-  private closeShouldThrow: Error | null = null;
+  private openThrowQueue:          Error[] = [];
+  private closeThrowQueue:         Error[] = [];
+  private tradingReadyShouldThrow: Error | null = null;
 
   constructor(name: string) { this.name = name; }
 
-  failNextOpen(err: Error)  { this.openShouldThrow  = err; }
-  failNextClose(err: Error) { this.closeShouldThrow = err; }
+  /** Queue one or more errors to throw on successive openPosition calls. */
+  failNextOpen(...errs: Error[])   { this.openThrowQueue.push(...errs); }
+  /** Queue one or more errors to throw on successive closePosition calls. */
+  failNextClose(...errs: Error[])  { this.closeThrowQueue.push(...errs); }
+  failTradingReady(err: Error)     { this.tradingReadyShouldThrow = err; }
 
   async openPosition(coin: string, side: "long" | "short", sizeUsd: number): Promise<OrderReceipt> {
     this.openCalls.push({ coin, side, sizeUsd });
-    if (this.openShouldThrow) {
-      const e = this.openShouldThrow;
-      this.openShouldThrow = null;
-      throw e;
-    }
+    if (this.openThrowQueue.length > 0) throw this.openThrowQueue.shift()!;
     return { orderId: `mock-open-${this.name}-${Date.now()}`, fillPrice: 50_000, fillSize: sizeUsd / 50_000 };
   }
 
   async closePosition(coin: string): Promise<OrderReceipt> {
     this.closeCalls.push({ coin });
-    if (this.closeShouldThrow) {
-      const e = this.closeShouldThrow;
-      this.closeShouldThrow = null;
+    if (this.closeThrowQueue.length > 0) throw this.closeThrowQueue.shift()!;
+    return { orderId: `mock-close-${this.name}-${Date.now()}`, fillPrice: 50_000, fillSize: 0.02, pnl: -1 };
+  }
+
+  async checkTradingReady(): Promise<void> {
+    if (this.tradingReadyShouldThrow) {
+      const e = this.tradingReadyShouldThrow;
+      this.tradingReadyShouldThrow = null;
       throw e;
     }
-    return { orderId: `mock-close-${this.name}-${Date.now()}`, fillPrice: 50_000, fillSize: 0.02, pnl: -1 };
   }
 
   async getPosition(_coin: string): Promise<VenuePosition | null>   { return null; }
@@ -152,7 +156,9 @@ describe("CrossVenueFundingBasis — leg atomicity", () => {
 
   it("records nakedLeg when unwind also fails", async () => {
     dydxVenue.failNextOpen(new Error("dYdX timeout"));
-    hlVenue.failNextClose(new Error("HL close rejected"));  // unwind fails too
+    // The unwind retries twice — both must fail to reach the CRITICAL path
+    const closeErr = new Error("HL close rejected");
+    hlVenue.failNextClose(closeErr, closeErr);
     const strategy = await makeStrategy(hlVenue, dydxVenue);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     strategy["rates"] = { hyperliquid: 0.001, dydx: 0.0005 };
@@ -199,5 +205,71 @@ describe("CrossVenueFundingBasis — leg atomicity", () => {
     expect(hlVenue.openCalls).toHaveLength(0);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(strategy["lastError"]).toContain("safety limit");
+  });
+
+  it("pre-flight checkTradingReady blocks ALL orders when dYdX signer is unavailable", async () => {
+    // Simulate missing DYDX_TESTNET_MNEMONIC: checkTradingReady throws before any HL order
+    dydxVenue.failTradingReady(new Error(
+      "DydxVenue trading requires DYDX_TESTNET_MNEMONIC.\n" +
+      "Add it to your .env file:  DYDX_TESTNET_MNEMONIC=word1 word2 ... word24",
+    ));
+    const strategy = await makeStrategy(hlVenue, dydxVenue);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (strategy as any)["rates"] = { hyperliquid: 0.001, dydx: 0.0005 };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (strategy as any).openLegs("hyperliquid", "dydx", 0.0005, 0.001, 0.0005);
+
+    // The pre-flight should have caught the missing mnemonic before touching HL
+    expect(hlVenue.openCalls).toHaveLength(0);    // ← NO Hyperliquid order placed
+    expect(dydxVenue.openCalls).toHaveLength(0);  // ← NO dYdX order placed
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(strategy["positioned"]).toBe(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(strategy["lastError"]).toContain("Pre-flight failed");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(strategy["lastError"]).toContain("DYDX_TESTNET_MNEMONIC");
+  });
+
+  it("closes HL short (first leg) when dYdX long (second leg) fails after fill — HL-first direction", async () => {
+    // This is the critical direction: HL is SHORT venue (leg-1), dYdX is LONG venue (leg-2).
+    // If dYdX's openPosition fails (e.g. order rejected AFTER mnemonic check passes),
+    // the already-filled HL short must be immediately unwound.
+    dydxVenue.failNextOpen(new Error("dYdX order rejected: insufficient collateral"));
+    const strategy = await makeStrategy(hlVenue, dydxVenue);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (strategy as any)["rates"] = { hyperliquid: 0.001, dydx: 0.0005 };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect((strategy as any).openLegs("hyperliquid", "dydx", 0.0005, 0.001, 0.0005))
+      .rejects.toThrow("Open aborted");
+
+    // Leg-1: HL short was placed
+    expect(hlVenue.openCalls).toHaveLength(1);
+    expect(hlVenue.openCalls[0]).toMatchObject({ side: "short" });
+
+    // Leg-2: dYdX long failed (attempt was made, threw)
+    expect(dydxVenue.openCalls).toHaveLength(1);
+
+    // Unwind: HL short must have been closed immediately
+    expect(hlVenue.closeCalls).toHaveLength(1);
+    expect(hlVenue.closeCalls[0].coin).toBe("BTC");
+
+    // Strategy must be flat — no position recorded
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(strategy["positioned"]).toBe(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(strategy["legs"]).toBeNull();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(strategy["nakedLeg"]).toBeNull(); // unwind succeeded → naked cleared
+
+    // Log: the "[cross-venue] unwound first leg" line must appear
+    // (we inspect console.log was called with the right prefix)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const logCalls = (console.log as any).mock.calls as unknown[][];
+    const unwoundLine = logCalls.some(
+      (args) => typeof args[0] === "string" && args[0].includes("unwound first leg"),
+    );
+    expect(unwoundLine).toBe(true);
   });
 });

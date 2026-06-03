@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "dydx:setup": "tsx scripts/dydx-setup.ts"
   },
   "keywords": [
     "hyperliquid",

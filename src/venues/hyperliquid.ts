@@ -153,6 +153,16 @@ export class HyperliquidVenue implements Venue {
     return this.parseReceipt(resp, midPx, actualSize, pnl);
   }
 
+  async checkTradingReady(): Promise<void> {
+    if (!this.exchange) {
+      throw new Error(
+        "HyperliquidVenue: no wallet configured (read-only mode). " +
+        "Set HL_PRIVATE_KEY in .env to enable live trading.",
+      );
+    }
+    // exchange client is present — assumed healthy
+  }
+
   async getAccountEquity(): Promise<number | null> {
     if (!this.walletAddress) return null; // read-only mode
     const state  = await this.info.clearinghouseState({ user: this.walletAddress as `0x${string}` });

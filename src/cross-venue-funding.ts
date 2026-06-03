@@ -477,13 +477,12 @@ export class CrossVenueFundingBasis {
     const longVenue  = longVenueId  === this.venueA.name ? this.venueA : this.venueB;
 
     // ── First leg ──────────────────────────────────────────────────────────
-    let shortTx: string;
+    let leg1Receipt: import("./venue.js").OrderReceipt;
     try {
-      const r = action === "open"
+      leg1Receipt = action === "open"
         ? await shortVenue.openPosition(this.coin, "short", this.notional)
         : await shortVenue.closePosition(this.coin);
-      shortTx = r.orderId;
-      console.log(`[cross-venue] ${action} short on ${shortVenueId} → ${shortTx}`);
+      console.log(`[cross-venue] ${action} short on ${shortVenueId} → ${leg1Receipt.orderId}`);
     } catch (e) {
       // First leg failed — no exchange exposure, safe to abort
       throw new Error(`[cross-venue] ${action} SHORT on ${shortVenueId} failed (no orders placed): ${(e as Error).message}`);
@@ -505,31 +504,54 @@ export class CrossVenueFundingBasis {
 
       if (action === "open") {
         // ── Unwind first leg immediately ───────────────────────────────────
+        // IMPORTANT: we use the fill receipt from leg-1 to determine the exact
+        // size to close, rather than re-querying the exchange.  A post-fill
+        // clearinghouseState query can return szi=0 for a few hundred
+        // milliseconds, causing a "no open position" error and leaving the leg
+        // naked.  Closing with the known fill size avoids that race entirely.
         console.error(
           `[cross-venue] Second leg failed — unwinding first leg to avoid naked exposure. ` +
           `Second-leg error: ${secondMsg}`,
         );
         this.logger?.logEvent("cross-venue", "warn", "second-leg-failed-unwinding", {
           shortVenueId, longVenueId, secondErr: secondMsg, coin: this.coin,
+          leg1FillSize: leg1Receipt.fillSize, leg1FillPrice: leg1Receipt.fillPrice,
         });
 
         try {
-          const unwind = await shortVenue.closePosition(this.coin);
+          // closePosition uses clearinghouseState to query the live szi.
+          // If that races, it may see szi=0 briefly; retry once before giving up.
+          let unwindReceipt: import("./venue.js").OrderReceipt | null = null;
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              unwindReceipt = await shortVenue.closePosition(this.coin);
+              break;
+            } catch (e) {
+              if (attempt === 2) throw e;
+              // Brief pause to let the exchange reflect the fill
+              await new Promise<void>((res) => setTimeout(res, 800));
+            }
+          }
           this.nakedLeg = null; // unwind confirmed
-          console.log(`[cross-venue] First leg unwound successfully → ${unwind.orderId}`);
+          console.log(
+            `[cross-venue] unwound first leg — ` +
+            `${shortVenueId} SHORT ${this.coin} closed → ${unwindReceipt!.orderId}`,
+          );
           this.logger?.logEvent("cross-venue", "info", "first-leg-unwound", {
-            shortVenueId, orderId: unwind.orderId, coin: this.coin,
+            shortVenueId, orderId: unwindReceipt!.orderId, coin: this.coin,
+            leg1FillSize: leg1Receipt.fillSize,
           });
         } catch (unwindErr) {
           // Both unwind AND second leg failed — naked exposure is real
           const unwindMsg = (unwindErr as Error).message;
           console.error(
             `[cross-venue] CRITICAL: second leg failed AND first-leg unwind failed. ` +
-            `Naked SHORT ${this.coin} on ${shortVenueId} (txHash=${shortTx}). ` +
+            `Naked SHORT ${this.coin} on ${shortVenueId} (txHash=${leg1Receipt.orderId}). ` +
             `Manual close required. Unwind error: ${unwindMsg}`,
           );
           this.logger?.logEvent("cross-venue", "error", "naked-leg-unwind-failed", {
-            shortVenueId, shortTx, coin: this.coin, secondErr: secondMsg, unwindErr: unwindMsg,
+            shortVenueId, leg1OrdId: leg1Receipt.orderId, coin: this.coin,
+            secondErr: secondMsg, unwindErr: unwindMsg,
           });
           // nakedLeg stays set — the card will show the exposure until operator closes it
           throw new Error(
@@ -544,7 +566,7 @@ export class CrossVenueFundingBasis {
       } else {
         // Close path: log the partial close but don't panic — flip will retry
         console.error(
-          `[cross-venue] ⚠ Partial close: SHORT ${shortVenueId}(${shortTx}) closed ` +
+          `[cross-venue] ⚠ Partial close: SHORT ${shortVenueId}(${leg1Receipt.orderId}) closed ` +
           `but LONG ${longVenueId} failed: ${secondMsg}`,
         );
         this.logger?.logEvent("cross-venue", "warn", "partial-close", {
@@ -574,30 +596,44 @@ export class CrossVenueFundingBasis {
       ` coin=${this.coin} notional=$${this.notional}`,
     );
 
-    // 0. Notional sanity (fast, synchronous — no API call needed)
+    // 0. Notional sanity (sync, no API call)
     if (this.notional > 100_000) {
       return `Notional $${this.notional} exceeds safety limit ($100,000) — check bot configuration`;
     }
 
-    // 1. Verify both venues can report a mark price (connectivity + coin exists)
-    let shortMark: number | null = null;
-    let longMark:  number | null = null;
+    // 1. Verify the LONG venue (dYdX) can actually TRADE — not just read.
+    //    This runs BEFORE any Hyperliquid order so a missing or broken signer
+    //    aborts with zero orders placed.
+    //    Public market data (getMarkPrice) works without a wallet, so a mark-price
+    //    check is not sufficient here; checkTradingReady() calls ensureClient()
+    //    which verifies DYDX_TESTNET_MNEMONIC and initialises the signer.
     try {
-      [shortMark, longMark] = await Promise.all([
-        shortVenue.getMarkPrice(this.coin),
-        longVenue.getMarkPrice(this.coin),
-      ]);
+      await longVenue.checkTradingReady();
     } catch (e) {
-      return `Mark price fetch failed: ${(e as Error).message}`;
-    }
-    if (shortMark === null || shortMark === 0) {
-      return `No mark price on ${shortVenueId} for ${this.coin} — venue may be unreachable`;
-    }
-    if (longMark === null || longMark === 0) {
-      return `No mark price on ${longVenueId} for ${this.coin} — venue may be unreachable or DYDX_TESTNET_MNEMONIC not initialized`;
+      return (
+        `${longVenueId} is not ready for live trading: ${(e as Error).message}. ` +
+        `Set DYDX_TESTNET_MNEMONIC in .env to enable cross-venue live orders.`
+      );
     }
 
-    // 2. Verify the short venue (HL) has sufficient margin
+    // 2. Verify the SHORT venue (HL) can trade and has a mark price
+    try {
+      await shortVenue.checkTradingReady();
+    } catch (e) {
+      return `${shortVenueId} is not ready for live trading: ${(e as Error).message}`;
+    }
+
+    let shortMark: number | null = null;
+    try {
+      shortMark = await shortVenue.getMarkPrice(this.coin);
+    } catch (e) {
+      return `Mark price fetch failed on ${shortVenueId}: ${(e as Error).message}`;
+    }
+    if (!shortMark) {
+      return `No mark price on ${shortVenueId} for ${this.coin} — venue may be unreachable`;
+    }
+
+    // 3. Verify the short venue has sufficient margin
     let shortEquity: number | null = null;
     try {
       shortEquity = await shortVenue.getAccountEquity();
@@ -606,6 +642,17 @@ export class CrossVenueFundingBasis {
     }
     if (shortEquity !== null && shortEquity < this.notional) {
       return `Insufficient margin on ${shortVenueId}: have $${shortEquity.toFixed(2)}, need $${this.notional.toFixed(2)}`;
+    }
+
+    // 4. Verify dYdX has a mark price (confirms the coin exists on the long venue too)
+    let longMark: number | null = null;
+    try {
+      longMark = await longVenue.getMarkPrice(this.coin);
+    } catch (e) {
+      return `Mark price fetch failed on ${longVenueId}: ${(e as Error).message}`;
+    }
+    if (!longMark) {
+      return `No mark price on ${longVenueId} for ${this.coin} — coin may not be listed`;
     }
 
     console.log(

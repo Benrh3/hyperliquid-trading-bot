@@ -80,6 +80,16 @@ export interface Venue {
   getAccountEquity(): Promise<number | null>;
 
   /**
+   * Verifies the venue is fully configured for live order placement.
+   * Throws a descriptive error if trading is not possible (missing credentials,
+   * client initialization failure, etc.).  A no-op if trading is ready.
+   *
+   * Called by the cross-venue pre-flight check BEFORE placing any order on any
+   * venue, so a missing mnemonic or broken signer is caught before the first leg.
+   */
+  checkTradingReady(): Promise<void>;
+
+  /**
    * Returns ALL currently open positions on the account.
    * Used by the reconciliation loop to detect orphaned positions.
    * Returns empty array when unavailable (read-only venue, no wallet).
