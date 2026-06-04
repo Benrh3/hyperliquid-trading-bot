@@ -23,6 +23,7 @@ import { Feed } from "./feed.js";
 import { FundingRateStrategy } from "./strategy/funding-rate.js";
 import { BotManager } from "./bot-manager.js";
 import { DydxFundingPoller } from "./dydx-funding.js";
+import { FundingMatrixPoller } from "./funding-matrix.js";
 import { loadCustomDefs, customDefToRegistryEntry } from "./strategy/custom-strategy.js";
 import { STRATEGY_REGISTRY } from "./strategy/registry.js";
 import { RiskManager } from "./risk.js";
@@ -93,6 +94,9 @@ const laneManager = new BotManager(hlVenue, dydxVenue, logger);
 // 6. dYdX funding poller (cross-exchange comparison on Strategies page)
 const dydxPoller = new DydxFundingPoller();
 
+// 6b. Funding matrix poller — bulk fetch all venues × all coins every 45 s
+const fundingMatrix = new FundingMatrixPoller(logger);
+
 // 7. Risk manager
 const risk = new RiskManager(1000);
 console.log("[init] Risk manager ready");
@@ -101,7 +105,7 @@ console.log("[init] Risk manager ready");
 const feed = new Feed();
 
 // 9. Dashboard
-startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller);
+startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller, fundingMatrix);
 
 // ─── Event wiring ─────────────────────────────────────────
 
@@ -122,12 +126,31 @@ await feed.start();
 await laneManager.start(); // starts candle bots AND cross-venue bots
 await dydxPoller.start();
 
+// Start funding matrix poller (non-blocking — first poll runs in background)
+void fundingMatrix.start().catch((e: Error) =>
+  console.error("[init] Funding matrix poller failed to start:", e.message),
+);
+
+// Equity snapshot every 60 s — fire-and-forget, never blocks the bot loop
+const EQUITY_SNAP_MS = 60_000;
+setInterval(() => {
+  const bots  = laneManager.getBotStates();
+  const total = bots.reduce((sum, b) => sum + (b.equity ?? 0), 0);
+  logger.snapshotEquity(total);
+}, EQUITY_SNAP_MS);
+
+// Retention policy — roll up rows older than 7 days, run hourly
+setInterval(() => {
+  void Promise.resolve().then(() => logger.runRetentionPolicy());
+}, 60 * 60_000);
+
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\n[init] Shutting down...");
   await feed.stop();
   await laneManager.stop(); // stops all bots including cross-venue
   dydxPoller.stop();
+  fundingMatrix.stop();
   for (const s of strategies) {
     if ("stop" in s && typeof (s as { stop?: () => void }).stop === "function") {
       (s as { stop: () => void }).stop();

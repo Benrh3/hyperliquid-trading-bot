@@ -140,6 +140,326 @@
   .ob-bid { color: #3fb950; background: rgba(63,185,80,0.05); }
   .ob-spread { color: var(--muted); text-align: center !important; font-size: 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 
+  /* ── Funding matrix heatmap ── */
+  .fm-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+  .fm-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .fm-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .fm-meta {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .fm-stale-badge {
+    display: none;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--yellow);
+    background: rgba(210,153,34,0.12);
+    padding: 1px 6px;
+    border-radius: 3px;
+    letter-spacing: .03em;
+  }
+  .fm-stale-badge.visible { display: inline; }
+  .fm-refresh {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .fm-countdown { font-variant-numeric: tabular-nums; font-family: 'SFMono-Regular', Consolas, monospace; }
+
+  /* Scroll wrapper — horizontal scroll on narrow screens */
+  .fm-scroll { overflow-x: auto; }
+
+  /* CSS grid table — no table element needed */
+  .fm-grid {
+    display: grid;
+    /* coin | HL | dYdX | spread; columns sized to content */
+    grid-template-columns: 9rem repeat(var(--fm-venue-count, 2), minmax(8rem, 1fr)) minmax(8rem, 1fr);
+    min-width: 38rem;
+  }
+
+  /* Header row */
+  .fm-hdr {
+    padding: 0.45rem 0.875rem;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  .fm-hdr:not(:first-child) { border-left: 1px solid var(--border); }
+
+  /* Info button */
+  .fm-info-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 9px;
+    font-weight: 700;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+    transition: color .1s, border-color .1s;
+    flex-shrink: 0;
+  }
+  .fm-info-btn:hover,
+  .fm-info-btn:focus { color: var(--text); border-color: var(--muted); outline: none; }
+
+  /* Fixed tooltip */
+  #fm-tip {
+    position: fixed;
+    pointer-events: none;
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    padding: 0.35rem 0.6rem;
+    border-radius: 4px;
+    max-width: 200px;
+    line-height: 1.5;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+
+  /* Data rows */
+  .fm-row { display: contents; }
+  .fm-row:hover .fm-cell { background-color: rgba(128,128,128,0.04) !important; }
+
+  /* Coin cell */
+  .fm-coin {
+    padding: 0.45rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    z-index: 1;
+  }
+  .fm-coin-name {
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .fm-coin-oi {
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+  }
+
+  /* Rate / spread cells */
+  .fm-cell {
+    padding: 0.45rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    transition: filter .1s;
+    cursor: default;
+    position: relative;
+  }
+  .fm-rate {
+    font-size: 12px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .fm-rate-pos { color: var(--green); }
+  .fm-rate-neg { color: var(--red); }
+  .fm-rate-nil { color: var(--muted); }
+  .fm-ann {
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+  }
+
+  /* Widest-spread row accent */
+  .fm-row-top-spread .fm-coin { border-left: 2px solid var(--blue); }
+  .fm-spread-cell-top { background: rgba(88,166,255,0.06) !important; }
+
+  /* Skeleton animation */
+  @keyframes fm-shimmer {
+    0%   { opacity: 0.5; }
+    50%  { opacity: 1;   }
+    100% { opacity: 0.5; }
+  }
+  .fm-skeleton .fm-coin-name,
+  .fm-skeleton .fm-coin-oi,
+  .fm-skeleton .fm-rate,
+  .fm-skeleton .fm-ann {
+    background: var(--border);
+    border-radius: 3px;
+    animation: fm-shimmer 1.4s ease-in-out infinite;
+    color: transparent !important;
+  }
+  .fm-skeleton .fm-coin-name { width: 3rem; height: 12px; }
+  .fm-skeleton .fm-coin-oi   { width: 4rem; height: 10px; }
+  .fm-skeleton .fm-rate      { width: 5rem; height: 12px; }
+  .fm-skeleton .fm-ann       { width: 4rem; height: 10px; }
+  .fm-skeleton .fm-cell { background: none !important; }
+
+  /* Error state */
+  .fm-error {
+    padding: 2rem;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .fm-error-label { color: var(--red); font-weight: 600; display: block; margin-bottom: 0.35rem; }
+
+  /* ── Analytics panels (equity curve, funding history, bot P&L) ── */
+
+  /* Range / coin controls reuse .tf / .tf-group from existing chart panel */
+  .an-coin-sel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .an-coin-sel:focus { outline: 1px solid var(--blue); }
+
+  /* Generic state overlays — share structure across all three panels */
+  .an-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    height: 100%;
+    min-height: 60px;
+    padding: 1.5rem;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+  }
+  .an-state-err  { color: var(--red); }
+  .an-state-icon { font-size: 1.4rem; line-height: 1; }
+
+  /* Skeleton shimmer for chart areas */
+  @keyframes an-shimmer {
+    0%, 100% { opacity: 0.45; }
+    50%       { opacity: 0.9;  }
+  }
+  .an-skel {
+    background: var(--border);
+    border-radius: 3px;
+    animation: an-shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* ── Bot P&L table ── */
+  .pnl-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .pnl-table th {
+    padding: 0.45rem 0.875rem;
+    text-align: right;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .pnl-table th:first-child { text-align: left; }
+  .pnl-table td {
+    padding: 0.45rem 0.875rem;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    white-space: nowrap;
+  }
+  .pnl-table td:first-child {
+    text-align: left;
+    font-family: inherit;
+    font-variant-numeric: normal;
+  }
+  .pnl-table tbody tr:last-child td { border-bottom: none; }
+  .pnl-table tfoot td {
+    border-top: 1px solid var(--border);
+    font-weight: 600;
+    color: var(--text);
+    border-bottom: none;
+  }
+  .pnl-table tfoot td:first-child { color: var(--muted); font-weight: 400; }
+  .pnl-table tbody tr:hover td { background: rgba(128,128,128,0.04); }
+
+  /* Mini bar behind each cell value */
+  .pnl-bar-wrap { position: relative; display: inline-flex; align-items: center; gap: 0.35rem; }
+  .pnl-bar {
+    display: inline-block;
+    height: 8px;
+    border-radius: 2px;
+    min-width: 2px;
+    flex-shrink: 0;
+  }
+  .pnl-pos { color: var(--green); }
+  .pnl-neg { color: var(--red);   }
+  .pnl-nil { color: var(--muted); }
+
+  /* Bot identity cell */
+  .pnl-bot-name { font-size: 12px; font-weight: 500; }
+  .pnl-bot-sub  { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
   /* ── Lane cards ── */
   .lanes-section { margin-bottom: 1.5rem; }
   .lanes-grid {
@@ -222,87 +542,89 @@
   </div>
 </nav>
 
+<div id="fm-tip" role="tooltip"></div>
+
 <div class="container">
 
-  <!-- Stat cards -->
-  <div class="grid">
-    <!-- Per-coin price cards -->
+  <!-- ── Compact session strip (replaces old stat cards) ── -->
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:1rem">
     <% for (const c of coins) { %>
     <% const cp = state.lastPrices[c] || { mid: 0, bid: 0, ask: 0 }; %>
-    <div class="card" id="card-<%= c %>">
-      <div class="card-label"><%= c %> Price</div>
-      <div class="card-value mono" id="stat-price-<%= c %>" style="font-size:1.3rem">
-        <% if (cp.mid > 0) { %>
-          $<%= cp.mid.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
-        <% } else { %><span class="text-muted">—</span><% } %>
+    <div class="card" id="card-<%= c %>" style="padding:.75rem 1rem">
+      <div class="card-label" style="margin-bottom:.2rem"><%= c %></div>
+      <div class="card-value mono" id="stat-price-<%= c %>" style="font-size:1.15rem">
+        <% if (cp.mid > 0) { %>$<%= cp.mid.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %><% } else { %><span class="text-muted">—</span><% } %>
       </div>
-      <div class="card-sub" id="stat-bidask-<%= c %>">
-        <% if (cp.bid > 0) { %>
-          bid $<%= cp.bid.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %> / ask $<%= cp.ask.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) %>
-        <% } else { %>awaiting feed…<% } %>
-      </div>
+      <div class="card-sub" id="stat-bidask-<%= c %>"><% if (cp.bid > 0) { %><span style="color:var(--green)">B</span> $<%= cp.bid.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %> <span style="color:var(--red)">A</span> $<%= cp.ask.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %><% } else { %>awaiting…<% } %></div>
     </div>
     <% } %>
-
-    <div class="card">
-      <div class="card-label">Spread (<%= coin %>)</div>
-      <div class="card-value mono" style="font-size:1.3rem" id="stat-spread">
-        <% if (primaryPrice.bid > 0) { %>
-          $<%= (primaryPrice.ask - primaryPrice.bid).toFixed(2) %>
-        <% } else { %><span class="text-muted">—</span><% } %>
-      </div>
-      <div class="card-sub" id="stat-spread-pct">
-        <% if (primaryPrice.bid > 0) { %>
-          <%= ((primaryPrice.ask - primaryPrice.bid) / primaryPrice.bid * 100).toFixed(4) %>%
-        <% } %>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-label">Signals</div>
+    <div class="card" style="padding:.75rem 1rem">
+      <div class="card-label" style="margin-bottom:.2rem">Signals</div>
       <div class="card-value" id="stat-signals"><%= state.signalCount %></div>
-      <div class="card-sub">generated this session</div>
+      <div class="card-sub">this session</div>
     </div>
-
-    <div class="card">
-      <div class="card-label">Trades</div>
+    <div class="card" style="padding:.75rem 1rem">
+      <div class="card-label" style="margin-bottom:.2rem">Trades</div>
       <div class="card-value" id="stat-trades"><%= tradeCount %></div>
-      <div class="card-sub">total recorded</div>
+      <div class="card-sub">recorded</div>
     </div>
-
-    <div class="card">
-      <div class="card-label">Uptime</div>
-      <div class="card-value mono" style="font-size:1.2rem;padding-top:4px" id="stat-uptime"><%= uptime %></div>
-      <div class="card-sub" id="stat-lastupdate">
-        <% if (state.lastUpdate) { %>last tick <%= state.lastUpdate.toLocaleTimeString() %><% } else { %>no ticks yet<% } %>
-      </div>
+    <div class="card" style="padding:.75rem 1rem">
+      <div class="card-label" style="margin-bottom:.2rem">Uptime</div>
+      <div class="card-value mono" style="font-size:1.1rem" id="stat-uptime"><%= uptime %></div>
+      <div class="card-sub" id="stat-lastupdate"><% if (state.lastUpdate) { %>tick <%= state.lastUpdate.toLocaleTimeString() %><% } else { %>no ticks<% } %></div>
     </div>
-
-    <div class="card">
-      <div class="card-label">P&amp;L</div>
-      <div class="card-value mono" style="font-size:1.2rem" id="stat-upnl"><span class="text-muted">—</span></div>
+    <div class="card" style="padding:.75rem 1rem">
+      <div class="card-label" style="margin-bottom:.2rem">P&amp;L</div>
+      <div class="card-value mono" style="font-size:1.1rem" id="stat-upnl"><span class="text-muted">—</span></div>
       <div class="card-sub mono" id="stat-rpnl"><span class="text-muted">Realised: —</span></div>
     </div>
+  </div>
 
-    <!-- Funding rate card — wider -->
-    <div class="card card-funding">
-      <div class="card-label">Funding Rate &nbsp;<span class="text-muted" style="font-weight:400;text-transform:none;letter-spacing:0" id="fr-countdown"></span></div>
-      <div class="funding-row">
-        <div class="funding-item">
-          <span class="fi-label">Current</span>
-          <span class="fi-value" id="fr-current"><span class="text-muted">—</span></span>
-        </div>
-        <div class="funding-item">
-          <span class="fi-label">Predicted</span>
-          <span class="fi-value" id="fr-predicted"><span class="text-muted">—</span></span>
-        </div>
-        <div class="funding-item">
-          <span class="fi-label">Annualized</span>
-          <span class="fi-value" id="fr-annualized"><span class="text-muted">—</span></span>
-        </div>
+  <!-- ── Funding-rate matrix heatmap ── -->
+  <div class="fm-panel">
+
+    <div class="fm-toolbar">
+      <span class="fm-title">Funding Rate Matrix</span>
+      <div class="fm-meta">
+        <span id="fm-updated">—</span>
+        <span class="fm-stale-badge" id="fm-stale">STALE</span>
+      </div>
+      <div class="fm-refresh">
+        refreshes in <span class="fm-countdown" id="fm-countdown">45</span>s
       </div>
     </div>
-  </div>
+
+    <div class="fm-scroll">
+      <div class="fm-grid" id="fm-grid" style="--fm-venue-count:2">
+
+        <!-- Header row — rendered by JS after data arrives -->
+        <div class="fm-hdr" id="fm-hdr-coin">COIN / OI</div>
+        <div class="fm-hdr" id="fm-hdr-hl">
+          HYPERLIQUID
+          <button class="fm-info-btn" data-tip="Hourly funding rate on Hyperliquid perps. Positive = longs pay shorts; negative = shorts pay longs." aria-label="About Hyperliquid funding rate">i</button>
+        </div>
+        <div class="fm-hdr" id="fm-hdr-dydx">
+          dYdX
+          <button class="fm-info-btn" data-tip="Hourly funding rate on dYdX v4 perps. Same sign convention as Hyperliquid." aria-label="About dYdX funding rate">i</button>
+        </div>
+        <div class="fm-hdr" id="fm-hdr-spread">
+          SPREAD
+          <button class="fm-info-btn" data-tip="Absolute difference between venue rates (|HL − dYdX|/hr). Wider = more edge available for cross-venue arb." aria-label="About funding spread">i</button>
+        </div>
+
+        <!-- Data rows injected by JS -->
+        <div id="fm-body" style="display:contents"></div>
+
+      </div><!-- /fm-grid -->
+    </div><!-- /fm-scroll -->
+
+    <!-- Error / empty states -->
+    <div class="fm-error" id="fm-error" style="display:none">
+      <span class="fm-error-label">Could not load matrix</span>
+      <span id="fm-error-msg"></span>
+    </div>
+
+  </div><!-- /fm-panel -->
 
   <!-- Bots teaser -->
   <div style="margin-bottom:1.5rem">
@@ -386,6 +708,52 @@
     </div>
   </div>
 
+  <!-- ── 1. Equity curve ── -->
+  <div class="chart-panel" id="eq-panel">
+    <div class="chart-toolbar">
+      <span class="chart-toolbar-title">Equity Curve</span>
+      <div class="tf-group" id="eq-range-group">
+        <button class="tf active" data-eq="24h">24h</button>
+        <button class="tf"        data-eq="7d">7d</button>
+        <button class="tf"        data-eq="30d">30d</button>
+      </div>
+      <span class="chart-updated" id="eq-updated"></span>
+    </div>
+    <div id="eq-chart" style="height:200px;position:relative"></div>
+  </div>
+
+  <!-- ── 2. Funding-rate history ── -->
+  <div class="chart-panel" id="fh-panel">
+    <div class="chart-toolbar">
+      <span class="chart-toolbar-title">Funding Rate History</span>
+      <select class="an-coin-sel" id="fh-coin-sel"><option value="BTC">BTC</option></select>
+      <div class="tf-group" id="fh-range-group">
+        <button class="tf active" data-fh="24h">24h</button>
+        <button class="tf"        data-fh="7d">7d</button>
+      </div>
+      <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:0.5rem;margin-left:0.5rem">
+        <span style="display:inline-block;width:10px;height:2px;background:var(--green);border-radius:1px"></span>HL
+        <span style="display:inline-block;width:10px;height:2px;background:var(--blue);border-radius:1px"></span>dYdX
+        <span style="display:inline-block;width:10px;height:6px;background:rgba(88,166,255,0.18);border-radius:1px"></span>Spread
+      </span>
+      <span class="chart-updated" id="fh-updated"></span>
+    </div>
+    <div id="fh-chart" style="height:180px;position:relative"></div>
+  </div>
+
+  <!-- ── 3. Per-bot P&L ── -->
+  <div class="chart-panel" id="pnl-panel" style="overflow:hidden">
+    <div class="chart-toolbar" style="border-bottom:1px solid var(--border)">
+      <span class="chart-toolbar-title">Bot P&amp;L</span>
+      <span class="chart-updated" id="pnl-updated"></span>
+    </div>
+    <div style="overflow-x:auto" id="pnl-wrap">
+      <div class="an-state" id="pnl-loading">
+        <div class="an-skel" style="width:100%;height:100px"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Recent events -->
   <p class="section-title">Recent Events</p>
   <div class="table-wrap">
@@ -413,6 +781,295 @@
 </div>
 
 <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+
+<!-- ── Shared number-formatting utility (window.FMT) ── -->
+<script>
+(function () {
+  'use strict';
+  var HOURS_PER_YEAR = 8760;
+
+  window.FMT = {
+    /** Compact USD with sign: +$12.34 / -$2.50 / — */
+    pnl: function (v) {
+      if (v == null || !isFinite(v)) return '—';
+      var abs  = Math.abs(v);
+      var sign = v < 0 ? '-' : '+';
+      return sign + '$' + abs.toFixed(2);
+    },
+    /** Compact USD no sign, SI suffix: $1.2B / $34.5M / $1.2K / $99 */
+    oi: function (v) {
+      if (v == null || !isFinite(v) || v === 0) return '—';
+      var abs = Math.abs(v);
+      if (abs >= 1e9) return '$' + (abs / 1e9).toFixed(2) + 'B';
+      if (abs >= 1e6) return '$' + (abs / 1e6).toFixed(1) + 'M';
+      if (abs >= 1e3) return '$' + (abs / 1e3).toFixed(0) + 'K';
+      return '$' + abs.toFixed(0);
+    },
+    /** Full USD for the equity chart tooltip: $1,234.56 */
+    usd: function (v) {
+      if (v == null || !isFinite(v)) return '—';
+      return '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    },
+    /** Hourly funding rate with sign: +0.0042% */
+    rate: function (r) {
+      if (r == null || !isFinite(r)) return null;
+      var sign = r >= 0 ? '+' : '';
+      return sign + (r * 100).toFixed(4) + '%';
+    },
+    /** Annualized rate: +36.8%/yr */
+    ann: function (r) {
+      if (r == null || !isFinite(r)) return null;
+      var sign = r >= 0 ? '+' : '';
+      var pct  = r * HOURS_PER_YEAR * 100;
+      return sign + (Math.abs(pct) >= 100 ? pct.toFixed(0) : pct.toFixed(1)) + '%/yr';
+    },
+    /** Spread magnitude (no sign): 0.0006% */
+    spread: function (r) {
+      if (r == null || !isFinite(r)) return null;
+      return (r * 100).toFixed(4) + '%';
+    },
+  };
+})();
+</script>
+
+<!-- ── Funding matrix heatmap ── -->
+<script>
+(function () {
+  'use strict';
+
+  // ── Constants ────────────────────────────────────────────────────────────
+  var REFRESH_MS   = 45_000;
+  var STALE_AFTER  = 90_000;  // mark stale if updatedAt older than this
+  var HOURS_PER_YEAR = 8760;
+  // Full intensity at 0.1%/hr (0.001 decimal); caps at 0.55 opacity for readability
+  var OI_FULL_RATE = 0.001;
+  var MAX_ALPHA    = 0.55;
+
+  // ── State ────────────────────────────────────────────────────────────────
+  var matrixData    = null;
+  var countdownSec  = Math.round(REFRESH_MS / 1000);
+  var countdownTimer = null;
+  var refreshTimer  = null;
+  var topSpreadCoin = null;
+
+  // ── DOM refs ─────────────────────────────────────────────────────────────
+  var grid       = document.getElementById('fm-grid');
+  var body       = document.getElementById('fm-body');
+  var updatedEl  = document.getElementById('fm-updated');
+  var staleEl    = document.getElementById('fm-stale');
+  var countEl    = document.getElementById('fm-countdown');
+  var errorPanel = document.getElementById('fm-error');
+  var errorMsg   = document.getElementById('fm-error-msg');
+  var tipEl      = document.getElementById('fm-tip');
+
+  // ── Tooltip ──────────────────────────────────────────────────────────────
+  function showTip(el, text) {
+    tipEl.textContent = text;
+    tipEl.style.display = 'block';
+    positionTip(el);
+  }
+  function hideTip() { tipEl.style.display = 'none'; }
+  function positionTip(el) {
+    var r  = el.getBoundingClientRect();
+    var tw = tipEl.offsetWidth;
+    var th = tipEl.offsetHeight;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var left = Math.min(r.left + r.width / 2 - tw / 2, vw - tw - 8);
+    left = Math.max(left, 8);
+    var top = r.bottom + 6;
+    if (top + th > vh - 8) top = r.top - th - 6;
+    tipEl.style.left = left + 'px';
+    tipEl.style.top  = top  + 'px';
+  }
+  document.querySelectorAll('.fm-info-btn').forEach(function (btn) {
+    var tip = btn.getAttribute('data-tip');
+    btn.addEventListener('mouseenter', function () { showTip(btn, tip); });
+    btn.addEventListener('mouseleave', hideTip);
+    btn.addEventListener('focus',      function () { showTip(btn, tip); });
+    btn.addEventListener('blur',       hideTip);
+  });
+
+  // ── Formatting helpers — delegate to window.FMT for consistency ──────────
+  var FMT = window.FMT;
+  function fmtRate(r) { return FMT.rate(r); }
+  function fmtAnn(r)  { return FMT.ann(r);  }
+  function fmtOi(usd) { return FMT.oi(usd); }
+
+  // ── Color scale ──────────────────────────────────────────────────────────
+  // Diverging: green for positive (longs pay shorts), red for negative.
+  // Near-zero = transparent → surface background shows through.
+  function rateColor(r) {
+    if (r === null || !isFinite(r)) return '';
+    var alpha = Math.min(Math.abs(r) / OI_FULL_RATE, 1) * MAX_ALPHA;
+    if (alpha < 0.02) return '';
+    if (r > 0) return 'rgba(63,185,80,'  + alpha.toFixed(3) + ')';
+    return            'rgba(248,81,73,' + alpha.toFixed(3) + ')';
+  }
+  function rateCls(r) {
+    if (r === null || !isFinite(r)) return 'fm-rate-nil';
+    if (r > 0) return 'fm-rate-pos';
+    if (r < 0) return 'fm-rate-neg';
+    return 'fm-rate-nil';
+  }
+
+  // ── Skeleton rows ────────────────────────────────────────────────────────
+  function renderSkeleton() {
+    errorPanel.style.display = 'none';
+    var html = '';
+    for (var i = 0; i < 12; i++) {
+      html += '<div class="fm-row fm-skeleton">';
+      html += '<div class="fm-coin"><div class="fm-coin-name">&nbsp;</div><div class="fm-coin-oi">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>';
+      html += '<div class="fm-cell"><div class="fm-rate">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div><div class="fm-ann">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>';
+      html += '<div class="fm-cell"><div class="fm-rate">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div><div class="fm-ann">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>';
+      html += '<div class="fm-cell"><div class="fm-rate">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div><div class="fm-ann">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>';
+      html += '</div>';
+    }
+    body.innerHTML = html;
+  }
+
+  // ── Render matrix rows ───────────────────────────────────────────────────
+  function renderMatrix(data) {
+    if (!data || !Array.isArray(data.coins)) return;
+    errorPanel.style.display = 'none';
+
+    // Find widest spread for highlight
+    topSpreadCoin = null;
+    var maxSpread = -1;
+    data.coins.forEach(function (entry) {
+      if (entry.spread !== null && isFinite(entry.spread) && entry.spread > maxSpread) {
+        maxSpread = entry.spread;
+        topSpreadCoin = entry.coin;
+      }
+    });
+
+    var html = '';
+    data.coins.forEach(function (entry) {
+      var isTop = entry.coin === topSpreadCoin;
+      var hlRate   = (entry.rates && entry.rates.hyperliquid !== null && isFinite(entry.rates.hyperliquid))
+                      ? entry.rates.hyperliquid : null;
+      var dydxRate = (entry.rates && entry.rates.dydx !== null && isFinite(entry.rates.dydx))
+                      ? entry.rates.dydx : null;
+      var spread   = (entry.spread !== null && isFinite(entry.spread)) ? entry.spread : null;
+
+      var hlFmt   = fmtRate(hlRate);
+      var dydxFmt = fmtRate(dydxRate);
+      var spFmt   = fmtRate(spread);
+      var hlAnn   = fmtAnn(hlRate);
+      var dydxAnn = fmtAnn(dydxRate);
+      var spAnn   = fmtAnn(spread);
+
+      var hlColor   = rateColor(hlRate);
+      var dydxColor = rateColor(dydxRate);
+
+      // Best-pair arrow
+      var pairArrow = '';
+      if (entry.bestPair === 'hyperliquid_short_dydx_long')  pairArrow = ' <span title="Short HL / Long dYdX" style="color:var(--blue);font-size:10px">→dYdX</span>';
+      if (entry.bestPair === 'dydx_short_hyperliquid_long')  pairArrow = ' <span title="Short dYdX / Long HL" style="color:var(--blue);font-size:10px">→HL</span>';
+
+      html += '<div class="fm-row' + (isTop ? ' fm-row-top-spread' : '') + '">';
+
+      // Coin cell
+      html += '<div class="fm-coin"><div class="fm-coin-name">' + esc(entry.coin) + '</div>';
+      html += '<div class="fm-coin-oi">' + fmtOi(entry.oiUsd) + '</div></div>';
+
+      // HL rate cell
+      html += '<div class="fm-cell" style="background:' + hlColor + '">';
+      html += '<div class="fm-rate ' + rateCls(hlRate) + '">' + (hlFmt || '<span class="text-muted">—</span>') + '</div>';
+      if (hlAnn) html += '<div class="fm-ann">' + hlAnn + '</div>';
+      html += '</div>';
+
+      // dYdX rate cell
+      html += '<div class="fm-cell" style="background:' + dydxColor + '">';
+      html += '<div class="fm-rate ' + rateCls(dydxRate) + '">' + (dydxFmt || '<span class="text-muted">—</span>') + '</div>';
+      if (dydxAnn) html += '<div class="fm-ann">' + dydxAnn + '</div>';
+      html += '</div>';
+
+      // Spread cell
+      html += '<div class="fm-cell' + (isTop ? ' fm-spread-cell-top' : '') + '">';
+      html += '<div class="fm-rate ' + (spread !== null ? 'fm-rate-pos' : 'fm-rate-nil') + '">' + (spFmt ? spFmt.replace('+', '') : '<span class="text-muted">—</span>') + pairArrow + '</div>';
+      if (spAnn) html += '<div class="fm-ann">' + spAnn.replace('+', '') + '</div>';
+      html += '</div>';
+
+      html += '</div>'; // /fm-row
+    });
+
+    body.innerHTML = html;
+    updateMeta(data);
+  }
+
+  // ── Metadata bar ─────────────────────────────────────────────────────────
+  function updateMeta(data) {
+    if (!data) return;
+    var at = data.updatedAt ? new Date(data.updatedAt) : null;
+    if (at && isFinite(at.getTime())) {
+      var ageMs = Date.now() - at.getTime();
+      updatedEl.textContent = 'updated ' + formatAge(ageMs);
+      staleEl.classList.toggle('visible', data.stale || ageMs > STALE_AFTER);
+    } else {
+      updatedEl.textContent = 'not yet updated';
+      staleEl.classList.add('visible');
+    }
+  }
+  function formatAge(ms) {
+    var s = Math.round(ms / 1000);
+    if (s < 60)  return s + 's ago';
+    var m = Math.round(s / 60);
+    if (m < 60)  return m + 'm ago';
+    return Math.round(m / 60) + 'h ago';
+  }
+
+  // ── Error state ──────────────────────────────────────────────────────────
+  function renderError(msg) {
+    body.innerHTML = '';
+    errorMsg.textContent = msg;
+    errorPanel.style.display = 'block';
+    staleEl.classList.add('visible');
+  }
+
+  // ── Countdown ────────────────────────────────────────────────────────────
+  function startCountdown() {
+    countdownSec = Math.round(REFRESH_MS / 1000);
+    clearInterval(countdownTimer);
+    countdownTimer = setInterval(function () {
+      countdownSec = Math.max(0, countdownSec - 1);
+      if (countEl) countEl.textContent = countdownSec;
+    }, 1000);
+  }
+
+  // ── Fetch ────────────────────────────────────────────────────────────────
+  async function fetchMatrix() {
+    try {
+      var resp = await fetch('/api/funding-matrix');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var data = await resp.json();
+      matrixData = data;
+      renderMatrix(data);
+    } catch (e) {
+      renderError(e.message);
+    }
+    startCountdown();
+  }
+
+  // ── Periodic metadata update (age ticks while countdown runs) ────────────
+  setInterval(function () {
+    if (matrixData) updateMeta(matrixData);
+  }, 10_000);
+
+  // ── Escape helper ─────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  renderSkeleton();
+  fetchMatrix();
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(fetchMatrix, REFRESH_MS);
+
+})();
+</script>
+
 <script>
 (function () {
   const LC = LightweightCharts;
@@ -1014,6 +1671,364 @@
     });
     ro.observe(document.querySelector('.chart-panel'));
   }
+
+})();
+</script>
+<!-- ── Analytics charts: equity curve, funding history, bot P&L ── -->
+<script>
+(function () {
+  'use strict';
+
+  var LC  = window.LightweightCharts;
+  var FMT = window.FMT;
+  var HOURS_PER_YEAR = 8760;
+
+  // ── Shared helpers ────────────────────────────────────────────────────────
+
+  function getCssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  /** Base chart options matching the existing candle chart style. */
+  function baseChartOpts(height) {
+    return {
+      width:  0,  // auto via applyOptions after attach
+      height: height,
+      layout: {
+        background: { type: 'solid', color: getCssVar('--surface') || '#161b22' },
+        textColor:  getCssVar('--muted')  || '#8b949e',
+        fontSize:   11,
+      },
+      grid: {
+        vertLines:  { color: getCssVar('--border') || '#30363d', style: 1 },
+        horzLines:  { color: getCssVar('--border') || '#30363d', style: 1 },
+      },
+      crosshair: { mode: 1 },
+      rightPriceScale: { borderColor: getCssVar('--border') || '#30363d' },
+      timeScale:       { borderColor: getCssVar('--border') || '#30363d', timeVisible: true },
+      handleScroll: true,
+      handleScale:  true,
+    };
+  }
+
+  /** Show a state overlay inside a container, hiding the chart. */
+  function showState(container, kind, text) {
+    // Remove old state overlay
+    var old = container.querySelector('.an-state-overlay');
+    if (old) old.remove();
+    var div = document.createElement('div');
+    div.className = 'an-state' + (kind === 'error' ? ' an-state-err' : '') + ' an-state-overlay';
+    div.style.cssText = 'position:absolute;inset:0;background:' + (getCssVar('--surface') || '#161b22');
+    var icon = kind === 'empty' ? '📭' : kind === 'error' ? '⚠' : '';
+    div.innerHTML = (icon ? '<span class="an-state-icon">' + icon + '</span>' : '') +
+                    '<span>' + text + '</span>';
+    container.style.position = 'relative';
+    container.appendChild(div);
+  }
+
+  function clearState(container) {
+    var old = container.querySelector('.an-state-overlay');
+    if (old) old.remove();
+  }
+
+  /** Mark a range button active, deactivate siblings. */
+  function activateRange(group, value, attr) {
+    group.querySelectorAll('.tf').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute(attr) === value);
+    });
+  }
+
+  /** Format epoch-ms as a time label for the toolbar. */
+  function timeAgo(iso) {
+    if (!iso) return '';
+    var ms = Date.now() - new Date(iso).getTime();
+    var s  = Math.round(ms / 1000);
+    if (s < 60)  return s + 's ago';
+    var m = Math.round(s / 60);
+    if (m < 60)  return m + 'm ago';
+    return Math.round(m / 60) + 'h ago';
+  }
+
+  /** Uniform downsample: keep first, last, and evenly-spaced intermediates. */
+  function downsample(rows, maxPts) {
+    if (rows.length <= maxPts || maxPts < 2) return rows;
+    var out  = [];
+    var step = (rows.length - 1) / (maxPts - 1);
+    for (var i = 0; i < maxPts; i++) {
+      out.push(rows[Math.min(Math.round(i * step), rows.length - 1)]);
+    }
+    out[out.length - 1] = rows[rows.length - 1];
+    return out;
+  }
+
+  // ── 1. Equity Curve ───────────────────────────────────────────────────────
+
+  (function setupEquityChart() {
+    var container  = document.getElementById('eq-chart');
+    var rangeGroup = document.getElementById('eq-range-group');
+    var updatedEl  = document.getElementById('eq-updated');
+    var chart = null;
+    var series = null;
+
+    function initChart() {
+      if (chart) { try { chart.remove(); } catch (_) {} chart = null; }
+      var opts   = baseChartOpts(200);
+      opts.rightPriceScale.mode = 0;
+      chart  = LC.createChart(container, opts);
+      chart.applyOptions({ width: container.clientWidth });
+      series = chart.addAreaSeries({
+        lineColor:   getCssVar('--blue')  || '#58a6ff',
+        topColor:    'rgba(88,166,255,0.2)',
+        bottomColor: 'rgba(88,166,255,0)',
+        lineWidth:   2,
+        priceFormat: { type: 'custom', formatter: function (v) { return FMT.usd(v); } },
+      });
+    }
+
+    async function load(range) {
+      clearState(container);
+      container.innerHTML = '<div class="an-skel an-state-overlay" style="position:absolute;inset:0"></div>';
+
+      try {
+        var resp = await fetch('/api/equity-history?range=' + range);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var rows = await resp.json();
+
+        clearState(container);
+        container.querySelectorAll('.an-state-overlay').forEach(function (e) { e.remove(); });
+
+        if (!Array.isArray(rows) || rows.length === 0) {
+          if (chart) { try { chart.remove(); } catch (_) {} chart = null; }
+          showState(container, 'empty', 'No equity history yet. Once the bot starts trading, snapshots appear here (60 s interval).');
+          if (updatedEl) updatedEl.textContent = '';
+          return;
+        }
+
+        if (!chart) initChart();
+        var pts = downsample(rows, 500).map(function (r) ({
+          time:  Math.floor(r.ts / 1000),
+          value: isFinite(r.equity_usd) ? r.equity_usd : 0,
+        }));
+        series.setData(pts);
+        chart.timeScale().fitContent();
+        if (updatedEl) updatedEl.textContent = rows.length + ' pts';
+      } catch (e) {
+        clearState(container);
+        container.querySelectorAll('.an-state-overlay').forEach(function (el) { el.remove(); });
+        showState(container, 'error', 'Failed to load equity history: ' + e.message);
+      }
+    }
+
+    if (rangeGroup) {
+      rangeGroup.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-eq]');
+        if (!btn) return;
+        activateRange(rangeGroup, btn.dataset.eq, 'data-eq');
+        load(btn.dataset.eq);
+      });
+    }
+
+    // Resize
+    if (typeof ResizeObserver !== 'undefined' && container) {
+      new ResizeObserver(function () {
+        if (chart) chart.applyOptions({ width: container.clientWidth });
+      }).observe(container);
+    }
+
+    load('24h');
+  })();
+
+  // ── 2. Funding-rate history ───────────────────────────────────────────────
+
+  (function setupFundingHistory() {
+    var container  = document.getElementById('fh-chart');
+    var coinSel    = document.getElementById('fh-coin-sel');
+    var rangeGroup = document.getElementById('fh-range-group');
+    var updatedEl  = document.getElementById('fh-updated');
+    var chart = null;
+    var hlSeries = null, dydxSeries = null, spreadSeries = null;
+
+    // Populate coin dropdown from matrix data once it loads
+    function populateCoinSel(coins) {
+      if (!coinSel || !Array.isArray(coins) || !coins.length) return;
+      var current = coinSel.value;
+      coinSel.innerHTML = coins.map(function (c) {
+        return '<option value="' + c.coin + '"' + (c.coin === current ? ' selected' : '') + '>' + c.coin + '</option>';
+      }).join('');
+    }
+
+    function initChart() {
+      if (chart) { try { chart.remove(); } catch (_) {} chart = null; }
+      chart = LC.createChart(container, baseChartOpts(180));
+      chart.applyOptions({ width: container.clientWidth });
+      hlSeries = chart.addLineSeries({
+        color: getCssVar('--green') || '#3fb950', lineWidth: 2, title: 'HL',
+        priceFormat: { type: 'custom', formatter: function (v) { return FMT.rate(v) || '—'; } },
+      });
+      dydxSeries = chart.addLineSeries({
+        color: getCssVar('--blue') || '#58a6ff', lineWidth: 2, title: 'dYdX',
+        priceFormat: { type: 'custom', formatter: function (v) { return FMT.rate(v) || '—'; } },
+      });
+      spreadSeries = chart.addHistogramSeries({
+        color: 'rgba(88,166,255,0.18)', priceScaleId: 'spread',
+        priceFormat: { type: 'custom', formatter: function (v) { return FMT.spread(v) || '—'; } },
+      });
+      chart.priceScale('spread').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    }
+
+    // alignRows is no longer duplicated here.
+    // The /api/funding-history endpoint now returns pre-aligned
+    // [{ ts, hl, dydx, spread }] rows using the single tested implementation
+    // in chart-utils.ts (server-side).  The browser consumes the result directly.
+
+    async function load(coin, range) {
+      clearState(container);
+      container.querySelectorAll('.an-state-overlay').forEach(function (e) { e.remove(); });
+      container.insertAdjacentHTML('beforeend', '<div class="an-skel an-state-overlay" style="position:absolute;inset:0"></div>');
+
+      try {
+        var resp = await fetch('/api/funding-history?coin=' + encodeURIComponent(coin) + '&range=' + range);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        // Server returns pre-aligned rows: [{ ts, hl, dydx, spread }]
+        var aligned = await resp.json();
+
+        container.querySelectorAll('.an-state-overlay').forEach(function (e) { e.remove(); });
+
+        if (!Array.isArray(aligned) || aligned.length === 0) {
+          if (chart) { try { chart.remove(); } catch (_) {} chart = null; }
+          showState(container, 'empty', 'No funding rate history for ' + coin + ' yet. History builds as polls run (45 s interval).');
+          if (updatedEl) updatedEl.textContent = '';
+          return;
+        }
+
+        if (!chart) initChart();
+
+        var toSec = function (b) { return Math.floor(b / 1000); };
+        hlSeries.setData(
+          downsample(aligned.filter(function (r) { return r.hl !== null; }), 500)
+            .map(function (r) ({ time: toSec(r.ts), value: r.hl }))
+        );
+        dydxSeries.setData(
+          downsample(aligned.filter(function (r) { return r.dydx !== null; }), 500)
+            .map(function (r) ({ time: toSec(r.ts), value: r.dydx }))
+        );
+        spreadSeries.setData(
+          downsample(aligned.filter(function (r) { return r.spread !== null; }), 500)
+            .map(function (r) ({ time: toSec(r.ts), value: r.spread }))
+        );
+        chart.timeScale().fitContent();
+        if (updatedEl) updatedEl.textContent = aligned.length + ' buckets';
+      } catch (e) {
+        container.querySelectorAll('.an-state-overlay').forEach(function (el) { el.remove(); });
+        showState(container, 'error', 'Failed to load funding history: ' + e.message);
+      }
+    }
+
+    function currentCoin()  { return coinSel  ? coinSel.value  : 'BTC'; }
+    function currentRange() {
+      var active = rangeGroup ? rangeGroup.querySelector('.tf.active') : null;
+      return active ? active.dataset.fh : '24h';
+    }
+
+    if (coinSel)    coinSel.addEventListener('change', function ()  { load(currentCoin(), currentRange()); });
+    if (rangeGroup) rangeGroup.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-fh]');
+      if (!btn) return;
+      activateRange(rangeGroup, btn.dataset.fh, 'data-fh');
+      load(currentCoin(), currentRange());
+    });
+
+    if (typeof ResizeObserver !== 'undefined' && container) {
+      new ResizeObserver(function () {
+        if (chart) chart.applyOptions({ width: container.clientWidth });
+      }).observe(container);
+    }
+
+    // Populate coin selector directly from /api/funding-matrix — no dependency
+    // on the heatmap DOM having rendered.
+    fetch('/api/funding-matrix')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && Array.isArray(data.coins) && data.coins.length > 0) {
+          populateCoinSel(data.coins);
+        }
+      })
+      .catch(function () { /* leave BTC as the fallback default */ });
+
+    load('BTC', '24h');
+  })();
+
+  // ── 3. Per-bot P&L ────────────────────────────────────────────────────────
+
+  (function setupBotPnl() {
+    var wrap      = document.getElementById('pnl-wrap');
+    var updatedEl = document.getElementById('pnl-updated');
+
+    function pnlCls(v)  { return !isFinite(v) ? 'pnl-nil' : v > 0 ? 'pnl-pos' : v < 0 ? 'pnl-neg' : 'pnl-nil'; }
+    function pnlStr(v)  { return isFinite(v) ? FMT.pnl(v) : '—'; }
+
+    /** Draw a mini proportional bar (width capped at 60px) */
+    function bar(v, maxAbs) {
+      if (!isFinite(v) || maxAbs === 0) return '';
+      var w   = Math.min(Math.round(Math.abs(v) / maxAbs * 60), 60);
+      var col = v >= 0 ? 'var(--green)' : 'var(--red)';
+      return '<span class="pnl-bar" style="width:' + w + 'px;background:' + col + '"></span>';
+    }
+
+    async function load() {
+      try {
+        var resp = await fetch('/api/bot-pnl');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var data = await resp.json();
+
+        var bots    = data.bots   || [];
+        var totals  = data.totals || { realizedPnl: 0, unrealizedPnl: 0, totalPnl: 0 };
+
+        if (bots.length === 0) {
+          wrap.innerHTML = '<div class="an-state"><span class="an-state-icon">🤖</span><span>No bots are running. <a href="/bots" style="color:var(--blue)">Start one →</a></span></div>';
+          if (updatedEl) updatedEl.textContent = '';
+          return;
+        }
+
+        // Find max absolute total for bar scaling
+        var maxAbs = bots.reduce(function (m, b) { return Math.max(m, Math.abs(b.totalPnl || 0)); }, 0.01);
+
+        var rows = bots.map(function (b) {
+          return '<tr>' +
+            '<td><div class="pnl-bot-name">' + b.id + '</div>' +
+                 '<div class="pnl-bot-sub">' + (b.strategyId || '') + ' · ' + (b.coin || '') +
+                 (b.timeframe && b.timeframe !== '—' ? ' · ' + b.timeframe : '') + '</div></td>' +
+            '<td class="' + pnlCls(b.realizedPnl)   + '">' + pnlStr(b.realizedPnl)   + '</td>' +
+            '<td class="' + pnlCls(b.unrealizedPnl) + '">' + pnlStr(b.unrealizedPnl) + '</td>' +
+            '<td class="' + pnlCls(b.totalPnl)      + '"><span class="pnl-bar-wrap">' +
+              bar(b.totalPnl, maxAbs) + pnlStr(b.totalPnl) + '</span></td>' +
+            '<td class="text-muted">' + (Number.isInteger(b.tradeCount) ? b.tradeCount : '—') + '</td>' +
+          '</tr>';
+        }).join('');
+
+        var html =
+          '<table class="pnl-table">' +
+          '<thead><tr><th>Bot</th><th>Realised</th><th>Unrealised</th><th>Total</th><th>Trades</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+          '<tfoot><tr>' +
+            '<td>Portfolio</td>' +
+            '<td class="' + pnlCls(totals.realizedPnl)   + '">' + pnlStr(totals.realizedPnl)   + '</td>' +
+            '<td class="' + pnlCls(totals.unrealizedPnl) + '">' + pnlStr(totals.unrealizedPnl) + '</td>' +
+            '<td class="' + pnlCls(totals.totalPnl)      + '">' + pnlStr(totals.totalPnl)      + '</td>' +
+            '<td class="text-muted">' + bots.reduce(function (s, b) { return s + (b.tradeCount || 0); }, 0) + '</td>' +
+          '</tr></tfoot>' +
+          '</table>';
+
+        wrap.innerHTML = html;
+        if (updatedEl) updatedEl.textContent = 'updated just now';
+      } catch (e) {
+        wrap.innerHTML = '<div class="an-state an-state-err"><span class="an-state-icon">⚠</span><span>Failed to load P&amp;L: ' + e.message + '</span></div>';
+      }
+    }
+
+    load();
+    setInterval(load, 4000);
+  })();
 
 })();
 </script>

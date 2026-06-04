@@ -10,6 +10,7 @@ import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
 import type { BotManager } from "../bot-manager.js";
 import type { DydxFundingPoller } from "../dydx-funding.js";
+import type { FundingMatrixPoller } from "../funding-matrix.js";
 import { createRouter } from "./routes.js";
 
 export interface BotState {
@@ -27,7 +28,7 @@ export interface BotState {
 const INITIAL_EQUITY = 1000;
 const MAX_EQUITY_HISTORY = 1440; // 24h at 1-minute recording
 
-export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed?: Feed, executor?: Executor, laneManager?: BotManager, dydxPoller?: DydxFundingPoller): void {
+export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed?: Feed, executor?: Executor, laneManager?: BotManager, dydxPoller?: DydxFundingPoller, fundingMatrix?: FundingMatrixPoller): void {
   const state: BotState = {
     lastPrices: Object.fromEntries(coins.map((c) => [c, { mid: 0, bid: 0, ask: 0 }])),
     lastUpdate: null,
@@ -114,7 +115,7 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
   app.use(express.json());
   console.log(`[dashboard] Views directory: ${viewsDir}`);
 
-  app.use("/", createRouter(logger, state, strategies, feed, executor, laneManager, dydxPoller));
+  app.use("/", createRouter(logger, state, strategies, feed, executor, laneManager, dydxPoller, fundingMatrix));
 
   // env var takes precedence over the JSON config default so that DASHBOARD_PORT
   // in .env is respected without touching config files.

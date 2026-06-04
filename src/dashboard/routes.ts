@@ -3,6 +3,7 @@ import { join } from "path";
 import { RSI } from "technicalindicators";
 import { config, coins, API_URL } from "../config.js";
 import { runBacktest, fetchCandles, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
+import { alignFundingRows } from "../chart-utils.js";
 import { CANDLE_STRATEGIES, STRATEGY_REGISTRY } from "../strategy/registry.js";
 import { INDICATOR_REGISTRY } from "../strategy/indicators.js";
 import { saveCustomDef, deleteCustomDef, customDefToRegistryEntry } from "../strategy/custom-strategy.js";
@@ -14,6 +15,7 @@ import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
 import type { BotManager, BotsFile, OrphanedPosition } from "../bot-manager.js";
 import type { DydxFundingPoller } from "../dydx-funding.js";
+import type { FundingMatrixPoller } from "../funding-matrix.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
@@ -231,6 +233,7 @@ export function createRouter(
   executor?: Executor,
   laneManager?: BotManager,
   dydxPoller?: DydxFundingPoller,
+  fundingMatrix?: FundingMatrixPoller,
 ): Router {
   const router = Router();
 
@@ -1076,5 +1079,80 @@ export function createRouter(
     res.json({ ok: true, interval: state.currentInterval });
   });
 
+  // ── Funding matrix (all venues × all coins) ──────────────────────────────────
+
+  router.get("/api/funding-matrix", (_req, res) => {
+    if (!fundingMatrix) {
+      res.status(503).json({ error: "Funding matrix poller not initialised" });
+      return;
+    }
+    res.json(fundingMatrix.getMatrix());
+  });
+
+  // ── Equity history ────────────────────────────────────────────────────────────
+
+  router.get("/api/equity-history", (req, res) => {
+    const rangeMs = parseRangeParam(req.query["range"] as string | undefined, 24 * 3_600_000);
+    res.json(logger.getEquityHistory(rangeMs));
+  });
+
+  // ── Funding-rate history for a single coin ────────────────────────────────────
+
+  router.get("/api/funding-history", (req, res) => {
+    const coin = (req.query["coin"] as string | undefined)?.toUpperCase();
+    if (!coin) { res.status(400).json({ error: "coin query param required" }); return; }
+    const rangeMs = parseRangeParam(req.query["range"] as string | undefined, 24 * 3_600_000);
+    // Alignment happens server-side using the single tested implementation in
+    // chart-utils.ts — the browser receives pre-aligned [{ ts, hl, dydx, spread }]
+    // rows and no longer needs its own copy of the join logic.
+    const raw     = logger.getFundingHistory(coin, rangeMs);
+    res.json(alignFundingRows(raw));
+  });
+
+  // ── Per-bot realised + unrealised P&L ────────────────────────────────────────
+
+  router.get("/api/bot-pnl", (_req, res) => {
+    const bots = laneManager?.getBotStates() ?? [];
+    let totalRealized   = 0;
+    let totalUnrealized = 0;
+    const botPnl = bots.map((b) => {
+      totalRealized   += b.sessionPnl    ?? 0;
+      totalUnrealized += b.unrealisedPnl ?? 0;
+      return {
+        id:            b.id,
+        strategyId:    b.strategyId,
+        coin:          b.coin,
+        timeframe:     b.timeframe,
+        status:        b.status,
+        realizedPnl:   b.sessionPnl    ?? 0,
+        unrealizedPnl: b.unrealisedPnl ?? 0,
+        totalPnl:      (b.sessionPnl ?? 0) + (b.unrealisedPnl ?? 0),
+        tradeCount:    b.tradeCount,
+        equity:        b.equity,
+      };
+    });
+    res.json({
+      bots: botPnl,
+      totals: {
+        realizedPnl:   totalRealized,
+        unrealizedPnl: totalUnrealized,
+        totalPnl:      totalRealized + totalUnrealized,
+      },
+    });
+  });
+
   return router;
+}
+
+/** Parse a range string like "24h", "7d", "30d" into milliseconds. */
+function parseRangeParam(raw: string | undefined, defaultMs: number): number {
+  if (!raw) return defaultMs;
+  const match = /^(\d+)(h|d|w)$/.exec(raw.trim());
+  if (!match) return defaultMs;
+  const n = parseInt(match[1], 10);
+  const unit = match[2];
+  if (unit === "h") return n * 3_600_000;
+  if (unit === "d") return n * 86_400_000;
+  if (unit === "w") return n * 7 * 86_400_000;
+  return defaultMs;
 }

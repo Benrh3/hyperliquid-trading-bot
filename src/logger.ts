@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { bus } from "./events.js";
 import { config } from "./config.js";
@@ -38,18 +38,31 @@ interface DailyPnlRow {
   trade_count: number;
 }
 
+// 7 days in milliseconds — raw rows older than this are rolled up
+const RETENTION_RAW_MS = 7 * 24 * 60 * 60_000;
+const HOUR_MS          = 3_600_000;
+
+export interface EquityHistoryRow { ts: number; equity_usd: number }
+export interface FundingSampleRow { ts: number; coin: string; venue: string; rate_hourly: number }
+export interface FundingSampleHourlyRow { ts_hour: number; coin: string; venue: string; avg_rate_hourly: number; sample_count: number }
+
 export class Logger {
   private db: Database.Database;
-  private stmtInsertTrade: Database.Statement;
-  private stmtInsertEvent: Database.Statement;
+  private stmtInsertTrade:    Database.Statement;
+  private stmtInsertEvent:    Database.Statement;
+  private stmtInsertEquity:   Database.Statement;
+  private stmtInsertFunding:  Database.Statement;
 
   constructor(dbPath = "data/bot.db") {
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
 
-    const sql = readFileSync(join(process.cwd(), "migrations/001_init.sql"), "utf-8");
-    this.db.exec(sql);
+    // Load all migrations in order
+    for (const file of ["001_init.sql", "002_funding_matrix.sql"]) {
+      const p = join(process.cwd(), "migrations", file);
+      if (existsSync(p)) this.db.exec(readFileSync(p, "utf-8"));
+    }
 
     this.stmtInsertTrade = this.db.prepare(`
       INSERT INTO trades (order_id, coin, side, size, price, pnl, strategy, success, error)
@@ -60,6 +73,13 @@ export class Logger {
       INSERT INTO events (module, level, message, data)
       VALUES (@module, @level, @message, @data)
     `);
+
+    this.stmtInsertEquity = this.db.prepare(
+      "INSERT OR REPLACE INTO equity_history (ts, equity_usd) VALUES (?, ?)",
+    );
+    this.stmtInsertFunding = this.db.prepare(
+      "INSERT OR REPLACE INTO funding_samples (ts, coin, venue, rate_hourly) VALUES (?, ?, ?, ?)",
+    );
 
     this.wire();
     console.log(`[logger] SQLite ready — ${dbPath}`);
@@ -171,6 +191,123 @@ export class Logger {
       message,
       data: data != null ? JSON.stringify(data) : null,
     });
+  }
+
+  // ── Time-series writes (fire-and-forget safe) ───────────────────────────────
+
+  /** Snapshot current total equity. Call with `void` to avoid blocking. */
+  snapshotEquity(equityUsd: number): void {
+    const v = isFinite(equityUsd) ? equityUsd : 0;
+    try { this.stmtInsertEquity.run(Date.now(), v); }
+    catch { /* non-critical */ }
+  }
+
+  /** Persist one poll cycle of funding samples. Call with `void`. */
+  writeFundingSamples(
+    ts:      number,
+    samples: Array<{ coin: string; venue: string; rateHourly: number }>,
+  ): void {
+    const insert = this.stmtInsertFunding;
+    try {
+      const tx = this.db.transaction(() => {
+        for (const s of samples) {
+          const rate = isFinite(s.rateHourly) ? s.rateHourly : 0;
+          insert.run(ts, s.coin, s.venue, rate);
+        }
+      });
+      tx();
+    } catch { /* non-critical */ }
+  }
+
+  // ── Time-series queries ──────────────────────────────────────────────────────
+
+  /**
+   * Return equity history for the last `rangeMs` milliseconds.
+   * Combines raw rows (≤7 days) and hourly rollups (>7 days) so any range works.
+   */
+  getEquityHistory(rangeMs: number): EquityHistoryRow[] {
+    const cutoff = Date.now() - rangeMs;
+    const raw = this.db
+      .prepare("SELECT ts, equity_usd FROM equity_history WHERE ts >= ? ORDER BY ts")
+      .all(cutoff) as EquityHistoryRow[];
+    // If the range extends beyond 7 days, also pull from hourly rollup
+    if (rangeMs > RETENTION_RAW_MS) {
+      const rollup = this.db
+        .prepare(
+          "SELECT ts_hour AS ts, avg_equity_usd AS equity_usd " +
+          "FROM equity_history_hourly WHERE ts_hour >= ? AND ts_hour < ? ORDER BY ts_hour",
+        )
+        .all(cutoff, Date.now() - RETENTION_RAW_MS) as EquityHistoryRow[];
+      return [...rollup, ...raw];
+    }
+    return raw;
+  }
+
+  /**
+   * Return funding rate history for a specific coin over the last `rangeMs` ms.
+   * Unions raw and hourly rollup tables when the range exceeds 7 days.
+   */
+  getFundingHistory(coin: string, rangeMs: number): FundingSampleRow[] {
+    const cutoff = Date.now() - rangeMs;
+    const raw = this.db
+      .prepare(
+        "SELECT ts, coin, venue, rate_hourly FROM funding_samples " +
+        "WHERE coin = ? AND ts >= ? ORDER BY ts",
+      )
+      .all(coin, cutoff) as FundingSampleRow[];
+
+    if (rangeMs > RETENTION_RAW_MS) {
+      const rollup = this.db
+        .prepare(
+          "SELECT ts_hour AS ts, coin, venue, avg_rate_hourly AS rate_hourly " +
+          "FROM funding_samples_hourly " +
+          "WHERE coin = ? AND ts_hour >= ? AND ts_hour < ? ORDER BY ts_hour",
+        )
+        .all(coin, cutoff, Date.now() - RETENTION_RAW_MS) as FundingSampleRow[];
+      return [...rollup, ...raw];
+    }
+    return raw;
+  }
+
+  // ── Retention / rollup ───────────────────────────────────────────────────────
+
+  /**
+   * Roll up rows older than 7 days into hourly buckets, then delete the raw rows.
+   * Safe to call periodically (e.g. every hour). All work happens in transactions.
+   */
+  runRetentionPolicy(): void {
+    const cutoff = Date.now() - RETENTION_RAW_MS;
+    try {
+      this.db.transaction(() => {
+        // Equity: roll up → hourly, then delete raws
+        this.db.prepare(`
+          INSERT OR IGNORE INTO equity_history_hourly (ts_hour, avg_equity_usd, sample_count)
+          SELECT (ts / ${HOUR_MS}) * ${HOUR_MS},
+                 AVG(equity_usd),
+                 COUNT(*)
+          FROM equity_history
+          WHERE ts < ?
+          GROUP BY (ts / ${HOUR_MS})
+        `).run(cutoff);
+        this.db.prepare("DELETE FROM equity_history WHERE ts < ?").run(cutoff);
+
+        // Funding: roll up → hourly per (coin, venue), then delete raws
+        this.db.prepare(`
+          INSERT OR IGNORE INTO funding_samples_hourly (ts_hour, coin, venue, avg_rate_hourly, sample_count)
+          SELECT (ts / ${HOUR_MS}) * ${HOUR_MS},
+                 coin,
+                 venue,
+                 AVG(rate_hourly),
+                 COUNT(*)
+          FROM funding_samples
+          WHERE ts < ?
+          GROUP BY (ts / ${HOUR_MS}), coin, venue
+        `).run(cutoff);
+        this.db.prepare("DELETE FROM funding_samples WHERE ts < ?").run(cutoff);
+      })();
+    } catch (e) {
+      console.warn("[logger] Retention policy failed:", (e as Error).message);
+    }
   }
 
   close(): void {
