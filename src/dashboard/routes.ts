@@ -4,6 +4,8 @@ import { RSI } from "technicalindicators";
 import { config, coins, API_URL } from "../config.js";
 import { runBacktest, fetchCandles, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
 import { alignFundingRows } from "../chart-utils.js";
+import { makeCacheKey, isValidCoin, isValidInterval } from "../candle-cache-utils.js";
+import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
 import { CANDLE_STRATEGIES, STRATEGY_REGISTRY } from "../strategy/registry.js";
 import { INDICATOR_REGISTRY } from "../strategy/indicators.js";
 import { saveCustomDef, deleteCustomDef, customDefToRegistryEntry } from "../strategy/custom-strategy.js";
@@ -693,6 +695,135 @@ export function createRouter(
       .sort((a, b) => (a.time as number) - (b.time as number));
 
     res.json({ candles: candleData, volume: volumeData, rsi: rsiData, markers, spread: spreadData });
+  });
+
+  // ── On-demand candle endpoint (any perpetual coin, with short-TTL cache) ─────
+  //
+  // Unlike /api/candles (which reads the in-memory feed for configured coins),
+  // this endpoint fetches from Hyperliquid on-demand for ANY coin in the
+  // perpetuals universe and caches results for CANDLE_CACHE_TTL_MS to avoid
+  // burst rate-limiting when the user switches coins rapidly.
+
+  const CANDLE_CACHE_TTL_MS = 15_000; // 15 s
+
+  interface DynCandleCache {
+    data: ReturnType<typeof buildCandleResponse>;
+    expiresAt: number;
+  }
+  const dynCandleCache = new Map<string, DynCandleCache>();
+
+  // Hyperliquid universe cache (5 min) — avoids meta() round-trip on every request
+  let hlUniverseCache: { names: string[]; expiresAt: number } | null = null;
+  async function getHlUniverse(): Promise<string[]> {
+    const now = Date.now();
+    if (hlUniverseCache && hlUniverseCache.expiresAt > now) return hlUniverseCache.names;
+    const isTestnet = config.exchange.network === "testnet";
+    const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+    const { universe } = await infoClient.meta();
+    hlUniverseCache = { names: universe.map((u) => u.name.toUpperCase()), expiresAt: now + 5 * 60_000 };
+    return hlUniverseCache.names;
+  }
+
+  function buildCandleResponse(
+    candleRaw: Array<{ t: number; o: string; h: string; l: string; c: string; v: string }>,
+    coinParam:  string,
+    spreadHist: Array<{ t: number; value: number }>,
+    evts:       Array<{ module: string; level: string; data: string | null }>,
+  ) {
+    const candleData = candleRaw.map((c) => ({
+      time:  Math.floor(c.t / 1000),
+      open:  parseFloat(c.o),
+      high:  parseFloat(c.h),
+      low:   parseFloat(c.l),
+      close: parseFloat(c.c),
+    }));
+    const volumeData = candleRaw.map((c) => ({
+      time:  Math.floor(c.t / 1000),
+      value: parseFloat(c.v),
+      color: parseFloat(c.c) >= parseFloat(c.o) ? "rgba(63,185,80,0.5)" : "rgba(248,81,73,0.5)",
+    }));
+    const closes    = candleRaw.map((c) => parseFloat(c.c));
+    const rsiValues = RSI.calculate({ values: closes, period: 14 });
+    const rsiData   = rsiValues.map((value, i) => ({
+      time:  Math.floor(candleRaw[i + 14].t / 1000),
+      value,
+    }));
+    const spreadData = spreadHist.map((s) => ({ time: Math.floor(s.t / 1000), value: s.value }));
+    const candleTimes = candleData.map((c) => c.time);
+    function snapToCandle(secs: number) {
+      let best = candleTimes[0];
+      for (const t of candleTimes) { if (t <= secs) best = t; else break; }
+      return best;
+    }
+    const markers = evts
+      .filter((e) => e.module === "strategy" && e.level === "info" && e.data)
+      .flatMap((e) => {
+        try {
+          const sig = JSON.parse(e.data as string) as { side: string; timestamp: number };
+          const timeSecs = snapToCandle(Math.floor(sig.timestamp / 1000));
+          return [{ time: timeSecs, position: sig.side === "long" ? "belowBar" : "aboveBar",
+            color: sig.side === "long" ? "#3fb950" : "#f85149",
+            shape: sig.side === "long" ? "arrowUp" : "arrowDown",
+            text:  sig.side === "long" ? "L" : "S" }];
+        } catch { return []; }
+      })
+      .sort((a, b) => (a.time as number) - (b.time as number));
+    return { candles: candleData, volume: volumeData, rsi: rsiData, markers, spread: spreadData };
+  }
+
+  router.get("/api/candles/dynamic", async (req, res) => {
+    const coin     = typeof req.query.coin     === "string" ? req.query.coin.toUpperCase().trim() : "";
+    const interval = typeof req.query.interval === "string" ? req.query.interval : "1h";
+
+    if (!coin)                    { res.status(400).json({ error: "coin param required" });              return; }
+    if (!isValidInterval(interval)) { res.status(400).json({ error: `Unknown interval: ${interval}` }); return; }
+
+    // Validate coin against live Hyperliquid universe
+    let universe: string[];
+    try { universe = await getHlUniverse(); }
+    catch { universe = []; } // if meta() fails, skip validation and attempt fetch anyway
+
+    if (universe.length > 0 && !isValidCoin(coin, universe)) {
+      res.status(404).json({ error: `"${coin}" is not listed on Hyperliquid perpetuals` });
+      return;
+    }
+
+    // Serve from cache if fresh
+    const cacheKey = makeCacheKey(coin, interval);
+    const cached = dynCandleCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      res.json(cached.data);
+      return;
+    }
+
+    // Fetch from Hyperliquid
+    try {
+      const isTestnet  = config.exchange.network === "testnet";
+      const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+      const now        = Date.now();
+      const tfMs: Record<string, number> = {
+        "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+        "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "8h": 28_800_000,
+        "12h": 43_200_000, "1d": 86_400_000,
+      };
+      const startTime  = now - 500 * (tfMs[interval] ?? 3_600_000);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = await infoClient.candleSnapshot({ coin, interval: interval as any, startTime, endTime: now });
+
+      if (!raw || raw.length === 0) {
+        res.status(404).json({ error: `No candle data available for ${coin}/${interval}` });
+        return;
+      }
+
+      const spread = state.spreadHistory[coin] ?? [];
+      const events = logger.getEventLog(500);
+      const data   = buildCandleResponse(raw, coin, spread, events);
+
+      dynCandleCache.set(cacheKey, { data, expiresAt: Date.now() + CANDLE_CACHE_TTL_MS });
+      res.json(data);
+    } catch (e) {
+      res.status(502).json({ error: `Failed to fetch candles: ${(e as Error).message}` });
+    }
   });
 
   router.get("/api/status", (_req, res) => {

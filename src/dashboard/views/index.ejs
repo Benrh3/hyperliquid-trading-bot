@@ -1,5 +1,45 @@
 <%- include('_head', { title: 'Dashboard' }) %>
 <style>
+  /* ── Coin search input (searchable, replaces hardcoded <select>) ── */
+  .coin-search {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 11px;
+    font-family: inherit;
+    padding: 2px 6px;
+    border-radius: 3px;
+    width: 70px;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    transition: border-color .1s;
+  }
+  .coin-search:focus { outline: none; border-color: var(--blue); }
+  .coin-search::placeholder { text-transform: none; color: var(--muted); }
+
+  /* ── Chart / Depth toggle row ── */
+  #depth-view {
+    display: none;
+  }
+  #depth-view-inner {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+  }
+  @media (max-width: 768px) {
+    #depth-view-inner { grid-template-columns: 1fr; }
+  }
+  #depth-view .ob-header {
+    padding: 0.4rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 600; color: var(--text);
+    display: flex; align-items: center; gap: 0.5rem;
+    border-left: 1px solid var(--border);
+  }
+  #depth-view .ob-table-wrap { border-left: 1px solid var(--border); }
+
+  /* OHLC legend — tabular-nums so values don't jump */
+  #ohlc-legend { font-variant-numeric: tabular-nums; }
+
   /* ── Chart panel ── */
   .chart-panel {
     background: var(--surface);
@@ -642,69 +682,76 @@
     </a>
   </div>
 
-  <!-- Depth chart + order book -->
-  <div class="ob-panel">
-    <div class="depth-card">
-      <div class="ob-header">
-        Market Depth
-        <span class="text-muted" id="depth-coin-label" style="font-weight:400;font-size:11px"><%= coin %>/USDT</span>
-      </div>
-      <canvas id="depth-canvas"></canvas>
-    </div>
-    <div class="ob-card">
-      <div class="ob-header">Order Book <span class="text-muted" style="font-weight:400;font-size:11px">(top 10)</span></div>
-      <table id="ob-table">
-        <thead>
-          <tr>
-            <th>Price</th>
-            <th>Size</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody id="ob-tbody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Chart panel -->
+  <!-- Chart + Depth combined panel -->
   <div class="chart-panel">
     <div class="chart-toolbar">
-      <span class="chart-toolbar-title" id="chart-coin-label"><%= coin %>/USDT</span>
-      <select id="chart-coin-select" style="background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:11px;padding:3px 6px;border-radius:3px;cursor:pointer;margin-right:4px">
-        <% for (const c of coins) { %>
-          <option value="<%= c %>" <%= c === coin ? 'selected' : '' %>><%= c %></option>
-        <% } %>
-      </select>
-      <div class="tf-group">
-        <button class="tf <%= interval === '1m'  ? 'active' : '' %>" data-tf="1m">1m</button>
-        <button class="tf <%= interval === '5m'  ? 'active' : '' %>" data-tf="5m">5m</button>
-        <button class="tf <%= interval === '15m' ? 'active' : '' %>" data-tf="15m">15m</button>
-        <button class="tf <%= interval === '1h'  ? 'active' : '' %>" data-tf="1h">1h</button>
-        <button class="tf <%= interval === '4h'  ? 'active' : '' %>" data-tf="4h">4h</button>
+      <!-- Chart / Depth tab toggle -->
+      <div class="tf-group" style="margin-right:0.5rem">
+        <button class="tf active" id="panel-tab-chart" aria-pressed="true">Chart</button>
+        <button class="tf"        id="panel-tab-depth" aria-pressed="false">Depth</button>
       </div>
+
+      <!-- Searchable coin input (populated from /api/funding-matrix) -->
+      <input class="coin-search" id="chart-coin-input" type="text"
+             list="chart-coin-list" value="<%= coin %>"
+             placeholder="Coin" autocomplete="off" spellcheck="false"
+             title="Type or pick a coin symbol">
+      <datalist id="chart-coin-list">
+        <% for (const c of coins) { %><option value="<%= c %>"><% } %>
+      </datalist>
+
+      <div class="tf-group" id="chart-tf-group">
+        <button class="tf" data-tf="1m">1m</button>
+        <button class="tf" data-tf="5m">5m</button>
+        <button class="tf" data-tf="15m">15m</button>
+        <button class="tf active" data-tf="1h">1h</button>
+        <button class="tf" data-tf="4h">4h</button>
+      </div>
+
+      <span id="chart-coin-label" class="text-muted" style="font-size:11px;margin-left:4px"><%= coin %>/USDT</span>
       <span class="chart-updated" id="chart-updated"></span>
     </div>
 
-    <div class="chart-row">
-      <div class="chart-row-label">Candles</div>
-      <div id="chart-candles">
-        <div id="ohlc-legend"></div>
+    <!-- ── Chart view ── -->
+    <div id="chart-view">
+      <div class="chart-row">
+        <div class="chart-row-label">Candles</div>
+        <div id="chart-candles">
+          <div id="ohlc-legend"></div>
+        </div>
+      </div>
+      <div class="chart-row">
+        <div class="chart-row-label">Volume &nbsp;<span style="color:#d29922;font-size:9px">· spread</span></div>
+        <div id="chart-volume"></div>
+      </div>
+      <div class="chart-row">
+        <div class="chart-row-label">RSI 14</div>
+        <div id="chart-rsi"></div>
+      </div>
+      <div class="chart-row">
+        <div class="chart-row-label">Equity</div>
+        <div id="chart-equity"></div>
       </div>
     </div>
 
-    <div class="chart-row">
-      <div class="chart-row-label">Volume &nbsp;<span style="color:#d29922;font-size:9px">· spread</span></div>
-      <div id="chart-volume"></div>
-    </div>
-
-    <div class="chart-row">
-      <div class="chart-row-label">RSI 14</div>
-      <div id="chart-rsi"></div>
-    </div>
-
-    <div class="chart-row">
-      <div class="chart-row-label">Equity</div>
-      <div id="chart-equity"></div>
+    <!-- ── Depth view (hidden until tab switched) ── -->
+    <div id="depth-view">
+      <div id="depth-view-inner">
+        <div>
+          <div class="ob-header">
+            Market Depth
+            <span class="text-muted" id="depth-coin-label" style="font-weight:400;font-size:11px"><%= coin %>/USDT</span>
+          </div>
+          <canvas id="depth-canvas"></canvas>
+        </div>
+        <div class="ob-table-wrap">
+          <div class="ob-header">Order Book <span class="text-muted" style="font-weight:400;font-size:11px">(top 10)</span></div>
+          <table id="ob-table">
+            <thead><tr><th>Price</th><th>Size</th><th>Total</th></tr></thead>
+            <tbody id="ob-tbody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1095,178 +1142,222 @@
       handleScale: { mouseWheel: true, pinch: true },
     };
   }
-  const commonOpts = chartOpts();
+  // ── Mutable chart refs (nulled on dispose, recreated on mount) ───────────
+  let candleChart = null, volChart = null, rsiChart = null;
+  let candleSeries = null, volSeries = null, spreadSeries = null, rsiSeries = null;
+  let volMap = new Map(), rsiMap = new Map();
+  let latestCandle = null;
+  const legend = document.getElementById('ohlc-legend');
 
   const timeScaleOpts = { borderColor: '#30363d', timeVisible: true, secondsVisible: false };
 
-  // ── Three chart instances ───────────────────────────────────────────────
-  const candleChart = LC.createChart(document.getElementById('chart-candles'), {
-    ...commonOpts,
-    height: 450,
-    timeScale: { ...timeScaleOpts, visible: false },
-  });
-
-  const volChart = LC.createChart(document.getElementById('chart-volume'), {
-    ...commonOpts,
-    height: 120,
-    timeScale: { ...timeScaleOpts, visible: false },
-  });
-
-  const rsiChart = LC.createChart(document.getElementById('chart-rsi'), {
-    ...commonOpts,
-    height: 150,
-    timeScale: { ...timeScaleOpts, visible: false },
-  });
-
+  // ── Equity chart stays always mounted (separate row, no tab dependency) ──
   const equityChart = LC.createChart(document.getElementById('chart-equity'), {
-    ...commonOpts,
-    height: 100,
-    timeScale: timeScaleOpts,
+    ...chartOpts(), height: 100, timeScale: timeScaleOpts,
   });
-
-  // ── Candlestick series ──────────────────────────────────────────────────
-  const candleSeries = candleChart.addCandlestickSeries({
-    upColor:         '#3fb950',
-    downColor:       '#f85149',
-    borderUpColor:   '#3fb950',
-    borderDownColor: '#f85149',
-    wickUpColor:     '#3fb950',
-    wickDownColor:   '#f85149',
-  });
-
-  // ── Volume histogram ────────────────────────────────────────────────────
-  const volSeries = volChart.addHistogramSeries({
-    priceFormat:  { type: 'volume' },
-    priceScaleId: '',
-  });
-  volChart.priceScale('').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.2 } });
-
-  // ── Spread line (secondary, hidden scale) ───────────────────────────────
-  const spreadSeries = volChart.addLineSeries({
-    color:        '#d29922',
-    lineWidth:    1,
-    priceScaleId: 'spread',
-  });
-  volChart.priceScale('spread').applyOptions({
-    scaleMargins: { top: 0.6, bottom: 0 },
-    visible: false,
-  });
-
-  // ── RSI line ────────────────────────────────────────────────────────────
-  const rsiSeries = rsiChart.addLineSeries({ color: '#58a6ff', lineWidth: 1 });
-  rsiChart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
-  rsiSeries.createPriceLine({ price: 70, color: '#f85149', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70' });
-  rsiSeries.createPriceLine({ price: 30, color: '#3fb950', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30' });
-
-  // ── Equity curve line ───────────────────────────────────────────────────
   const equitySeries = equityChart.addAreaSeries({
-    lineColor:      '#58a6ff',
-    topColor:       'rgba(88,166,255,0.2)',
-    bottomColor:    'rgba(88,166,255,0)',
-    lineWidth:      1,
-    priceFormat:    { type: 'price', precision: 2, minMove: 0.01 },
+    lineColor: '#58a6ff', topColor: 'rgba(88,166,255,0.2)', bottomColor: 'rgba(88,166,255,0)',
+    lineWidth: 1, priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
   });
   equityChart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
 
-  // ── Time-scale sync ─────────────────────────────────────────────────────
-  let syncing = false;
-  function syncFrom(src, targets) {
-    src.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (syncing || !range) return;
-      syncing = true;
-      targets.forEach((t) => t.timeScale().setVisibleLogicalRange(range));
-      syncing = false;
+  // ── Mount / dispose candlestick+volume+RSI charts ─────────────────────
+  function mountCharts() {
+    if (candleChart) return; // already mounted
+
+    candleChart = LC.createChart(document.getElementById('chart-candles'), {
+      ...chartOpts(), height: 450, timeScale: { ...timeScaleOpts, visible: false },
     });
+    volChart = LC.createChart(document.getElementById('chart-volume'), {
+      ...chartOpts(), height: 120, timeScale: { ...timeScaleOpts, visible: false },
+    });
+    rsiChart = LC.createChart(document.getElementById('chart-rsi'), {
+      ...chartOpts(), height: 150, timeScale: { ...timeScaleOpts, visible: false },
+    });
+
+    candleSeries = candleChart.addCandlestickSeries({
+      upColor: '#3fb950', downColor: '#f85149',
+      borderUpColor: '#3fb950', borderDownColor: '#f85149',
+      wickUpColor: '#3fb950', wickDownColor: '#f85149',
+    });
+    volSeries = volChart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '' });
+    volChart.priceScale('').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.2 } });
+    spreadSeries = volChart.addLineSeries({ color: '#d29922', lineWidth: 1, priceScaleId: 'spread' });
+    volChart.priceScale('spread').applyOptions({ scaleMargins: { top: 0.6, bottom: 0 }, visible: false });
+    rsiSeries = rsiChart.addLineSeries({ color: '#58a6ff', lineWidth: 1 });
+    rsiChart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
+    rsiSeries.createPriceLine({ price: 70, color: '#f85149', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '70' });
+    rsiSeries.createPriceLine({ price: 30, color: '#3fb950', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '30' });
+
+    // Time-scale sync
+    let syncing = false;
+    function syncFrom(src, targets) {
+      src.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (syncing || !range) return;
+        syncing = true;
+        targets.forEach((t) => t.timeScale().setVisibleLogicalRange(range));
+        syncing = false;
+      });
+    }
+    syncFrom(candleChart, [volChart, rsiChart]);
+    syncFrom(volChart,    [candleChart, rsiChart]);
+    syncFrom(rsiChart,    [candleChart, volChart]);
+
+    // Crosshair sync
+    let crossSyncing = false;
+    candleChart.subscribeCrosshairMove((param) => {
+      if (crossSyncing) return; crossSyncing = true;
+      if (!param.point || !param.time) {
+        volChart.clearCrosshairPosition(); rsiChart.clearCrosshairPosition();
+      } else {
+        const t = param.time;
+        volChart.setCrosshairPosition(volMap.get(t) ?? 0, t, volSeries);
+        rsiChart.setCrosshairPosition(rsiMap.get(t) ?? 50, t, rsiSeries);
+      }
+      crossSyncing = false;
+    });
+    volChart.subscribeCrosshairMove((param) => {
+      if (crossSyncing) return; crossSyncing = true;
+      if (!param.point || !param.time) {
+        candleChart.clearCrosshairPosition(); rsiChart.clearCrosshairPosition();
+      } else {
+        rsiChart.setCrosshairPosition(rsiMap.get(param.time) ?? 50, param.time, rsiSeries);
+      }
+      crossSyncing = false;
+    });
+    rsiChart.subscribeCrosshairMove((param) => {
+      if (crossSyncing) return; crossSyncing = true;
+      if (!param.point || !param.time) {
+        candleChart.clearCrosshairPosition(); volChart.clearCrosshairPosition();
+      } else {
+        volChart.setCrosshairPosition(volMap.get(param.time) ?? 0, param.time, volSeries);
+      }
+      crossSyncing = false;
+    });
+
+    // OHLC legend — updates on crosshair, falls back to latest candle
+    candleChart.subscribeCrosshairMove((param) => {
+      if (param.time && param.seriesData && param.seriesData.size > 0) {
+        const bar = param.seriesData.get(candleSeries);
+        if (bar) renderLegend(bar);
+      } else if (latestCandle) { renderLegend(latestCandle); }
+    });
+
+    if (latestCandle) renderLegend(latestCandle);
   }
-  syncFrom(candleChart, [volChart, rsiChart]);
-  syncFrom(volChart,    [candleChart, rsiChart]);
-  syncFrom(rsiChart,    [candleChart, volChart]);
 
-  // ── Crosshair sync ──────────────────────────────────────────────────────
-  // Maps from time (seconds) → data value, for look-up in crosshair handlers
-  const volMap = new Map();
-  const rsiMap = new Map();
-
-  let crossSyncing = false;
-
-  candleChart.subscribeCrosshairMove((param) => {
-    if (crossSyncing) return;
-    crossSyncing = true;
-    if (!param.point || !param.time) {
-      volChart.clearCrosshairPosition();
-      rsiChart.clearCrosshairPosition();
-    } else {
-      const t = param.time;
-      volChart.setCrosshairPosition(volMap.get(t) ?? 0, t, volSeries);
-      rsiChart.setCrosshairPosition(rsiMap.get(t) ?? 50, t, rsiSeries);
-    }
-    crossSyncing = false;
-  });
-
-  volChart.subscribeCrosshairMove((param) => {
-    if (crossSyncing) return;
-    crossSyncing = true;
-    if (!param.point || !param.time) {
-      candleChart.clearCrosshairPosition();
-      rsiChart.clearCrosshairPosition();
-    } else {
-      rsiChart.setCrosshairPosition(rsiMap.get(param.time) ?? 50, param.time, rsiSeries);
-    }
-    crossSyncing = false;
-  });
-
-  rsiChart.subscribeCrosshairMove((param) => {
-    if (crossSyncing) return;
-    crossSyncing = true;
-    if (!param.point || !param.time) {
-      candleChart.clearCrosshairPosition();
-      volChart.clearCrosshairPosition();
-    } else {
-      volChart.setCrosshairPosition(volMap.get(param.time) ?? 0, param.time, volSeries);
-    }
-    crossSyncing = false;
-  });
+  function disposeCharts() {
+    [candleChart, volChart, rsiChart].forEach((c) => { if (c) c.remove(); });
+    candleChart = volChart = rsiChart = null;
+    candleSeries = volSeries = spreadSeries = rsiSeries = null;
+    volMap.clear(); rsiMap.clear();
+  }
 
   // ── OHLC legend ─────────────────────────────────────────────────────────
-  const legend = document.getElementById('ohlc-legend');
-  let latestCandle = null;
-
   function renderLegend(bar) {
     if (!bar || !legend) return;
+    const dp  = bar.close >= 1000 ? 1 : bar.close >= 10 ? 2 : 4;
     const pct = ((bar.close - bar.open) / bar.open * 100);
-    const col = pct >= 0 ? '#3fb950' : '#f85149';
+    const col = pct >= 0 ? getCssVar('--green') || '#3fb950' : getCssVar('--red') || '#f85149';
     legend.innerHTML =
-      '<span class="lbl">O</span>' + bar.open.toFixed(1) + '&nbsp;&nbsp;' +
-      '<span class="lbl">H</span>' + bar.high.toFixed(1) + '&nbsp;&nbsp;' +
-      '<span class="lbl">L</span>' + bar.low.toFixed(1)  + '&nbsp;&nbsp;' +
-      '<span class="lbl">C</span>' + bar.close.toFixed(1) + '&nbsp;&nbsp;' +
-      '<span style="color:' + col + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</span>';
+      '<span class="lbl">O</span>' + bar.open.toFixed(dp) + '&nbsp;' +
+      '<span class="lbl">H</span>' + bar.high.toFixed(dp) + '&nbsp;' +
+      '<span class="lbl">L</span>' + bar.low.toFixed(dp)  + '&nbsp;' +
+      '<span class="lbl">C</span>' + bar.close.toFixed(dp) + '&nbsp;&nbsp;' +
+      '<span style="color:' + col + ';font-variant-numeric:tabular-nums">' +
+      (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%</span>';
   }
 
-  candleChart.subscribeCrosshairMove((param) => {
-    if (param.time && param.seriesData && param.seriesData.size > 0) {
-      const bar = param.seriesData.get(candleSeries);
-      if (bar) renderLegend(bar);
-    } else if (latestCandle) {
-      renderLegend(latestCandle);
+  // ── Chart / Depth tab toggle ─────────────────────────────────────────────
+  let activeTab = 'chart';
+  const chartView = document.getElementById('chart-view');
+  const depthView = document.getElementById('depth-view');
+  const tabChart  = document.getElementById('panel-tab-chart');
+  const tabDepth  = document.getElementById('panel-tab-depth');
+
+  function activateTab(tab) {
+    if (tab === activeTab) return;
+    activeTab = tab;
+    if (tab === 'chart') {
+      depthView.style.display = 'none';
+      chartView.style.display = '';
+      tabChart.classList.add('active');    tabChart.setAttribute('aria-pressed', 'true');
+      tabDepth.classList.remove('active'); tabDepth.setAttribute('aria-pressed', 'false');
+      mountCharts();
+      refreshChart();
+    } else {
+      chartView.style.display = 'none';
+      depthView.style.display = '';
+      tabDepth.classList.add('active');    tabDepth.setAttribute('aria-pressed', 'true');
+      tabChart.classList.remove('active'); tabChart.setAttribute('aria-pressed', 'false');
+      disposeCharts();
     }
+  }
+  if (tabChart) tabChart.addEventListener('click', () => activateTab('chart'));
+  if (tabDepth) tabDepth.addEventListener('click', () => activateTab('depth'));
+
+  // ── Coin state + timeframe ───────────────────────────────────────────────
+  let chartCoin = '<%= coin %>';
+  let chartTf   = '1h';
+  let firstLoad = true;
+
+  // Populate coin datalist from /api/funding-matrix (single source of truth)
+  fetch('/api/funding-matrix')
+    .then((r) => r.ok ? r.json() : null)
+    .then((data) => {
+      if (!data || !Array.isArray(data.coins)) return;
+      const dl = document.getElementById('chart-coin-list');
+      if (dl) dl.innerHTML = data.coins.map((c) => `<option value="${c.coin}">`).join('');
+    })
+    .catch(() => {});
+
+  // Coin input handler — fires on Enter or blur when value changed
+  const coinInput = document.getElementById('chart-coin-input');
+  function applyCoinChange() {
+    const v = (coinInput?.value || '').toUpperCase().trim();
+    if (!v || v === chartCoin) return;
+    chartCoin = v;
+    const lbl = document.getElementById('chart-coin-label');
+    if (lbl) lbl.textContent = chartCoin + '/USDT';
+    const depthLbl = document.getElementById('depth-coin-label');
+    if (depthLbl) depthLbl.textContent = chartCoin + '/USDT';
+    firstLoad = true;
+    if (activeTab === 'chart') refreshChart();
+  }
+  if (coinInput) {
+    coinInput.addEventListener('change',  applyCoinChange); // datalist pick
+    coinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { coinInput.blur(); applyCoinChange(); } });
+  }
+
+  // Timeframe buttons
+  document.getElementById('chart-tf-group')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-tf]');
+    if (!btn) return;
+    chartTf = btn.dataset.tf;
+    document.querySelectorAll('#chart-tf-group .tf').forEach((b) => b.classList.toggle('active', b === btn));
+    firstLoad = true;
+    if (activeTab === 'chart') refreshChart();
   });
 
-  // ── fitAll ──────────────────────────────────────────────────────────────
-  function fitAll() {
-    candleChart.timeScale().fitContent();
-    // volChart and rsiChart follow via sync
-  }
-
   // ── Chart data refresh ──────────────────────────────────────────────────
-  let firstLoad = true;
-  let chartCoin = document.getElementById('chart-coin-select')?.value || '';
-
   async function refreshChart() {
-    const coinParam = document.getElementById('chart-coin-select')?.value || chartCoin;
+    if (!candleChart) mountCharts(); // ensure charts are mounted
+    const updEl = document.getElementById('chart-updated');
     try {
-      const data = await fetch('/api/candles?coin=' + coinParam).then((r) => r.json());
-      if (!data.candles || data.candles.length === 0) return;
+      const url  = `/api/candles/dynamic?coin=${encodeURIComponent(chartCoin)}&interval=${chartTf}`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        // Unknown coin or no data — show inline error in legend
+        if (legend) legend.innerHTML = '<span style="color:var(--muted)">' + (data.error || 'No data') + '</span>';
+        if (updEl) updEl.textContent = 'error';
+        return;
+      }
+      if (!data.candles || data.candles.length === 0) {
+        if (legend) legend.innerHTML = '<span style="color:var(--muted)">No candle data for ' + chartCoin + '</span>';
+        return;
+      }
 
       candleSeries.setData(data.candles);
       candleSeries.setMarkers(data.markers || []);
@@ -1274,36 +1365,24 @@
       if (data.rsi && data.rsi.length > 0) rsiSeries.setData(data.rsi);
       if (data.spread && data.spread.length > 0) spreadSeries.setData(data.spread);
 
-      // Rebuild lookup maps for crosshair sync
-      volMap.clear();
-      (data.volume || []).forEach((d) => volMap.set(d.time, d.value));
-      rsiMap.clear();
-      (data.rsi || []).forEach((d) => rsiMap.set(d.time, d.value));
+      volMap.clear(); (data.volume || []).forEach((d) => volMap.set(d.time, d.value));
+      rsiMap.clear(); (data.rsi    || []).forEach((d) => rsiMap.set(d.time, d.value));
 
-      if (firstLoad) { fitAll(); firstLoad = false; }
+      if (firstLoad) { candleChart.timeScale().fitContent(); firstLoad = false; }
 
-      // Update OHLC legend with latest candle
       latestCandle = data.candles[data.candles.length - 1];
       renderLegend(latestCandle);
-
-      const el = document.getElementById('chart-updated');
-      if (el) el.textContent = 'updated ' + new Date().toLocaleTimeString();
+      if (updEl) updEl.textContent = 'updated ' + new Date().toLocaleTimeString();
     } catch (e) {
       console.warn('Chart refresh failed:', e);
+      if (updEl) updEl.textContent = 'error';
     }
   }
 
+  // Initial mount and fetch
+  mountCharts();
   refreshChart();
-  setInterval(refreshChart, 10000);
-
-  // Coin selector → reload chart
-  document.getElementById('chart-coin-select')?.addEventListener('change', (e) => {
-    chartCoin = e.target.value;
-    const labelEl = document.getElementById('chart-coin-label');
-    if (labelEl) labelEl.textContent = chartCoin + '/USDT';
-    firstLoad = true;
-    refreshChart();
-  });
+  setInterval(() => { if (activeTab === 'chart') refreshChart(); }, 10000);
 
   // ── Stats refresh (no page reload) ─────────────────────────────────────
   function fmtPrice(p) {
@@ -1621,35 +1700,7 @@
     void refreshOrderbook();
   });
 
-  // ── Timeframe buttons ───────────────────────────────────────────────────
-  document.querySelectorAll('.tf').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const interval = btn.dataset.tf;
-      if (!interval) return;
-
-      document.querySelectorAll('.tf').forEach((b) => { b.classList.remove('active'); b.disabled = false; });
-      btn.classList.add('active');
-      btn.disabled = true;
-
-      try {
-        const res = await fetch('/api/interval', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ interval }),
-        });
-        if (res.ok) {
-          firstLoad = true; // re-fit after new data loads
-          await refreshChart();
-        } else {
-          console.warn('Interval change failed:', await res.text());
-        }
-      } catch (e) {
-        console.warn('Interval change error:', e);
-      } finally {
-        btn.disabled = false;
-      }
-    });
-  });
+  // Timeframe buttons are handled by the scoped #chart-tf-group listener above.
 
   // ── Bots teaser (count badge) ─────────────────────────────────────────────
   async function refreshBotsTeaser() {
@@ -1667,9 +1718,13 @@
   // ── Resize observer ─────────────────────────────────────────────────────
   if (typeof ResizeObserver !== 'undefined') {
     const ro = new ResizeObserver(() => {
-      [candleChart, volChart, rsiChart, equityChart].forEach((c) => c.applyOptions({ width: 0 }));
+      // Guard against null — charts may be disposed when depth tab is active
+      [candleChart, volChart, rsiChart, equityChart]
+        .filter(Boolean)
+        .forEach((c) => c.applyOptions({ width: 0 }));
     });
-    ro.observe(document.querySelector('.chart-panel'));
+    const panel = document.querySelector('.chart-panel');
+    if (panel) ro.observe(panel);
   }
 
 })();
