@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && bash scripts/check-ejs-scripts.sh",
+    "check:ejs": "bash scripts/check-ejs-scripts.sh",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -1860,10 +1860,9 @@
         }
 
         if (!chart) initChart();
-        var pts = downsample(rows, 500).map(function (r) ({
-          time:  Math.floor(r.ts / 1000),
-          value: isFinite(r.equity_usd) ? r.equity_usd : 0,
-        }));
+        var pts = downsample(rows, 500).map(function (r) {
+          return { time: Math.floor(r.ts / 1000), value: isFinite(r.equity_usd) ? r.equity_usd : 0 };
+        });
         series.setData(pts);
         chart.timeScale().fitContent();
         if (updatedEl) updatedEl.textContent = rows.length + ' pts';
@@ -1961,15 +1960,15 @@
         var toSec = function (b) { return Math.floor(b / 1000); };
         hlSeries.setData(
           downsample(aligned.filter(function (r) { return r.hl !== null; }), 500)
-            .map(function (r) ({ time: toSec(r.ts), value: r.hl }))
+            .map(function (r) { return { time: toSec(r.ts), value: r.hl }; })
         );
         dydxSeries.setData(
           downsample(aligned.filter(function (r) { return r.dydx !== null; }), 500)
-            .map(function (r) ({ time: toSec(r.ts), value: r.dydx }))
+            .map(function (r) { return { time: toSec(r.ts), value: r.dydx }; })
         );
         spreadSeries.setData(
           downsample(aligned.filter(function (r) { return r.spread !== null; }), 500)
-            .map(function (r) ({ time: toSec(r.ts), value: r.spread }))
+            .map(function (r) { return { time: toSec(r.ts), value: r.spread }; })
         );
         chart.timeScale().fitContent();
         if (updatedEl) updatedEl.textContent = aligned.length + ' buckets';
