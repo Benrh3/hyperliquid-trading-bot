@@ -628,6 +628,7 @@
       <div class="fm-meta">
         <span id="fm-updated">—</span>
         <span class="fm-stale-badge" id="fm-stale">STALE</span>
+        <span id="fm-data-source" style="font-size:10px;color:var(--muted);padding:1px 6px;border:1px solid var(--border);border-radius:3px;display:none"></span>
       </div>
       <div class="fm-refresh">
         refreshes in <span class="fm-countdown" id="fm-countdown">45</span>s
@@ -863,12 +864,17 @@
       var sign = r >= 0 ? '+' : '';
       return sign + (r * 100).toFixed(4) + '%';
     },
-    /** Annualized rate: +36.8%/yr */
+    /** Annualized rate: +36.8%/yr — capped at ±300%/yr (winsorised) */
     ann: function (r) {
       if (r == null || !isFinite(r)) return null;
-      var sign = r >= 0 ? '+' : '';
-      var pct  = r * HOURS_PER_YEAR * 100;
-      return sign + (Math.abs(pct) >= 100 ? pct.toFixed(0) : pct.toFixed(1)) + '%/yr';
+      var pct = r * HOURS_PER_YEAR * 100;
+      if (!isFinite(pct)) return null;
+      // Client-side cap mirrors server-side clampAnnRate so junk values never render
+      var ANN_CAP = 300;
+      var capped  = Math.max(-ANN_CAP, Math.min(ANN_CAP, pct));
+      var sign    = capped >= 0 ? '+' : '';
+      var suffix  = Math.abs(pct) > ANN_CAP ? '>' : '';
+      return suffix + sign + (Math.abs(capped) >= 100 ? capped.toFixed(0) : capped.toFixed(1)) + '%/yr';
     },
     /** Spread magnitude (no sign): 0.0006% */
     spread: function (r) {
@@ -1056,6 +1062,15 @@
     } else {
       updatedEl.textContent = 'not yet updated';
       staleEl.classList.add('visible');
+    }
+    // Data-source label — transparent that rates may come from mainnet while trading testnet
+    var dsEl = document.getElementById('fm-data-source');
+    if (dsEl && data.dataNetwork) {
+      dsEl.textContent = 'funding: ' + data.dataNetwork + ' · read-only';
+      dsEl.style.display = 'inline';
+      dsEl.title = data.dataNetwork === 'mainnet'
+        ? 'Funding rates sourced from mainnet public indexers — no wallet, no orders. Set FUNDING_DATA_NETWORK=testnet to override.'
+        : 'Funding rates sourced from testnet indexers (rates may be zero on thin markets).';
     }
   }
   function formatAge(ms) {

@@ -4,10 +4,70 @@ import type { Logger } from "./logger.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DYDX_INDEXER = "https://indexer.v4testnet.dydx.exchange/v4";
 const POLL_INTERVAL_MS = 45_000;
 const FETCH_TIMEOUT_MS = 12_000;
 const DEFAULT_TOP_N    = 25;
+
+/**
+ * Maximum magnitude for annualised funding display (±300 %/yr).
+ * Thin-market coins occasionally produce nonsensical values like -97 950 %/yr;
+ * winsorising at this cap keeps the heatmap colour scale readable.
+ */
+export const ANN_RATE_CAP_PCT = 300; // %/yr
+
+// ── Network configuration for funding data (read-only, never execution) ───────
+
+/**
+ * FUNDING_DATA_NETWORK controls which public indexers the funding-matrix poller
+ * reads from.  It is intentionally separate from config.exchange.network so that
+ * funding data can be sourced from mainnet (meaningful rates, real OI) while all
+ * order execution stays on testnet.
+ *
+ * Set FUNDING_DATA_NETWORK=mainnet in .env to read from:
+ *   HL   → https://api.hyperliquid.xyz/info  (public, no auth)
+ *   dYdX → https://indexer.dydx.trade/v4     (public, no auth)
+ *
+ * Default is "mainnet" because testnet indexers return zero rates (no premium).
+ *
+ * This function is exported so it can be unit-tested independently.
+ */
+export function getFundingDataNetwork(): "mainnet" | "testnet" {
+  const raw = process.env.FUNDING_DATA_NETWORK?.trim().toLowerCase();
+  if (raw === "testnet") return "testnet";
+  return "mainnet"; // default: mainnet data even when trading on testnet
+}
+
+/** URL pair for a given data network — purely a mapping, no side effects. */
+export function getFundingDataUrls(network: "mainnet" | "testnet"): {
+  hlIsTestnet: boolean;
+  dydxIndexer: string;
+} {
+  if (network === "testnet") {
+    return {
+      hlIsTestnet: true,
+      dydxIndexer: "https://indexer.v4testnet.dydx.exchange/v4",
+    };
+  }
+  return {
+    hlIsTestnet: false,
+    dydxIndexer: "https://indexer.dydx.trade/v4",
+  };
+}
+
+/**
+ * Clamp an annualised rate (as a fraction, e.g. 0.001 = 0.1%/hr → ~8.76%/yr)
+ * to ±ANN_RATE_CAP_PCT percent/year so junk values don't distort the display.
+ * Returns null for null input.
+ */
+export function clampAnnRate(rateHourly: number | null): number | null {
+  if (rateHourly === null) return null;
+  const HOURS_PER_YEAR = 8_760;
+  const annPct = rateHourly * HOURS_PER_YEAR * 100;
+  if (!Number.isFinite(annPct)) return null;
+  const clamped = Math.max(-ANN_RATE_CAP_PCT, Math.min(ANN_RATE_CAP_PCT, annPct));
+  // Convert back to hourly fraction so callers can format consistently
+  return clamped / (HOURS_PER_YEAR * 100);
+}
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -25,10 +85,11 @@ export interface MatrixEntry {
 }
 
 export interface FundingMatrix {
-  updatedAt: string;   // ISO timestamp of last successful poll
-  stale:     boolean;  // true when last poll failed; data is from prior cycle
-  venues:    string[];
-  coins:     MatrixEntry[];
+  updatedAt:   string;              // ISO timestamp of last successful poll
+  stale:       boolean;             // true when last poll failed; data is from prior cycle
+  venues:      string[];
+  coins:       MatrixEntry[];
+  dataNetwork: "mainnet" | "testnet"; // which public indexers supplied this data
 }
 
 // ── Internal raw-data types used by the pure builder ─────────────────────────
@@ -67,10 +128,11 @@ export function buildMatrixEntries(
     .sort((a, b) => b.oiUsd - a.oiUsd)
     .slice(0, topN);
 
-  // 3. Build entries for the top-N coins
+  // 3. Build entries for the top-N coins.
+  //    Rates are winsorised via clampAnnRate so display is always within ±ANN_RATE_CAP_PCT.
   return ranked.map(({ coin, oiUsd }) => {
-    const hlRate   = safeNum(hlCoins.get(coin)?.rateHourly);
-    const dydxRate = safeNum(dydxCoins.get(coin)?.rateHourly);
+    const hlRate   = clampAnnRate(safeNum(hlCoins.get(coin)?.rateHourly));
+    const dydxRate = clampAnnRate(safeNum(dydxCoins.get(coin)?.rateHourly));
 
     const spread    = computeSpread(hlRate, dydxRate);
     const bestPair  = computeBestPair(hlRate, dydxRate);
@@ -108,23 +170,39 @@ export function safeNum(v: number | string | undefined | null): number | null {
 // ── Poller class ──────────────────────────────────────────────────────────────
 
 export class FundingMatrixPoller {
-  private readonly info:   InfoClient;
-  private readonly logger: Logger | undefined;
-  private readonly topN:   number;
+  private readonly info:        InfoClient;
+  private readonly logger:      Logger | undefined;
+  private readonly topN:        number;
+  private readonly dydxIndexer: string;
+  private readonly dataNetwork: "mainnet" | "testnet";
 
   private cache: FundingMatrix = {
-    updatedAt: new Date(0).toISOString(),
-    stale:     true,
-    venues:    ["hyperliquid", "dydx"],
-    coins:     [],
+    updatedAt:   new Date(0).toISOString(),
+    stale:       true,
+    venues:      ["hyperliquid", "dydx"],
+    coins:       [],
+    dataNetwork: "mainnet",
   };
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(logger?: Logger, topN = DEFAULT_TOP_N) {
-    const isTestnet = config.exchange.network === "testnet";
-    this.info   = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
-    this.logger = logger;
-    this.topN   = topN;
+    // ── Data network is SEPARATE from trading network ─────────────────────────
+    // FUNDING_DATA_NETWORK controls which public indexers we READ from.
+    // config.exchange.network controls which chain we TRADE on.
+    // These must never be conflated: the poller is read-only and never calls
+    // openPosition / closePosition / checkTradingReady.
+    this.dataNetwork  = getFundingDataNetwork();
+    const { hlIsTestnet, dydxIndexer } = getFundingDataUrls(this.dataNetwork);
+
+    this.info        = new InfoClient({ transport: new HttpTransport({ isTestnet: hlIsTestnet }) });
+    this.dydxIndexer = dydxIndexer;
+    this.logger      = logger;
+    this.topN        = topN;
+
+    console.log(
+      `[funding-matrix] Data network: ${this.dataNetwork} ` +
+      `(HL: ${hlIsTestnet ? "testnet" : "mainnet"}, dYdX: ${this.dydxIndexer})`,
+    );
   }
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -177,10 +255,11 @@ export class FundingMatrixPoller {
     const coins = buildMatrixEntries(hlCoins, dydxCoins, this.topN);
 
     this.cache = {
-      updatedAt: new Date().toISOString(),
-      stale:     anyFailed,  // partial failure → stale flag but data still updates
-      venues:    ["hyperliquid", "dydx"],
+      updatedAt:   new Date().toISOString(),
+      stale:       anyFailed,  // partial failure → stale flag but data still updates
+      venues:      ["hyperliquid", "dydx"],
       coins,
+      dataNetwork: this.dataNetwork,
     };
 
     // Persist funding samples — fire-and-forget
@@ -220,7 +299,7 @@ export class FundingMatrixPoller {
   }
 
   private async fetchDydx(): Promise<Map<string, VenueCoinData>> {
-    const resp = await fetch(`${DYDX_INDEXER}/perpetualMarkets`, {
+    const resp = await fetch(`${this.dydxIndexer}/perpetualMarkets`, {
       headers: { Accept: "application/json" },
       signal:  AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
