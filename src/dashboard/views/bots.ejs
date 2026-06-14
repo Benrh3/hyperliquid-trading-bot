@@ -266,6 +266,7 @@
     <span class="dot"></span>
     <span class="badge badge-net"><%= network %></span>
     <span class="text-muted"><%= coin %></span>
+    <% if (isAdmin) { %><a href="/logout" class="nav-link">Logout</a><% } else if (authConfigured) { %><a href="/login" class="nav-link">Login</a><% } %>
     <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
   </div>
 </nav>
@@ -371,7 +372,7 @@
         display:none;
       ">Open risk: —</span>
       <span id="refresh-badge">Loading…</span>
-      <button class="bc-btn primary" id="btn-add-bot">+ Add Bot</button>
+      <% if (isAdmin) { %><button class="bc-btn primary" id="btn-add-bot">+ Add Bot</button><% } %>
     </div>
   </div>
   <div class="bots-grid" id="bots-grid">
@@ -388,6 +389,8 @@
 <script>
 (function () {
   'use strict';
+
+  const IS_ADMIN = <%= isAdmin %>;
 
   // ── State ─────────────────────────────────────────────────────────────────
   let allBots    = [];   // most recent /api/bots response (used by modal)
@@ -497,9 +500,9 @@
       ? `<span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:99px;background:rgba(240,136,62,.15);color:#f0883e;border:1px solid rgba(240,136,62,.35)">LIVE</span>`
       : `<span style="font-size:10px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:99px;background:rgba(139,148,158,.15);color:var(--muted)">PAPER</span>`;
 
-    const toggleBtn = `<button class="bc-btn cv-mode-toggle" data-id="${b.id}" data-current="${mode}" style="font-size:11px;padding:2px 8px">
+    const toggleBtn = IS_ADMIN ? `<button class="bc-btn cv-mode-toggle" data-id="${b.id}" data-current="${mode}" style="font-size:11px;padding:2px 8px">
       ${isLive ? 'Switch to PAPER' : 'Switch to LIVE'}
-    </button>`;
+    </button>` : '';
 
     return `
       <div class="bc-row" style="align-items:center">
@@ -591,10 +594,10 @@
     const isCrossVenue = b.strategyId === 'cross-venue-funding-basis';
     const isError      = b.status === 'error';
 
-    const pauseBtn = (isFunding || isCrossVenue || isError) ? '' : (b.status === 'running'
+    const pauseBtn = (!IS_ADMIN || isFunding || isCrossVenue || isError) ? '' : (b.status === 'running'
       ? `<button class="bc-btn" data-action="pause" data-id="${b.id}">Pause</button>`
       : `<button class="bc-btn primary" data-action="resume" data-id="${b.id}">Resume</button>`);
-    const deleteBtn = (isFunding || isCrossVenue) ? '' :
+    const deleteBtn = (!IS_ADMIN || isFunding || isCrossVenue) ? '' :
       `<button class="bc-btn danger" data-action="delete" data-id="${b.id}" style="margin-left:auto">Delete</button>`;
     const errorBanner = isError
       ? `<div class="bc-error-msg">&#9888; ${esc(b.error || 'Unknown error')}</div>`
@@ -723,7 +726,7 @@
                   &nbsp;<span style="color:${uClr}">${upnl}</span>
                 </span>
                 <span class="orphan-age">${age}m ago</span>
-                <button class="btn-close-orphan" data-coin="${esc(o.coin)}">Close position</button>
+                ${IS_ADMIN ? `<button class="btn-close-orphan" data-coin="${esc(o.coin)}">Close position</button>` : ''}
               </div>`;
             }).join('');
 
@@ -955,7 +958,7 @@
   }
 
   // ── Event wiring ──────────────────────────────────────────────────────────
-  document.getElementById('btn-add-bot').addEventListener('click', openModal);
+  document.getElementById('btn-add-bot')?.addEventListener('click', openModal);
   document.getElementById('modal-x').addEventListener('click', closeModal);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   mSubmit.addEventListener('click', submitModal);

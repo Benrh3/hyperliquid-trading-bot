@@ -115,10 +115,19 @@
     <span class="dot"></span>
     <span class="badge badge-net"><%= network %></span>
     <span class="text-muted"><%= coin %></span>
+    <% if (isAdmin) { %><a href="/logout" class="nav-link">Logout</a><% } else if (authConfigured) { %><a href="/login" class="nav-link">Login</a><% } %>
     <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
   </div>
 </nav>
 
+<% if (!isAdmin) { %>
+<div class="builder-wrap">
+  <div class="builder-hdr">
+    <h1>Strategy Builder</h1>
+    <p>Log in as admin to create and save custom strategies.</p>
+  </div>
+</div>
+<% } else { %>
 <div class="builder-wrap">
   <div class="builder-hdr">
     <h1>Strategy Builder</h1>
@@ -226,7 +235,9 @@
     <span id="bld-msg"></span>
   </div>
 </div>
+<% } %>
 
+<% if (isAdmin) { %>
 <script>
 (function () {
   'use strict';
@@ -431,6 +442,7 @@
 
 })();
 </script>
+<% } %>
 
 </body>
 </html>

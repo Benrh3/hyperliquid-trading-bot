@@ -12,6 +12,8 @@ import type { BotManager } from "../bot-manager.js";
 import type { DydxFundingPoller } from "../dydx-funding.js";
 import type { FundingMatrixPoller } from "../funding-matrix.js";
 import { createRouter } from "./routes.js";
+import { createPublicArbRouter } from "./public-arb.js";
+import { isAuthenticated, requireAdmin, createAuthRouter } from "./auth.js";
 
 export interface BotState {
   lastPrices: Record<string, { mid: number; bid: number; ask: number }>;
@@ -113,9 +115,19 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
   app.set("view engine", "ejs");
   app.set("views", viewsDir);
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
   console.log(`[dashboard] Views directory: ${viewsDir}`);
 
+  // Auth: sets res.locals.isAdmin for every request (never blocks reads),
+  // then exposes /login and /logout, then blocks mutating requests from
+  // non-admins. If ADMIN_PASSWORD_HASH is unset, isAdmin is always false
+  // and /login redirects to "/" — the dashboard stays fully public.
+  app.use(isAuthenticated);
+  app.use("/", createAuthRouter());
+  app.use(requireAdmin);
+
   app.use("/", createRouter(logger, state, strategies, feed, executor, laneManager, dydxPoller, fundingMatrix));
+  app.use("/", createPublicArbRouter(logger, fundingMatrix));
 
   // env var takes precedence over the JSON config default so that DASHBOARD_PORT
   // in .env is respected without touching config files.

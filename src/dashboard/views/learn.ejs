@@ -177,6 +177,7 @@
     <span class="dot"></span>
     <span class="badge badge-net"><%= network %></span>
     <span class="text-muted"><%= coin %></span>
+    <% if (isAdmin) { %><a href="/logout" class="nav-link">Logout</a><% } else if (authConfigured) { %><a href="/login" class="nav-link">Login</a><% } %>
     <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
   </div>
 </nav>
