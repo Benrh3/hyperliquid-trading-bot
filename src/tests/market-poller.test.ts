@@ -125,7 +125,7 @@ describe("SnapshotPoller (dry-run, mocked HL client)", () => {
   it("writes a snapshot with the 9 hl-market level metrics tagged source/kind/captured_at", async () => {
     const store = new MarketStore(":memory:");
     const info  = makeMockInfo();
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, undefined, undefined, undefined, undefined, () => Promise.resolve(null));
 
     await poller.poll();
 
@@ -150,7 +150,7 @@ describe("SnapshotPoller (dry-run, mocked HL client)", () => {
   it("ignores a non-canonical same-name 'HYPE' token and resolves the canonical spot pair by tokenId", async () => {
     const store = new MarketStore(":memory:");
     const info  = makeMockInfo();
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, undefined, undefined, undefined, undefined, () => Promise.resolve(null));
 
     await poller.poll();
 
@@ -184,7 +184,7 @@ describe("SnapshotPoller (dry-run, mocked HL client)", () => {
       ],
     ]);
 
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, undefined, undefined, undefined, undefined, () => Promise.resolve(null));
     await poller.poll();
 
     const rows = store.getRecentSnapshots("HYPE", 10);
@@ -209,7 +209,7 @@ describe("SnapshotPoller (dry-run, mocked HL client)", () => {
       spotClearinghouseState: vi.fn().mockResolvedValue({ balances: [] }),
       userFillsByTime: vi.fn().mockResolvedValue([]),
     };
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"] }, info);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"] }, info, undefined, undefined, undefined, undefined, () => Promise.resolve(null));
 
     await expect(poller.poll()).resolves.toBeUndefined();
     expect(store.getRecentSnapshots("HYPE", 10)).toEqual([]);
@@ -229,7 +229,7 @@ describe("SnapshotPoller — CVD + book microstructure (stage 2)", () => {
       ["HYPE", makeMockAggregator(perpWindows, spotWindows)],
     ]);
 
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, aggregators);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, aggregators, undefined, undefined, undefined, () => Promise.resolve(null));
     await poller.poll();
 
     const rows = store.getRecentSnapshots("HYPE", 10);
@@ -277,7 +277,7 @@ describe("SnapshotPoller — CVD + book microstructure (stage 2)", () => {
       ["HYPE", makeMockAggregator(perpWindows, null)],
     ]);
 
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, aggregators);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, aggregators, undefined, undefined, undefined, () => Promise.resolve(null));
     await poller.poll();
 
     const rows = store.getRecentSnapshots("HYPE", 10);
@@ -297,7 +297,7 @@ describe("SnapshotPoller — CVD + book microstructure (stage 2)", () => {
 
     // No aggregators map injected, and poll() is called directly (without start()),
     // so this.aggregators is empty.
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, undefined, undefined, undefined, undefined, () => Promise.resolve(null));
     await poller.poll();
 
     const rows = store.getRecentSnapshots("HYPE", 10);
@@ -315,7 +315,7 @@ describe("SnapshotPoller — hl-native staking + AF (stage 3)", () => {
   it("writes the 7 hl-native metrics tagged source=hl-native, aggregating validatorSummaries incl. a jailed validator", async () => {
     const store = new MarketStore(":memory:");
     const info  = makeMockInfo();
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, undefined, undefined, undefined, undefined, () => Promise.resolve(null));
 
     await poller.poll();
 
@@ -361,7 +361,7 @@ describe("SnapshotPoller — hl-native staking + AF (stage 3)", () => {
       ]);
 
     try {
-      const poller = new SnapshotPoller(store, { symbols: ["HYPE"], pollIntervalMs: 60_000, retentionRawDays: 7 }, info);
+      const poller = new SnapshotPoller(store, { symbols: ["HYPE"], pollIntervalMs: 60_000, retentionRawDays: 7 }, info, undefined, undefined, undefined, undefined, () => Promise.resolve(null));
 
       await poller.poll();
       expect(info.userFillsByTime).toHaveBeenNthCalledWith(1, { user: AF_ADDRESS, startTime: T0 - 60_000 });
@@ -393,7 +393,7 @@ describe("SnapshotPoller — hl-native staking + AF (stage 3)", () => {
   it("poller integration: stage-3b stub keys never appear in a written snapshot", async () => {
     const store = new MarketStore(":memory:");
     const info  = makeMockInfo();
-    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info);
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, undefined, undefined, undefined, undefined, () => Promise.resolve(null));
 
     await poller.poll();
 

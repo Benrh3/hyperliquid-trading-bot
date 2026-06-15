@@ -50,7 +50,42 @@ const HL_NATIVE_KEYS = [
   "af_buy_fills",
 ];
 
-const STAGE_1_3_IMPLEMENTED_KEYS = [...HL_MARKET_LEVEL_KEYS, ...CVD_KEYS, ...BOOK_KEYS, ...HL_NATIVE_KEYS];
+const CEX_KEYS = [
+  "cex_oi_binance_hype",
+  "cex_oi_bybit_hype",
+  "cex_oi_okx_hype",
+  "cex_oi_total_hype",
+  "lsr_binance_global",
+  "lsr_binance_top_pos",
+  "lsr_binance_taker",
+  "lsr_bybit_account",
+  "lsr_okx_account",
+  "lsr_okx_top_pos",
+  "lsr_okx_taker",
+  "lsr_agg_long_frac",
+  "cex_liq_long_1h",
+  "cex_liq_short_1h",
+  "cex_liq_long_24h",
+  "cex_liq_short_24h",
+  "cex_liq_net_24h",
+  "cex_liq_count_24h",
+];
+
+const ON_CHAIN_KEYS = [
+  "cex_inflow_hype",
+  "cex_outflow_hype",
+  "cex_net_flow_hype",
+  "cex_net_flow_usdc",
+  "cex_total_balance_hype",
+  "cex_wallets_polled",
+  "holders_count",
+  "holder_supply_ex_system",
+  "holder_top10_share",
+  "holder_top50_share",
+  "holder_top100_share",
+];
+
+const STAGE_1_5_IMPLEMENTED_KEYS = [...HL_MARKET_LEVEL_KEYS, ...CVD_KEYS, ...BOOK_KEYS, ...HL_NATIVE_KEYS, ...CEX_KEYS, ...ON_CHAIN_KEYS];
 
 const ctx: MarketPollContext = {
   symbol: "HYPE",
@@ -79,6 +114,33 @@ const ctx: MarketPollContext = {
     staking: { totalStaked: 435_000_000, activeStaked: 434_000_000, validatorCount: 32 },
     af: { hypeBalance: 45_000_000, buyHypeWindow: 100, buyUsdcWindow: 2500, buyFills: 5 },
   },
+  cex: {
+    oi: { binance: 5_000_000, bybit: 3_000_000, okx: 1_700_000, total: 9_700_000 },
+    lsr: {
+      binanceGlobal: 1.1, binanceTopPos: 1.4, binanceTaker: 1.05,
+      bybitAccount: 1.5,
+      okxAccount: 1.03, okxTopPos: 1.17, okxTaker: 2.5,
+      aggLongFrac: 0.52,
+    },
+    liq: {
+      long1h: 10, short1h: 5, long24h: 200, short24h: 150, net24h: -50, count24h: 42,
+    },
+  },
+  onChain: {
+    totalBalance: 12_345.6,
+    walletsPolled: 3,
+    netFlow: 100,
+    inflow: 150,
+    outflow: 50,
+    netFlowUsdc: 2550,
+    holders: {
+      count: 243_766,
+      supplyExSystem: 142_800_000,
+      top10Share: 0.42,
+      top50Share: 0.65,
+      top100Share: 0.78,
+    },
+  },
 };
 
 describe("safeNum", () => {
@@ -98,15 +160,15 @@ describe("buildRegistry", () => {
     expect(registry.length).toBe(manifest.counts.total);
   });
 
-  it("implements compute() for exactly the 31 stage 1-3 metrics (9 level + 8 CVD/count + 7 book + 7 hl-native)", () => {
+  it("implements compute() for exactly the 60 stage 1-5 metrics (9 level + 8 CVD/count + 7 book + 7 hl-native + 18 cex-agg + 11 on-chain)", () => {
     const implemented = getImplementedMetrics().map((m) => m.key).sort();
-    expect(implemented).toEqual([...STAGE_1_3_IMPLEMENTED_KEYS].sort());
+    expect(implemented).toEqual([...STAGE_1_5_IMPLEMENTED_KEYS].sort());
   });
 
   it("leaves every other entry as a stub (compute === undefined)", () => {
     const registry = buildRegistry();
     for (const m of registry) {
-      if (STAGE_1_3_IMPLEMENTED_KEYS.includes(m.key)) continue;
+      if (STAGE_1_5_IMPLEMENTED_KEYS.includes(m.key)) continue;
       expect(m.compute).toBeUndefined();
     }
   });
@@ -208,6 +270,91 @@ describe("compute() for hl-native staking + AF metrics", () => {
     };
     expect(getImplementedMetrics().find((m) => m.key === "af_hype_balance")!.compute!(noAfBalance)).toBeNull();
     expect(getImplementedMetrics().find((m) => m.key === "af_buy_hype_window")!.compute!(noAfBalance)).toBe(0);
+  });
+});
+
+describe("compute() for cex-agg metrics", () => {
+  for (const key of CEX_KEYS) {
+    it(`computes a finite numeric value for ${key}`, () => {
+      const metric = getImplementedMetrics().find((m) => m.key === key);
+      expect(metric).toBeDefined();
+      const value = metric!.compute!(ctx);
+      expect(value).not.toBeNull();
+      expect(Number.isFinite(value)).toBe(true);
+    });
+  }
+
+  it("returns null for every cex-agg metric when no CEX data is available", () => {
+    const noCex: MarketPollContext = { ...ctx, cex: null };
+    for (const key of CEX_KEYS) {
+      const metric = getImplementedMetrics().find((m) => m.key === key)!;
+      expect(metric.compute!(noCex)).toBeNull();
+    }
+  });
+
+  it("nulls only the unavailable venue's OI/LSR fields, leaving other venues intact", () => {
+    const binanceDown: MarketPollContext = {
+      ...ctx,
+      cex: {
+        ...ctx.cex!,
+        oi: { ...ctx.cex!.oi, binance: null },
+        lsr: { ...ctx.cex!.lsr, binanceGlobal: null, binanceTopPos: null, binanceTaker: null },
+      },
+    };
+    expect(getImplementedMetrics().find((m) => m.key === "cex_oi_binance_hype")!.compute!(binanceDown)).toBeNull();
+    expect(getImplementedMetrics().find((m) => m.key === "lsr_binance_global")!.compute!(binanceDown)).toBeNull();
+    expect(getImplementedMetrics().find((m) => m.key === "cex_oi_bybit_hype")!.compute!(binanceDown)).toBe(3_000_000);
+    expect(getImplementedMetrics().find((m) => m.key === "lsr_okx_account")!.compute!(binanceDown)).toBe(1.03);
+  });
+
+  it("returns null cex_liq_* when no liquidation stream is running", () => {
+    const noLiq: MarketPollContext = { ...ctx, cex: { ...ctx.cex!, liq: null } };
+    for (const key of ["cex_liq_long_1h", "cex_liq_short_1h", "cex_liq_long_24h", "cex_liq_short_24h", "cex_liq_net_24h", "cex_liq_count_24h"]) {
+      expect(getImplementedMetrics().find((m) => m.key === key)!.compute!(noLiq)).toBeNull();
+    }
+  });
+});
+
+describe("compute() for on-chain CEX-flow + holder metrics", () => {
+  for (const key of ON_CHAIN_KEYS) {
+    it(`computes a finite numeric value for ${key}`, () => {
+      const metric = getImplementedMetrics().find((m) => m.key === key);
+      expect(metric).toBeDefined();
+      const value = metric!.compute!(ctx);
+      expect(value).not.toBeNull();
+      expect(Number.isFinite(value)).toBe(true);
+    });
+  }
+
+  it("returns null for every on-chain metric except cex_wallets_polled when onChain is null", () => {
+    const noOnChain: MarketPollContext = { ...ctx, onChain: null };
+    for (const key of ON_CHAIN_KEYS) {
+      const metric = getImplementedMetrics().find((m) => m.key === key)!;
+      expect(metric.compute!(noOnChain)).toBeNull();
+    }
+  });
+
+  it("returns null holder metrics when holders is null but balance/flow metrics remain", () => {
+    const noHolders: MarketPollContext = { ...ctx, onChain: { ...ctx.onChain!, holders: null } };
+    for (const key of ["holders_count", "holder_supply_ex_system", "holder_top10_share", "holder_top50_share", "holder_top100_share"]) {
+      expect(getImplementedMetrics().find((m) => m.key === key)!.compute!(noHolders)).toBeNull();
+    }
+    expect(getImplementedMetrics().find((m) => m.key === "cex_total_balance_hype")!.compute!(noHolders)).toBe(12_345.6);
+  });
+
+  it("the empty-wallets default state: balance/flow metrics null, wallets_polled = 0", () => {
+    const empty: MarketPollContext = {
+      ...ctx,
+      onChain: {
+        totalBalance: null, walletsPolled: 0,
+        netFlow: null, inflow: null, outflow: null, netFlowUsdc: null,
+        holders: null,
+      },
+    };
+    for (const key of ["cex_total_balance_hype", "cex_net_flow_hype", "cex_inflow_hype", "cex_outflow_hype", "cex_net_flow_usdc"]) {
+      expect(getImplementedMetrics().find((m) => m.key === key)!.compute!(empty)).toBeNull();
+    }
+    expect(getImplementedMetrics().find((m) => m.key === "cex_wallets_polled")!.compute!(empty)).toBe(0);
   });
 });
 

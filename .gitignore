@@ -15,6 +15,7 @@ config/custom-strategies.json
 config/lanes.json
 config/server.json
 config/snapshot.json
+config/cex-wallets.json
 
 # Runtime logs
 logs/

@@ -7,7 +7,7 @@
 
 import { HttpTransport, InfoClient } from "@nktkas/hyperliquid";
 import { getMarketDataNetwork, getMarketDataHlIsTestnet } from "./network.js";
-import { getImplementedMetrics, metricAppliesTo, type MarketPollContext } from "./registry.js";
+import { getImplementedMetrics, metricAppliesTo, safeNum, type MarketPollContext } from "./registry.js";
 import type { MarketStore, MetricInput } from "./store.js";
 import { TradesAggregator, type CoinWindows } from "./tradesAggregator.js";
 import { computePerpBookMetrics, computeSpotBookMetrics, type L2BookLike } from "./book.js";
@@ -16,6 +16,17 @@ import {
   type ValidatorSummaryLike, type SpotBalanceLike, type AfFillLike,
   type StakingMetrics, type AfMetrics,
 } from "./hlNative.js";
+import { BinanceSource } from "./cex/binance.js";
+import { BybitSource } from "./cex/bybit.js";
+import { OkxSource } from "./cex/okx.js";
+import type { CexDerivsSource, LongShortRatios } from "./cex/types.js";
+import { CexLiqTracker, type CexLiqWindows } from "./cex/liqTracker.js";
+import { computeOiTotal, computeAggLongFrac, aggregateLiqWindows } from "./cex/aggregate.js";
+import { loadCexWalletsConfig, bootstrapCexWalletsConfig } from "./onchain/wallets.js";
+import { DefaultOnChainBalanceReader } from "./onchain/balanceReader.js";
+import { aggregateBalances, computeFlows, computeHolderMetrics } from "./onchain/flows.js";
+import { fetchHolderDistribution } from "./onchain/hypurrscan.js";
+import { isPlaceholderAddress, type CexWalletsConfig, type OnChainBalanceReader, type HolderDistribution, type HolderMetrics } from "./onchain/types.js";
 
 const DEFAULT_POLL_INTERVAL_MS  = 60_000;
 const DEFAULT_RETENTION_RAW_DAYS = 7;
@@ -54,6 +65,18 @@ const HL_NATIVE_KEYS = [
   "total_staked_hype", "active_staked_hype", "validator_count",
   "af_hype_balance", "af_buy_hype_window", "af_buy_usdc_window", "af_buy_fills",
 ];
+
+const NULL_LSR: LongShortRatios = { accountRatio: null, topPositionRatio: null, takerRatio: null };
+
+/** How often the (large, ~14MB) holder distribution is refetched, independent of pollIntervalMs. Matches the manifest's staleAfterMs (65min) for holder metrics. */
+const HOLDER_REFRESH_MS = 60 * 60 * 1000;
+
+/** Per-symbol set of CEX venue adapters — see src/market/cex/types.ts (CexDerivsSource). */
+export interface CexVenueSources {
+  binance: CexDerivsSource;
+  bybit:   CexDerivsSource;
+  okx:     CexDerivsSource;
+}
 
 export interface SnapshotPollerConfig {
   symbols?:          string[];
@@ -132,14 +155,27 @@ export class SnapshotPoller {
   private readonly dataNetwork: "mainnet" | "testnet";
   private readonly aggregators: Map<string, TradesAggregatorLike>;
   private readonly aggregatorsInjected: boolean;
+  private readonly cexSources: Map<string, CexVenueSources>;
+  private readonly cexLiqTrackers = new Map<string, Map<string, CexLiqTracker>>();
   private spotCoinBySymbol = new Map<string, string | null>();
   private timer: ReturnType<typeof setInterval> | null = null;
+
+  private readonly walletsConfig: CexWalletsConfig;
+  private readonly balanceReader: OnChainBalanceReader;
+  private readonly fetchHolderDist: () => Promise<HolderDistribution | null>;
+  /** Per-symbol map of address -> balance from the previous poll, for flow-delta computation. Null until the first successful read. */
+  private prevBalances = new Map<string, Map<string, number>>();
+  private holderCache: { metrics: HolderMetrics; fetchedAt: number } | null = null;
 
   constructor(
     store: MarketStore,
     config: SnapshotPollerConfig = {},
     info?: MarketInfoClient,
     aggregators?: Map<string, TradesAggregatorLike>,
+    cexSources?: Map<string, CexVenueSources>,
+    walletsConfig?: CexWalletsConfig,
+    balanceReader?: OnChainBalanceReader,
+    fetchHolderDist?: () => Promise<HolderDistribution | null>,
   ) {
     this.store            = store;
     this.symbols          = config.symbols ?? ["HYPE"];
@@ -156,6 +192,29 @@ export class SnapshotPoller {
 
     this.aggregatorsInjected = !!aggregators;
     this.aggregators = aggregators ?? new Map();
+
+    this.cexSources = cexSources ?? new Map();
+    if (!cexSources) {
+      for (const symbol of this.symbols) {
+        this.cexSources.set(symbol, { binance: new BinanceSource(), bybit: new BybitSource(), okx: new OkxSource() });
+      }
+    }
+    for (const symbol of this.symbols) {
+      this.cexLiqTrackers.set(symbol, new Map([
+        ["binance", new CexLiqTracker()],
+        ["bybit", new CexLiqTracker()],
+        ["okx", new CexLiqTracker()],
+      ]));
+    }
+
+    if (walletsConfig) {
+      this.walletsConfig = walletsConfig;
+    } else {
+      bootstrapCexWalletsConfig();
+      this.walletsConfig = loadCexWalletsConfig();
+    }
+    this.balanceReader = balanceReader ?? new DefaultOnChainBalanceReader(this.info);
+    this.fetchHolderDist = fetchHolderDist ?? (() => fetchHolderDistribution());
 
     console.log(
       `[snapshot-poller] Data network: ${this.dataNetwork}, symbols: ${this.symbols.join(", ")}, ` +
@@ -174,6 +233,9 @@ export class SnapshotPoller {
     }
     await Promise.all([...this.aggregators.values()].map((a) => a.start()));
 
+    await this.resolveCexSymbols();
+    this.startCexLiqStreams();
+
     await this.poll(); // initial fill before the timer fires
     this.timer = setInterval(() => void this.poll(), this.pollIntervalMs);
     console.log(`[snapshot-poller] Poller started`);
@@ -182,6 +244,36 @@ export class SnapshotPoller {
   async stop(): Promise<void> {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     await Promise.all([...this.aggregators.values()].map((a) => a.stop()));
+    for (const sources of this.cexSources.values()) {
+      sources.binance.stopLiquidationStream();
+      sources.bybit.stopLiquidationStream();
+      sources.okx.stopLiquidationStream();
+    }
+  }
+
+  /** Resolve each symbol's per-venue CEX instrument (symbol/instId). Unlisted venues stay unavailable. Never throws. */
+  private async resolveCexSymbols(): Promise<void> {
+    await Promise.all(
+      [...this.cexSources.entries()].map(([symbol, sources]) =>
+        Promise.all([
+          sources.binance.resolveSymbol(symbol),
+          sources.bybit.resolveSymbol(symbol),
+          sources.okx.resolveSymbol(symbol),
+        ]),
+      ),
+    );
+  }
+
+  /** Start each available venue's liquidation stream, feeding its CexLiqTracker. Defensive reconnect lives in ReconnectingLiqStream. */
+  private startCexLiqStreams(): void {
+    for (const [symbol, sources] of this.cexSources) {
+      const trackers = this.cexLiqTrackers.get(symbol)!;
+      for (const [venueName, source] of Object.entries(sources) as [keyof CexVenueSources, CexDerivsSource][]) {
+        if (!source.isAvailable()) continue;
+        const tracker = trackers.get(venueName)!;
+        source.startLiquidationStream((event) => tracker.recordLiq(event.side, event.qtyCoins, event.timeMs));
+      }
+    }
   }
 
   /** Resolve each symbol's spot coin id (e.g. "@107") so the trades aggregator can subscribe to it. */
@@ -250,13 +342,26 @@ export class SnapshotPoller {
         hlNative = await this.fetchHlNative(symbol, spotCoinId, tokenIndex, capturedAt);
       }
 
-      const ctx: MarketPollContext = { symbol, perpCtx, spotCtx, circulatingSupply, cvd, book, hlNative };
+      let cex: MarketPollContext["cex"] = null;
+      let cexLiqMeta: Record<string, { filled: number }> = {};
+      const needsCex = implemented.some((m) => m.source === "cex-agg" && metricAppliesTo(m, symbol));
+      if (needsCex) {
+        ({ cex, cexLiqMeta } = await this.fetchCex(symbol));
+      }
+
+      let onChain: MarketPollContext["onChain"] = null;
+      const needsOnChain = implemented.some((m) => m.source === "on-chain" && metricAppliesTo(m, symbol));
+      if (needsOnChain) {
+        onChain = await this.fetchOnChain(symbol, perpCtx.markPx);
+      }
+
+      const ctx: MarketPollContext = { symbol, perpCtx, spotCtx, circulatingSupply, cvd, book, hlNative, cex, onChain };
 
       const metrics: MetricInput[] = [];
       for (const metric of implemented) {
         if (!metricAppliesTo(metric, symbol)) continue;
         const value = metric.compute!(ctx);
-        const meta = cvdMeta[metric.key];
+        const meta = cvdMeta[metric.key] ?? cexLiqMeta[metric.key];
         metrics.push({ key: metric.key, value, source: metric.source, kind: metric.kind, ...(meta !== undefined ? { meta } : {}) });
       }
 
@@ -364,6 +469,138 @@ export class SnapshotPoller {
       console.warn(`[snapshot-poller] AF data fetch failed for ${symbol}: ${(e as Error).message}`);
       return null;
     }
+  }
+
+  /**
+   * CEX open interest + long/short ratios (point-in-time REST poll, one per
+   * available venue) plus the aggregated liquidation windows accumulated by
+   * each venue's CexLiqTracker since its stream connected. Unavailable
+   * venues (not listed, geo-blocked, etc.) contribute null/NULL_LSR and are
+   * excluded from aggregates — never throws.
+   */
+  private async fetchCex(
+    symbol: string,
+  ): Promise<{ cex: MarketPollContext["cex"]; cexLiqMeta: Record<string, { filled: number }> }> {
+    const sources = this.cexSources.get(symbol);
+    if (!sources) return { cex: null, cexLiqMeta: {} };
+
+    const [binanceOi, bybitOi, okxOi, binanceLsr, bybitLsr, okxLsr] = await Promise.all([
+      sources.binance.isAvailable() ? sources.binance.fetchOpenInterest() : Promise.resolve(null),
+      sources.bybit.isAvailable()   ? sources.bybit.fetchOpenInterest()   : Promise.resolve(null),
+      sources.okx.isAvailable()     ? sources.okx.fetchOpenInterest()     : Promise.resolve(null),
+      sources.binance.isAvailable() ? sources.binance.fetchLongShortRatios() : Promise.resolve(NULL_LSR),
+      sources.bybit.isAvailable()   ? sources.bybit.fetchLongShortRatios()   : Promise.resolve(NULL_LSR),
+      sources.okx.isAvailable()     ? sources.okx.fetchLongShortRatios()     : Promise.resolve(NULL_LSR),
+    ]);
+
+    const total = computeOiTotal([binanceOi, bybitOi, okxOi]);
+    const aggLongFrac = computeAggLongFrac([
+      { accountRatio: binanceLsr.accountRatio, oi: binanceOi },
+      { accountRatio: bybitLsr.accountRatio,   oi: bybitOi },
+      { accountRatio: okxLsr.accountRatio,     oi: okxOi },
+    ]);
+
+    const trackers = this.cexLiqTrackers.get(symbol)!;
+    const availableLiqWindows: CexLiqWindows[] = [];
+    if (sources.binance.isAvailable()) availableLiqWindows.push(trackers.get("binance")!.getWindows());
+    if (sources.bybit.isAvailable())   availableLiqWindows.push(trackers.get("bybit")!.getWindows());
+    if (sources.okx.isAvailable())     availableLiqWindows.push(trackers.get("okx")!.getWindows());
+    const liqAgg = aggregateLiqWindows(availableLiqWindows);
+
+    const liq = liqAgg ? {
+      long1h:   liqAgg.longVol1h,
+      short1h:  liqAgg.shortVol1h,
+      long24h:  liqAgg.longVol24h,
+      short24h: liqAgg.shortVol24h,
+      net24h:   liqAgg.shortVol24h - liqAgg.longVol24h,
+      count24h: liqAgg.count24h,
+    } : null;
+
+    const cexLiqMeta: Record<string, { filled: number }> = {};
+    if (liqAgg) {
+      cexLiqMeta.cex_liq_long_1h    = { filled: liqAgg.filled1h };
+      cexLiqMeta.cex_liq_short_1h   = { filled: liqAgg.filled1h };
+      cexLiqMeta.cex_liq_long_24h   = { filled: liqAgg.filled24h };
+      cexLiqMeta.cex_liq_short_24h  = { filled: liqAgg.filled24h };
+      cexLiqMeta.cex_liq_net_24h    = { filled: liqAgg.filled24h };
+      cexLiqMeta.cex_liq_count_24h  = { filled: liqAgg.filled24h };
+    }
+
+    const cex: MarketPollContext["cex"] = {
+      oi: { binance: binanceOi, bybit: bybitOi, okx: okxOi, total },
+      lsr: {
+        binanceGlobal: binanceLsr.accountRatio,
+        binanceTopPos: binanceLsr.topPositionRatio,
+        binanceTaker:  binanceLsr.takerRatio,
+        bybitAccount:  bybitLsr.accountRatio,
+        okxAccount:    okxLsr.accountRatio,
+        okxTopPos:     okxLsr.topPositionRatio,
+        okxTaker:      okxLsr.takerRatio,
+        aggLongFrac,
+      },
+      liq,
+    };
+    return { cex, cexLiqMeta };
+  }
+
+  /**
+   * Labeled CEX wallet balances/flows + holder concentration (market-spec.md
+   * §7 stage 5). With the default empty wallets: [], every balance/flow field
+   * is null and walletsPolled is 0 — never throws, never zero-fakes.
+   */
+  private async fetchOnChain(symbol: string, perpMarkPx: string): Promise<MarketPollContext["onChain"]> {
+    const reads = await Promise.all(
+      this.walletsConfig.wallets
+        .filter((w) => !isPlaceholderAddress(w.address))
+        .map(async (w) => ({
+          address: w.address,
+          balance: w.layer === "hypercore"
+            ? await this.balanceReader.readHypercoreBalance(w.address)
+            : await this.balanceReader.readHyperevmBalance(w.address),
+        })),
+    );
+
+    const { total, walletsPolled, perWallet } = aggregateBalances(reads);
+    const prev = this.prevBalances.get(symbol) ?? null;
+    const { netFlow, inflow, outflow } = computeFlows(perWallet, prev);
+    this.prevBalances.set(symbol, perWallet);
+
+    const markPx = safeNum(perpMarkPx);
+    const netFlowUsdc = netFlow !== null && markPx !== null ? netFlow * markPx : null;
+
+    const holders = await this.fetchHolderMetrics();
+
+    return {
+      totalBalance: total,
+      walletsPolled,
+      netFlow,
+      inflow,
+      outflow,
+      netFlowUsdc,
+      holders: holders ? {
+        count: holders.holdersCount,
+        supplyExSystem: holders.supplyExSystem,
+        top10Share: holders.top10Share,
+        top50Share: holders.top50Share,
+        top100Share: holders.top100Share,
+      } : null,
+    };
+  }
+
+  /** Cached holder-distribution metrics, refreshed every HOLDER_REFRESH_MS. Returns the stale cached value (or null) on fetch failure. */
+  private async fetchHolderMetrics(): Promise<HolderMetrics | null> {
+    const now = Date.now();
+    if (this.holderCache && now - this.holderCache.fetchedAt < HOLDER_REFRESH_MS) {
+      return this.holderCache.metrics;
+    }
+
+    const dist = await this.fetchHolderDist();
+    if (!dist) return this.holderCache?.metrics ?? null;
+
+    const systemAddresses = new Set(this.walletsConfig.systemWallets.map((w) => w.address.toLowerCase()));
+    const metrics = computeHolderMetrics(dist, systemAddresses);
+    this.holderCache = { metrics, fetchedAt: now };
+    return metrics;
   }
 
   /**

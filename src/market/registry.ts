@@ -4,8 +4,9 @@
 // for the 9 `source: "hl-market"` / `kind: "level"` metrics (the single
 // metaAndAssetCtxs + spotMetaAndAssetCtxs poll). Stage 2 adds the 8 CVD/trade-count
 // metrics (trades WS aggregator) and the 7 L2 book microstructure metrics. Stage 3
-// adds 7 hl-native staking + Assistance Fund metrics. Every other entry is a stub
-// (compute === undefined) until its stage is built.
+// adds 7 hl-native staking + Assistance Fund metrics. Stage 4 adds 18 cex-agg
+// metrics (CEX open interest, long/short ratios, CEX liquidations). Every other
+// entry is a stub (compute === undefined) until its stage is built.
 
 import { loadManifest, type ManifestMetric } from "./manifest.js";
 
@@ -51,6 +52,51 @@ export interface MarketPollContext {
   hlNative: {
     staking: { totalStaked: number; activeStaked: number; validatorCount: number } | null;
     af: { hypeBalance: number | null; buyHypeWindow: number; buyUsdcWindow: number; buyFills: number } | null;
+  } | null;
+  /** From per-venue CEX adapters (Binance/Bybit/OKX) — each field null if that venue/stat is unavailable. */
+  cex: {
+    oi: {
+      binance: number | null;
+      bybit:   number | null;
+      okx:     number | null;
+      total:   number | null;
+    };
+    lsr: {
+      binanceGlobal: number | null;
+      binanceTopPos: number | null;
+      binanceTaker:  number | null;
+      bybitAccount:  number | null;
+      okxAccount:    number | null;
+      okxTopPos:     number | null;
+      okxTaker:      number | null;
+      aggLongFrac:   number | null;
+    };
+    /** Aggregated across venue liquidation streams — null until at least one stream is running. */
+    liq: {
+      long1h:   number | null;
+      short1h:  number | null;
+      long24h:  number | null;
+      short24h: number | null;
+      net24h:   number | null;
+      count24h: number | null;
+    } | null;
+  } | null;
+  /** From labeled CEX wallet balances + holder distribution (market-spec.md §7 stage 5). Null fields are the default until config/cex-wallets.json is populated. */
+  onChain: {
+    totalBalance:  number | null;
+    walletsPolled: number;
+    netFlow:       number | null;
+    inflow:        number | null;
+    outflow:       number | null;
+    netFlowUsdc:   number | null;
+    /** Null until the holder-distribution fetch has succeeded at least once. */
+    holders: {
+      count:          number | null;
+      supplyExSystem: number | null;
+      top10Share:     number | null;
+      top50Share:     number | null;
+      top100Share:    number | null;
+    } | null;
   } | null;
 }
 
@@ -110,11 +156,55 @@ const HL_NATIVE_COMPUTE: Record<string, (ctx: MarketPollContext) => number | nul
   af_buy_fills:       (ctx) => ctx.hlNative?.af?.buyFills ?? null,
 };
 
+// ── compute() implementations for the 18 cex-agg metrics ───────────────────
+
+const CEX_COMPUTE: Record<string, (ctx: MarketPollContext) => number | null> = {
+  cex_oi_binance_hype: (ctx) => ctx.cex?.oi.binance ?? null,
+  cex_oi_bybit_hype:   (ctx) => ctx.cex?.oi.bybit ?? null,
+  cex_oi_okx_hype:     (ctx) => ctx.cex?.oi.okx ?? null,
+  cex_oi_total_hype:   (ctx) => ctx.cex?.oi.total ?? null,
+
+  lsr_binance_global:  (ctx) => ctx.cex?.lsr.binanceGlobal ?? null,
+  lsr_binance_top_pos: (ctx) => ctx.cex?.lsr.binanceTopPos ?? null,
+  lsr_binance_taker:   (ctx) => ctx.cex?.lsr.binanceTaker ?? null,
+  lsr_bybit_account:   (ctx) => ctx.cex?.lsr.bybitAccount ?? null,
+  lsr_okx_account:     (ctx) => ctx.cex?.lsr.okxAccount ?? null,
+  lsr_okx_top_pos:     (ctx) => ctx.cex?.lsr.okxTopPos ?? null,
+  lsr_okx_taker:       (ctx) => ctx.cex?.lsr.okxTaker ?? null,
+  lsr_agg_long_frac:   (ctx) => ctx.cex?.lsr.aggLongFrac ?? null,
+
+  cex_liq_long_1h:    (ctx) => ctx.cex?.liq?.long1h ?? null,
+  cex_liq_short_1h:   (ctx) => ctx.cex?.liq?.short1h ?? null,
+  cex_liq_long_24h:   (ctx) => ctx.cex?.liq?.long24h ?? null,
+  cex_liq_short_24h:  (ctx) => ctx.cex?.liq?.short24h ?? null,
+  cex_liq_net_24h:    (ctx) => ctx.cex?.liq?.net24h ?? null,
+  cex_liq_count_24h:  (ctx) => ctx.cex?.liq?.count24h ?? null,
+};
+
+// ── compute() implementations for the 11 on-chain CEX-flow + holder metrics ─
+
+const ON_CHAIN_COMPUTE: Record<string, (ctx: MarketPollContext) => number | null> = {
+  cex_inflow_hype:       (ctx) => ctx.onChain?.inflow ?? null,
+  cex_outflow_hype:      (ctx) => ctx.onChain?.outflow ?? null,
+  cex_net_flow_hype:     (ctx) => ctx.onChain?.netFlow ?? null,
+  cex_net_flow_usdc:     (ctx) => ctx.onChain?.netFlowUsdc ?? null,
+  cex_total_balance_hype: (ctx) => ctx.onChain?.totalBalance ?? null,
+  cex_wallets_polled:    (ctx) => ctx.onChain?.walletsPolled ?? null,
+
+  holders_count:          (ctx) => ctx.onChain?.holders?.count ?? null,
+  holder_supply_ex_system: (ctx) => ctx.onChain?.holders?.supplyExSystem ?? null,
+  holder_top10_share:     (ctx) => ctx.onChain?.holders?.top10Share ?? null,
+  holder_top50_share:     (ctx) => ctx.onChain?.holders?.top50Share ?? null,
+  holder_top100_share:    (ctx) => ctx.onChain?.holders?.top100Share ?? null,
+};
+
 const COMPUTE_BY_KEY: Record<string, (ctx: MarketPollContext) => number | null> = {
   ...HL_MARKET_LEVEL_COMPUTE,
   ...CVD_COMPUTE,
   ...BOOK_COMPUTE,
   ...HL_NATIVE_COMPUTE,
+  ...CEX_COMPUTE,
+  ...ON_CHAIN_COMPUTE,
 };
 
 let cached: MetricDefinition[] | null = null;
