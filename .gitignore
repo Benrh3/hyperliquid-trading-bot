@@ -14,6 +14,7 @@ config/bots.json
 config/custom-strategies.json
 config/lanes.json
 config/server.json
+config/snapshot.json
 
 # Runtime logs
 logs/

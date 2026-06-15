@@ -1,0 +1,5 @@
+{
+  "symbols": ["HYPE"],
+  "pollIntervalMs": 60000,
+  "retentionRawDays": 7
+}

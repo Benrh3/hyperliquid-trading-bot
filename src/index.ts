@@ -24,6 +24,7 @@ import { FundingRateStrategy } from "./strategy/funding-rate.js";
 import { BotManager } from "./bot-manager.js";
 import { DydxFundingPoller } from "./dydx-funding.js";
 import { FundingMatrixPoller } from "./funding-matrix.js";
+import { MarketStore } from "./market/store.js";
 import { loadCustomDefs, customDefToRegistryEntry } from "./strategy/custom-strategy.js";
 import { STRATEGY_REGISTRY } from "./strategy/registry.js";
 import { RiskManager } from "./risk.js";
@@ -97,6 +98,11 @@ const dydxPoller = new DydxFundingPoller();
 // 6b. Funding matrix poller — bulk fetch all venues × all coins every 45 s
 const fundingMatrix = new FundingMatrixPoller(logger);
 
+// 6c. Market data store (read-only here) — powers GET /api/snapshots.
+// Snapshots are written by the separate 'snapshot-poller' PM2 process; this
+// process only reads the shared WAL-mode SQLite file.
+const marketStore = new MarketStore();
+
 // 7. Risk manager
 const risk = new RiskManager(1000);
 console.log("[init] Risk manager ready");
@@ -105,7 +111,7 @@ console.log("[init] Risk manager ready");
 const feed = new Feed();
 
 // 9. Dashboard
-startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller, fundingMatrix);
+startDashboard(logger, strategies, feed, executor, laneManager, dydxPoller, fundingMatrix, marketStore);
 
 // ─── Event wiring ─────────────────────────────────────────
 
@@ -151,6 +157,7 @@ process.on("SIGINT", async () => {
   await laneManager.stop(); // stops all bots including cross-venue
   dydxPoller.stop();
   fundingMatrix.stop();
+  marketStore.close();
   for (const s of strategies) {
     if ("stop" in s && typeof (s as { stop?: () => void }).stop === "function") {
       (s as { stop: () => void }).stop();

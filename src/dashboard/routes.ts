@@ -18,6 +18,7 @@ import type { Executor } from "../executor.js";
 import type { BotManager, BotsFile, OrphanedPosition } from "../bot-manager.js";
 import type { DydxFundingPoller } from "../dydx-funding.js";
 import type { FundingMatrixPoller } from "../funding-matrix.js";
+import type { MarketStore } from "../market/store.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
@@ -236,6 +237,7 @@ export function createRouter(
   laneManager?: BotManager,
   dydxPoller?: DydxFundingPoller,
   fundingMatrix?: FundingMatrixPoller,
+  marketStore?: MarketStore,
 ): Router {
   const router = Router();
 
@@ -542,6 +544,18 @@ export function createRouter(
       const error = err instanceof Error ? err : new Error(String(err));
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // ── Market data snapshots (observe-only, read-only) ──────────────────────
+
+  router.get("/api/snapshots", (req, res) => {
+    if (!marketStore) {
+      res.status(503).json({ error: "Market store not available" });
+      return;
+    }
+    const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : "HYPE";
+    const limit  = Math.min(parseInt(typeof req.query.limit === "string" ? req.query.limit : "50") || 50, 500);
+    res.json(marketStore.getRecentSnapshots(symbol, limit));
   });
 
   router.get("/bots", (_req, res) => {
