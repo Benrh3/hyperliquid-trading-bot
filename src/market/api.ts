@@ -88,13 +88,16 @@ export function createMarketRouter(store: MarketStore): Router {
   });
 
   // ── GET /api/market/signals ────────────────────────────────────────────────
+  // ?subtab=leverage   filters to a single subtab (all returned if omitted)
+  // When subtab is set all metrics in that subtab are returned, not just signalForScoring.
   router.get("/api/market/signals", (req, res) => {
-    const symbol   = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : "HYPE";
+    const symbol  = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : "HYPE";
+    const subtab  = typeof req.query.subtab === "string" ? req.query.subtab : null;
     const manifest = loadManifest();
     const [latest] = store.getRecentSnapshots(symbol, 1);
 
     const signals = manifest.metrics
-      .filter((m) => m.signalForScoring)
+      .filter((m) => subtab ? m.subtab === subtab : m.signalForScoring)
       .map((m) => ({
         key:          m.key,
         label:        m.label,
@@ -102,7 +105,8 @@ export function createMarketRouter(store: MarketStore): Router {
         kind:         m.kind,
         subtab:       m.subtab,
         derived:      m.derived,
-        read:         (m as { read?: string }).read ?? null,
+        read:         m.read ?? null,
+        dir:          m.dir ?? null,
         currentValue: latest?.metrics[m.key]?.value ?? null,
         capturedAt:   latest?.metrics[m.key]?.capturedAt ?? null,
         staleAfterMs: m.staleAfterMs,
@@ -192,6 +196,47 @@ export function createMarketRouter(store: MarketStore): Router {
     } catch (e) {
       res.status(502).json({ error: `Failed to fetch candles: ${(e as Error).message}` });
     }
+  });
+
+  // ── GET /api/market/history ───────────────────────────────────────────────
+  // Returns time-series rows for named metric fields from stored snapshots.
+  // ?fields=funding_rate,perp_premium   comma-separated metric keys (required)
+  // ?range=1W                           1D | 1W | 1M | 3M | All  (default: 1W)
+  // ?symbol=HYPE
+  // Returns: { rows: Array<{ ts: number, [field]: number|null }> }  oldest first
+  const HISTORY_RANGE_MS: Record<string, number | null> = {
+    "1D": 86_400_000, "1W": 604_800_000, "1M": 2_592_000_000,
+    "3M": 7_776_000_000, "All": null,
+  };
+
+  router.get("/api/market/history", (req, res) => {
+    const symbol     = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : "HYPE";
+    const fieldsRaw  = typeof req.query.fields === "string" ? req.query.fields : "";
+    const rangeKey   = typeof req.query.range  === "string" ? req.query.range  : "1W";
+
+    if (!fieldsRaw) { res.status(400).json({ error: "fields param required" }); return; }
+    if (!(rangeKey in HISTORY_RANGE_MS)) {
+      res.status(400).json({ error: `range must be one of ${Object.keys(HISTORY_RANGE_MS).join(",")}` });
+      return;
+    }
+
+    const fields   = fieldsRaw.split(",").map((f) => f.trim()).filter(Boolean);
+    const rangeMs  = HISTORY_RANGE_MS[rangeKey];
+    const cutoffMs = rangeMs ? Date.now() - rangeMs : 0;
+
+    // Fetch enough snapshots — 3M at hourly cadence ≈ 2200 rows; All ≈ no limit
+    const snapshots = store.getRecentSnapshots(symbol, 5000);
+    const filtered  = snapshots.filter((s) => s.capturedAt >= cutoffMs).reverse(); // oldest first
+
+    const rows = filtered.map((snap) => {
+      const row: Record<string, number | null | string> = { ts: snap.capturedAt };
+      for (const field of fields) {
+        row[field] = snap.metrics[field]?.value ?? null;
+      }
+      return row;
+    });
+
+    res.json({ symbol, range: rangeKey, fields, rows });
   });
 
   return router;

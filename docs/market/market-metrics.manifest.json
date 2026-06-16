@@ -64,7 +64,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "high + = crowded longs (contrarian bearish); tiny scale"
+      "read": "high + = crowded longs (contrarian bearish); tiny scale",
+      "dir": "dirBearPos"
     },
     {
       "key": "open_interest",
@@ -89,7 +90,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "persistent + = crowded longs (contrarian bearish)"
+      "read": "persistent + = crowded longs (contrarian bearish)",
+      "dir": "dirBearPos"
     },
     {
       "key": "perp_day_ntl_vlm",
@@ -782,7 +784,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "crowd lean - fade it; >1 = more longs"
+      "read": "crowd lean - fade it; >1 = more longs",
+      "dir": "dirBearHigh|1.0|0.05"
     },
     {
       "key": "lsr_binance_top_pos",
@@ -795,7 +798,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "smart money - follow; >1 = top traders net long"
+      "read": "smart money - follow; >1 = top traders net long",
+      "dir": "dirBullHigh|1.0|0.05"
     },
     {
       "key": "lsr_binance_taker",
@@ -808,7 +812,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "aggressor flow; >1 = buyers lifting"
+      "read": "aggressor flow; >1 = buyers lifting",
+      "dir": "dirBullHigh|1.0|0.05"
     },
     {
       "key": "lsr_bybit_account",
@@ -820,7 +825,8 @@
       "subtab": "leverage",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBearHigh|1.0|0.05"
     },
     {
       "key": "lsr_okx_account",
@@ -833,7 +839,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "crowd lean - contrarian"
+      "read": "crowd lean - contrarian",
+      "dir": "dirBearHigh|1.0|0.05"
     },
     {
       "key": "lsr_okx_top_pos",
@@ -846,7 +853,8 @@
       "derived": false,
       "signalForScoring": false,
       "staleAfterMs": 3900000,
-      "read": "follow, don't fade; >1 = big traders net long"
+      "read": "follow, don't fade; >1 = big traders net long",
+      "dir": "dirBullHigh|1.0|0.05"
     },
     {
       "key": "lsr_okx_taker",
@@ -858,7 +866,8 @@
       "subtab": "leverage",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBullHigh|1.0|0.05"
     },
     {
       "key": "lsr_agg_long_frac",
@@ -871,7 +880,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "OI-weighted cross-venue; >50% = crowd net long (contrarian: extreme = fade)"
+      "read": "OI-weighted cross-venue; >50% = crowd net long (contrarian: extreme = fade)",
+      "dir": "dirBearHigh|0.5|0.03"
     },
     {
       "key": "cex_oi_binance_hype",
@@ -1047,7 +1057,8 @@
       "derived": true,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "+ = spot rich/perp discount; - = perp premium (crowded longs)"
+      "read": "+ = spot rich/perp discount; - = perp premium (crowded longs)",
+      "dir": "dirBearPos"
     },
     {
       "key": "unstake_q_delta",

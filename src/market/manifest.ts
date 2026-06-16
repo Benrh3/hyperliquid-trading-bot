@@ -18,6 +18,7 @@ export interface ManifestMetric {
   signalForScoring: boolean;
   staleAfterMs: number;
   read?: string;
+  dir?: string;
 }
 
 export interface MarketMetricsManifest {

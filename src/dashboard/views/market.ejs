@@ -46,9 +46,7 @@
     z-index: 50;
   }
   .market-tabs-inner {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 0 1.5rem;
+    padding: 0 var(--sp-6);
     display: flex;
     align-items: center;
     overflow-x: auto;
@@ -108,6 +106,17 @@
   .tk-unit { color: var(--muted); font-size: 10px; }
   .tk-up   { color: var(--up); }
   .tk-dn   { color: var(--down); }
+  /* ● LIVE badge — far left of ticker */
+  .tk-live-badge {
+    gap: var(--sp-1);
+    padding-right: 0.75rem;
+  }
+  .tk-live-label {
+    font-size: var(--t-label);
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: .06em;
+  }
   .tk-live {
     margin-left: auto;
     padding-right: 0;
@@ -210,12 +219,11 @@
     box-shadow: 0 2px 12px rgba(0,0,0,0.35);
     display: flex;
     align-items: stretch;
-    min-height: 120px;
   }
   .bias-left {
     flex: 0 0 30%;
     min-width: 0;
-    padding: var(--sp-5) var(--sp-6);
+    padding: var(--sp-4) var(--sp-6);
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
@@ -225,7 +233,7 @@
   .bias-right {
     flex: 1 1 0;
     min-width: 0;
-    padding: var(--sp-5) var(--sp-6);
+    padding: var(--sp-4) var(--sp-6);
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -325,7 +333,6 @@
     display: flex;
     flex-direction: column;
     gap: .5rem;
-    height: 100%;
     justify-content: center;
   }
   .bias-drivers-empty {
@@ -442,6 +449,17 @@
     color: var(--muted);
     margin-bottom: var(--sp-2);
   }
+  /* Directional read sub-label (▲ bullish / ▼ bearish) */
+  .sc-dir {
+    font-size: var(--t-label);
+    font-weight: 600;
+    letter-spacing: .02em;
+    line-height: 1;
+    margin-bottom: var(--sp-2);
+  }
+  .sc-dir-pos     { color: var(--up);   }
+  .sc-dir-neg     { color: var(--down); }
+  .sc-dir-neutral { color: var(--muted); }
   .sc-read {
     font-size: var(--t-label);
     color: var(--muted);
@@ -585,6 +603,93 @@
   @media (max-width: 480px) {
     .cat-grid { grid-template-columns: 1fr 1fr; }
   }
+
+  /* ── Leverage tab ───────────────────────────────────────────────────────── */
+  .lev-caveat {
+    background: rgba(245,158,11,0.07);
+    border-left: 3px solid rgba(245,158,11,0.5);
+    border-radius: 0 4px 4px 0;
+    color: var(--muted);
+    font-size: var(--t-label);
+    line-height: 1.5;
+    margin: var(--sp-4) var(--sp-4) 0;
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .lev-caveat strong { color: #F59E0B; font-weight: 600; }
+  .lev-section-head {
+    padding: var(--sp-5) var(--sp-4) var(--sp-2);
+  }
+  .lev-section-title {
+    font-size: var(--t-label);
+    font-weight: 700;
+    letter-spacing: .1em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .lev-section-sub {
+    font-size: var(--t-label);
+    color: var(--muted);
+    margin-top: var(--sp-1);
+    opacity: .7;
+  }
+  .lev-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4) var(--sp-4);
+  }
+  .lev-chart-card {
+    background: var(--surface);
+    border-radius: 8px;
+    margin: 0 var(--sp-4) var(--sp-4);
+    overflow: hidden;
+  }
+  .chart-card-toolbar {
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+  }
+  .chart-card-title {
+    font-size: var(--t-body);
+    font-weight: 600;
+    color: #7AA5C8;
+    flex: 1;
+  }
+  .chart-card-meta {
+    font-size: var(--t-label);
+    color: var(--muted);
+    opacity: .6;
+  }
+  .tf-group { display: flex; gap: 2px; }
+  .tf {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: var(--t-label);
+    font-weight: 600;
+    letter-spacing: .04em;
+    padding: 2px 6px;
+    transition: color .15s, background .15s;
+  }
+  .tf:hover  { color: var(--accent); }
+  .tf.active { background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.25); color: var(--accent); }
+  .lev-chart-caption {
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: var(--t-label);
+    line-height: 1.5;
+    opacity: .7;
+    padding: var(--sp-2) var(--sp-4);
+  }
+  /* sc-dir sub-label (used in leverage cards) */
+  .sc-dir          { font-size: var(--t-label); font-weight: 600; letter-spacing: .02em; line-height: 1; margin-bottom: var(--sp-2); }
+  .sc-dir-pos      { color: var(--up); }
+  .sc-dir-neg      { color: var(--down); }
+  .sc-dir-neutral  { color: var(--muted); }
 </style>
 
 <!-- ── Top nav: Bots | Market ── -->
@@ -623,6 +728,10 @@
 <!-- ── Live ticker bar ── -->
 <div class="market-ticker-bar">
   <div class="market-ticker-inner">
+    <div class="tk-item tk-live-badge">
+      <span class="dot-accent"></span>
+      <span class="tk-live-label">LIVE</span>
+    </div>
     <div class="tk-item">
       <span class="tk-label">HYPE</span>
       <span class="tk-val" id="tk-price">—</span>
@@ -642,7 +751,6 @@
       <span class="tk-unit">bps</span>
     </div>
     <div class="tk-item tk-live">
-      <span class="dot-accent"></span>
       <span id="tk-upd">0</span>
       <span class="tk-unit">upd/min</span>
       <span class="tk-unit" id="market-captured-at" style="margin-left:.35rem"></span>
@@ -760,11 +868,75 @@
   </div>
 
   <div id="tab-leverage" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Leverage</div>
-      <p>Funding · premium · basis · OI (HL + CEX) · L/S ratios · OI delta</p>
-      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; L/S ratios</strong> count <em>heads, not capital</em> — laggy and gameable; treat as folklore until Signals scorecard proves IC. Retail ratios = contrarian (fade); top-trader position = smart money (follow).
     </div>
+    <div class="lev-caveat">
+      <strong>&#9888; CEX OI</strong> is a separate pool (~&#8531; of HL perp OI) — never add it to HL OI.
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Leverage &amp; Positioning</div>
+      <div class="lev-section-sub">Funding · premium · basis · open interest (HL vs CEX) · long/short ratios</div>
+    </div>
+
+    <div class="lev-cards-grid" id="lev-cards-grid">
+      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Charts</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Funding Rate &amp; Premium</span>
+        <div class="tf-group" id="lev-chart1-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="lev-chart1-meta"></span>
+      </div>
+      <div id="lev-chart1" style="height:220px"></div>
+      <div class="lev-chart-caption">Bars = funding (red when longs pay = bearish lean). Line = premium. Persistent positive = crowded longs.</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">HL OI vs CEX OI — Separate Pools</span>
+        <div class="tf-group" id="lev-chart2-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="lev-chart2-meta"></span>
+      </div>
+      <div id="lev-chart2" style="height:220px"></div>
+      <div class="lev-chart-caption">HL OI (blue) and CEX OI (amber) — distinct pools, never summed.</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Crowd L/S Ratios</span>
+        <div class="tf-group" id="lev-chart3-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="lev-chart3-meta"></span>
+      </div>
+      <div id="lev-chart3" style="height:220px"></div>
+      <div class="lev-chart-caption">Dashed = 1.0 balance. &gt;1 = crowd net long (fade). Agg Long % on 0–1 scale (pivot 0.5).</div>
+    </div>
+
   </div>
 
   <div id="tab-supply" class="tab-panel" style="display:none">
@@ -891,6 +1063,7 @@
   bChk.addEventListener('change', function () { applyBeginner(bChk.checked); });
   window.MKT = window.MKT || {};
   window.MKT.applyBeginner = function () { applyBeginner(bChk.checked); };
+  window.MKT.makeCard = makeCard;
 
   // Flash: remove→reflow→re-add so the animation can re-trigger on repeated updates
   window.MKT.flashEl = function (el, dir) {
@@ -941,43 +1114,59 @@
     var abs = Math.abs(v), sign = v < 0 ? '-' : '';
     if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
     if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
-    if (abs >= 1e3) return sign + (abs / 1e3).toFixed(0) + 'K';
-    return sign + abs.toFixed(2);
+    if (abs >= 1e3) return sign + Math.round(abs / 1e3) + 'K';
+    return sign + Math.round(abs).toString();
   }
   function fmtPrice(v)   { return (v === null || !isFinite(v)) ? '—' : '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function fmtFunding(v) { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(4) + '%'; }
   function fmtSigned(v)  { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + fmtCompact(v); }
   function fmtBps(v)     { return (v === null || !isFinite(v)) ? '—' : v.toFixed(2); }
 
+  // ── Directional read helpers ───────────────────────────────────────────────
+  // Returns { cls, text } for value color + sub-label, or null if unavailable.
+  function dirBullPos(v) {
+    if (v === null || v === undefined || !isFinite(v)) return null;
+    if (v > 0) return { cls: 'val-pos', text: '▲ bullish' };
+    if (v < 0) return { cls: 'val-neg', text: '▼ bearish' };
+    return { cls: '', text: '– neutral' };
+  }
+  function dirBearPos(v) {
+    // Inverted: positive value = bearish (red), negative = bullish (green)
+    if (v === null || v === undefined || !isFinite(v)) return null;
+    if (v > 0) return { cls: 'val-neg', text: '▼ bearish' };
+    if (v < 0) return { cls: 'val-pos', text: '▲ bullish' };
+    return { cls: '', text: '– neutral' };
+  }
+
   // ── Tile definitions ───────────────────────────────────────────────────────
   var TILES = [
     { key: 'perp_mark_px',       label: 'PRICE (FUTURES)', beginner: 'Price (futures)',
-      kind: 'level', source: 'hl-market',  read: null, fmt: fmtPrice,   sign: false },
+      kind: 'level', source: 'hl-market',  read: null, fmt: fmtPrice,   dir: null },
     { key: 'funding_rate',       label: 'FUNDING /H',      beginner: 'Funding rate',
       kind: 'level', source: 'hl-market',
       read: 'high + = crowded longs (contrarian bearish); tiny scale',
-      fmt: fmtFunding, sign: true },
+      fmt: fmtFunding, dir: dirBearPos },
     { key: 'open_interest',      label: 'PERP OI (HL)',    beginner: 'Open positions (HL)',
-      kind: 'level', source: 'hl-market',  read: null, fmt: fmtCompact, sign: false },
+      kind: 'level', source: 'hl-market',  read: null, fmt: fmtCompact, dir: null },
     { key: 'cvd_perp_24h',       label: 'CVD PERP 24H',   beginner: 'Aggressive buying 24h',
       kind: 'window', source: 'hl-market',
       read: 'px up + CVD down = distribution; px down + CVD up = absorption',
-      fmt: fmtSigned, sign: true },
+      fmt: fmtSigned, dir: dirBullPos },
     { key: 'cex_net_flow_hype',  label: 'CEX NET FLOW',   beginner: 'Coins moving to exchanges',
       kind: 'window', source: 'on-chain',
       read: '+ = into exchanges = SELL intent (bearish); - = withdrawals (bullish)',
-      fmt: fmtSigned, sign: true },
+      fmt: fmtSigned, dir: dirBearPos },
     { key: 'total_staked_hype',  label: 'TOTAL STAKED',   beginner: 'Coins locked (staked)',
       kind: 'level', source: 'hl-native',
       read: 'rising = float reduction (bullish)',
-      fmt: fmtCompact, sign: false },
+      fmt: fmtCompact, dir: null },
   ];
 
   var SRC_CLS = { 'hl-market': 'hlmarket', 'hl-native': 'hlnative', 'on-chain': 'onchain', 'cex-agg': 'cexagg' };
 
   // In-place tile value update with flash — used by the 4s live poll.
   // Avoids full card re-render so beginner-mode text and badge classes are preserved.
-  function updateFastTileValue(key, newVal, fmtFn, signSensitive) {
+  function updateFastTileValue(key, newVal, fmtFn, dirFn) {
     if (newVal === null || newVal === undefined) return;
     var card = document.querySelector('.signal-card[data-key="' + key + '"]');
     if (!card) return;
@@ -985,10 +1174,14 @@
     if (!valEl) return;
     var oldVal = prevVals[key];
     valEl.textContent = fmtFn(newVal);
-    if (signSensitive) {
-      valEl.classList.remove('val-pos', 'val-neg');
-      if (newVal > 0) valEl.classList.add('val-pos');
-      else if (newVal < 0) valEl.classList.add('val-neg');
+    var dirInfo = dirFn ? dirFn(newVal) : null;
+    valEl.classList.remove('val-pos', 'val-neg');
+    if (dirInfo && dirInfo.cls) valEl.classList.add(dirInfo.cls);
+    // Update sub-label text + class in-place
+    var subEl = card.querySelector('.sc-dir');
+    if (subEl && dirInfo) {
+      subEl.className = 'sc-dir' + (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral');
+      subEl.textContent = dirInfo.text;
     }
     if (oldVal !== undefined && oldVal !== null && newVal !== oldVal && window.MKT && window.MKT.flashEl) {
       window.MKT.flashEl(valEl, newVal > oldVal ? 'up' : 'down');
@@ -996,25 +1189,24 @@
     prevVals[key] = newVal;
   }
 
-  function signCls(v, s) {
-    if (!s || v === null || !isFinite(v)) return '';
-    return v > 0 ? ' val-pos' : v < 0 ? ' val-neg' : '';
-  }
-
   function makeCard(tile, value) {
-    var val    = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
-    var cls    = signCls(value, tile.sign);
-    var srcCls = SRC_CLS[tile.source] || '';
-    var ib     = tile.read
+    var val     = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var dirInfo = (tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
+    var valCls  = dirInfo && dirInfo.cls ? ' ' + dirInfo.cls : '';
+    var dirCls  = dirInfo ? (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral') : '';
+    var srcCls  = SRC_CLS[tile.source] || '';
+    var ib = tile.read
       ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
       : '';
-    var rd     = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
+    var rd = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
+    var subLabel = dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '';
     return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
       + '<div class="sc-header">'
       +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
       +   ib
       + '</div>'
-      + '<div class="sc-value' + cls + '">' + esc(val) + '</div>'
+      + '<div class="sc-value' + valCls + '">' + esc(val) + '</div>'
+      + subLabel
       + rd
       + '<div class="sc-badges">'
       +   '<span class="sc-badge sc-kind sc-kind-' + esc(tile.kind) + '">' + esc(tile.kind) + '</span>'
@@ -1052,7 +1244,7 @@
     }
 
     var fundEl = document.getElementById('tk-funding');
-    if (fundEl) { var fr = vm['funding_rate']; fundEl.textContent = fr !== null && fr !== undefined ? fmtFunding(fr) : '—'; fundEl.className = 'tk-val' + (fr > 0 ? ' tk-up' : fr < 0 ? ' tk-dn' : ''); }
+    if (fundEl) { var fr = vm['funding_rate']; fundEl.textContent = fr !== null && fr !== undefined ? fmtFunding(fr) : '—'; fundEl.className = 'tk-val' + (fr > 0 ? ' tk-dn' : fr < 0 ? ' tk-up' : ''); }
 
     var cvdEl = document.getElementById('tk-cvd');
     if (cvdEl) { var cv = vm['cvd_perp_24h']; cvdEl.textContent = cv !== null && cv !== undefined ? fmtSigned(cv) : '—'; cvdEl.className = 'tk-val' + (cv > 0 ? ' tk-up' : cv < 0 ? ' tk-dn' : ''); }
@@ -1315,9 +1507,9 @@
       ];
       updateTicker(liveSigs, d.ts);
       // Fast tile in-place updates — no full re-render, flash fires through updateFastTileValue
-      updateFastTileValue('perp_mark_px',  d.markPx,       fmtPrice,   false);
-      updateFastTileValue('funding_rate',  d.funding,      fmtFunding, true);
-      updateFastTileValue('open_interest', d.openInterest, fmtCompact, false);
+      updateFastTileValue('perp_mark_px',  d.markPx,       fmtPrice,   null);
+      updateFastTileValue('funding_rate',  d.funding,      fmtFunding, dirBearPos);
+      updateFastTileValue('open_interest', d.openInterest, fmtCompact, null);
     } catch (_) {}
   }
 
@@ -1328,6 +1520,358 @@
   fetchLive();
   setInterval(function () { fetchBias(activeH); fetchSignals(); refreshChart(); }, 60000);
   setInterval(fetchLive, 4000);
+
+})();
+</script>
+
+<!-- ── Leverage tab ────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  // ── Format helpers ───────────────────────────────────────────────────────
+  function fmtC(v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + Math.round(abs / 1e3) + 'K';
+    return sign + Math.round(abs).toString();
+  }
+  function fmtSignedC(v) { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + fmtC(v); }
+  function fmtPx(v)      { return (v === null || !isFinite(v)) ? '—' : '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function fmtFund(v)    { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(4) + '%'; }
+  function fmtRatio(v)   { return (v === null || !isFinite(v)) ? '—' : v.toFixed(3); }
+  function fmtPct(v)     { return (v === null || !isFinite(v)) ? '—' : (v * 100).toFixed(1) + '%'; }
+
+  // ── Direction helpers ────────────────────────────────────────────────────
+  function dirBearPos(v) {
+    if (v === null || v === undefined || !isFinite(v)) return null;
+    if (v > 0) return { cls: 'val-neg', text: '▼ bearish' };
+    if (v < 0) return { cls: 'val-pos', text: '▲ bullish' };
+    return { cls: '', text: '– neutral' };
+  }
+  function dirBullHigh(pivot, band) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > pivot + band) return { cls: 'val-pos', text: '▲ bullish' };
+      if (v < pivot - band) return { cls: 'val-neg', text: '▼ bearish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+  function dirBearHigh(pivot, band) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > pivot + band) return { cls: 'val-neg', text: '▼ bearish' };
+      if (v < pivot - band) return { cls: 'val-pos', text: '▲ bullish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  var SRC_CLS = { 'hl-market': 'hlmarket', 'hl-native': 'hlnative', 'on-chain': 'onchain', 'cex-agg': 'cexagg' };
+
+  // ── Tile definitions ─────────────────────────────────────────────────────
+  var LEV_TILES = [
+    { key: 'funding_rate',        label: 'FUNDING /H',              beginner: 'Funding rate',
+      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearPos,
+      read: 'high + = crowded longs (contrarian bearish); tiny scale' },
+    { key: 'perp_premium',        label: 'FUTURES PREMIUM',         beginner: 'Futures premium',
+      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearPos,
+      read: 'persistent + = crowded longs (contrarian bearish)' },
+    { key: 'spot_perp_basis',     label: 'SPOT-PERP BASIS',         beginner: 'Spot vs futures gap',
+      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearPos,
+      read: '+ = spot rich/perp discount; - = perp premium (crowded longs)' },
+    { key: 'lsr_agg_long_frac',   label: 'AGGREGATE LONG %',        beginner: 'Crowd long %',
+      kind: 'aggregate',  source: 'cex-agg',   fmt: fmtPct,     dir: dirBearHigh(0.5, 0.03),
+      read: 'OI-weighted cross-venue; >50% = crowd net long (contrarian: extreme = fade)' },
+    { key: 'lsr_binance_global',  label: 'BINANCE CROWD L/S',       beginner: 'Binance crowd long/short',
+      kind: 'ratio',      source: 'cex-agg',   fmt: fmtRatio,   dir: dirBearHigh(1.0, 0.05),
+      read: 'crowd lean - fade it; >1 = more longs' },
+    { key: 'lsr_okx_account',     label: 'OKX CROWD L/S',           beginner: 'OKX crowd long/short',
+      kind: 'ratio',      source: 'cex-agg',   fmt: fmtRatio,   dir: dirBearHigh(1.0, 0.05),
+      read: 'crowd lean - contrarian' },
+    { key: 'lsr_bybit_account',   label: 'BYBIT ACCOUNT L/S',       beginner: 'Bybit account long/short',
+      kind: 'ratio',      source: 'cex-agg',   fmt: fmtRatio,   dir: dirBearHigh(1.0, 0.05),
+      read: null },
+    { key: 'lsr_binance_top_pos', label: 'BINANCE PROS L/S',        beginner: 'Binance top-trader position',
+      kind: 'ratio',      source: 'cex-agg',   fmt: fmtRatio,   dir: dirBullHigh(1.0, 0.05),
+      read: 'smart money - follow; >1 = top traders net long' },
+    { key: 'lsr_okx_top_pos',     label: 'OKX TOP-TRADER POS',      beginner: 'OKX top-trader position',
+      kind: 'ratio',      source: 'cex-agg',   fmt: fmtRatio,   dir: dirBullHigh(1.0, 0.05),
+      read: "follow, don't fade; >1 = big traders net long" },
+    { key: 'lsr_binance_taker',   label: 'BINANCE BUY/SELL FLOW',   beginner: 'Binance buy/sell flow',
+      kind: 'ratio',      source: 'cex-agg',   fmt: fmtRatio,   dir: dirBullHigh(1.0, 0.05),
+      read: 'aggressor flow; >1 = buyers lifting' },
+    { key: 'lsr_okx_taker',       label: 'OKX BUY/SELL FLOW',       beginner: 'OKX buy/sell flow',
+      kind: 'ratio',      source: 'cex-agg',   fmt: fmtRatio,   dir: dirBullHigh(1.0, 0.05),
+      read: null },
+    { key: 'open_interest',       label: 'PERP OI (HL)',             beginner: 'Open positions (HL)',
+      kind: 'level',      source: 'hl-market', fmt: fmtC,       dir: null, read: null },
+    { key: 'cex_oi_binance_hype', label: 'CEX OI (BINANCE)',         beginner: 'CEX OI - Binance',
+      kind: 'level',      source: 'cex-agg',   fmt: fmtC,       dir: null, read: null },
+    { key: 'cex_oi_bybit_hype',   label: 'CEX OI (BYBIT)',           beginner: 'CEX OI - Bybit',
+      kind: 'level',      source: 'cex-agg',   fmt: fmtC,       dir: null, read: null },
+    { key: 'cex_oi_okx_hype',     label: 'CEX OI (OKX)',             beginner: 'CEX OI - OKX',
+      kind: 'level',      source: 'cex-agg',   fmt: fmtC,       dir: null, read: null },
+    { key: 'cex_oi_total_hype',   label: 'CEX OI TOTAL',             beginner: 'Total exchange open positions',
+      kind: 'aggregate',  source: 'cex-agg',   fmt: fmtC,       dir: null,
+      read: '~1/3 of HL perp OI; separate pool — never add to HL OI' },
+    { key: 'perp_day_ntl_vlm',    label: 'FUTURES VOLUME 24H',       beginner: 'Futures volume (24h)',
+      kind: 'level',      source: 'hl-market', fmt: fmtC,       dir: null, read: null },
+    { key: 'perp_oracle_px',      label: 'FAIR PRICE',               beginner: 'Fair price',
+      kind: 'level',      source: 'hl-market', fmt: fmtPx,      dir: null, read: null },
+    { key: 'oi_delta',            label: 'CHANGE IN OPEN POSITIONS', beginner: 'Change in open positions',
+      kind: 'delta-prev', source: 'hl-market', fmt: fmtSignedC, dir: null,
+      read: '+OI +px = new longs; -OI = deleverage/liquidation' },
+    { key: 'cex_oi_delta',        label: 'CHANGE IN EXCHANGE OI',    beginner: 'Change in exchange OI',
+      kind: 'delta-prev', source: 'cex-agg',   fmt: fmtSignedC, dir: null,
+      read: 'CEX leverage direction (build/unwind)' },
+  ];
+
+  // ── Card builder ─────────────────────────────────────────────────────────
+  function makeCard(tile, value) {
+    var val     = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var dirInfo = (tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
+    var valCls  = dirInfo && dirInfo.cls ? ' ' + dirInfo.cls : '';
+    var dirCls  = dirInfo ? (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral') : '';
+    var srcCls  = SRC_CLS[tile.source] || '';
+    var ib = tile.read
+      ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
+      : '';
+    var rd = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
+    var subLabel = dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '';
+    return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
+      + '<div class="sc-header">'
+      +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
+      +   ib
+      + '</div>'
+      + '<div class="sc-value' + valCls + '">' + esc(val) + '</div>'
+      + subLabel
+      + rd
+      + '<div class="sc-badges">'
+      +   '<span class="sc-badge sc-kind sc-kind-' + esc(tile.kind) + '">' + esc(tile.kind) + '</span>'
+      +   '<span class="sc-badge sc-source sc-src-' + esc(srcCls) + '">' + esc(tile.source) + '</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── Signals fetch → render cards ─────────────────────────────────────────
+  function fetchAndRenderCards() {
+    fetch('/api/market/signals?subtab=leverage')
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        var vm = {};
+        (d.signals || []).forEach(function (s) { vm[s.key] = s.currentValue; });
+        var html = LEV_TILES.map(function (tile) {
+          return makeCard(tile, vm[tile.key] !== undefined ? vm[tile.key] : null);
+        }).join('');
+        document.getElementById('lev-cards-grid').innerHTML = html;
+        if (window.MKT && window.MKT.applyBeginner) window.MKT.applyBeginner();
+      })
+      .catch(function () {
+        document.getElementById('lev-cards-grid').innerHTML =
+          '<p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Could not load signals.</p>';
+      });
+  }
+
+  // ── Chart base factory ───────────────────────────────────────────────────
+  var muted  = '#3D5A78';
+  var border = 'rgba(56,189,248,0.09)';
+  var accent = '#38BDF8';
+  var gridC  = 'rgba(56,189,248,0.05)';
+
+  function levChartBase(containerId, h) {
+    var LC = window.LightweightCharts;
+    if (!LC) return null;
+    return LC.createChart(document.getElementById(containerId), {
+      autoSize: true,
+      height: h || 220,
+      layout: { background: { type: 'solid', color: '#0D1520' }, textColor: muted, attributionLogo: false },
+      grid:   { vertLines: { color: gridC, style: 1 }, horzLines: { color: gridC, style: 1 } },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: accent, width: 1, style: 1, labelBackgroundColor: accent },
+        horzLine: { color: accent, width: 1, style: 1, labelBackgroundColor: accent },
+      },
+      rightPriceScale: { borderColor: border },
+      timeScale: { borderColor: border, timeVisible: true, secondsVisible: false },
+    });
+  }
+
+  var RANGE_MS = { '1D': 86400, '1W': 604800, '1M': 2592000, '3M': 7776000 };
+
+  function applyRange(chart, rangeKey) {
+    if (rangeKey === 'All') { chart.timeScale().fitContent(); return; }
+    var secs = RANGE_MS[rangeKey];
+    if (secs) {
+      var now = Math.floor(Date.now() / 1000);
+      chart.timeScale().setVisibleRange({ from: now - secs, to: now + 3600 });
+    }
+  }
+
+  function bindTfGroup(groupId, chart, rangeRef, refreshFn) {
+    document.getElementById(groupId).addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeRef.v = btn.getAttribute('data-range');
+      document.querySelectorAll('#' + groupId + ' .tf').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      refreshFn();
+    });
+  }
+
+  // ── Chart 1: Funding rate bars + premium line ────────────────────────────
+  var c1 = null, c1Fund = null, c1Prem = null, r1 = { v: '1W' };
+
+  function mountC1() {
+    if (c1) return;
+    c1 = levChartBase('lev-chart1', 220);
+    if (!c1) return;
+    c1.applyOptions({ leftPriceScale: { visible: true, borderColor: border } });
+    c1Fund = c1.addHistogramSeries({ priceFormat: { type: 'percent', precision: 4 } });
+    c1Prem = c1.addLineSeries({
+      color: accent, lineWidth: 1, lineStyle: 0,
+      priceScaleId: 'left', priceFormat: { type: 'percent', precision: 4 },
+    });
+  }
+
+  function refreshC1() {
+    mountC1();
+    if (!c1) return;
+    var meta = document.getElementById('lev-chart1-meta');
+    fetch('/api/market/history?fields=funding_rate,perp_premium&range=' + r1.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var fData = [], pData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.funding_rate !== null && row.funding_rate !== undefined)
+            fData.push({ time: ts, value: row.funding_rate * 100, color: row.funding_rate > 0 ? '#E5494D' : '#26C281' });
+          if (row.perp_premium !== null && row.perp_premium !== undefined)
+            pData.push({ time: ts, value: row.perp_premium * 100 });
+        });
+        if (fData.length) c1Fund.setData(fData);
+        if (pData.length) c1Prem.setData(pData);
+        applyRange(c1, r1.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  bindTfGroup('lev-chart1-tf', c1, r1, refreshC1);
+
+  // ── Chart 2: HL OI vs CEX OI ─────────────────────────────────────────────
+  var c2 = null, c2Hl = null, c2Cex = null, r2 = { v: '1W' };
+
+  function mountC2() {
+    if (c2) return;
+    c2 = levChartBase('lev-chart2', 220);
+    if (!c2) return;
+    c2Hl = c2.addAreaSeries({
+      lineColor: accent, topColor: 'rgba(56,189,248,0.14)', bottomColor: 'rgba(56,189,248,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+    c2Cex = c2.addAreaSeries({
+      lineColor: '#F59E0B', topColor: 'rgba(245,158,11,0.10)', bottomColor: 'rgba(245,158,11,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+  }
+
+  function refreshC2() {
+    mountC2();
+    if (!c2) return;
+    var meta = document.getElementById('lev-chart2-meta');
+    fetch('/api/market/history?fields=open_interest,cex_oi_total_hype&range=' + r2.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var hlData = [], cexData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.open_interest !== null && row.open_interest !== undefined)
+            hlData.push({ time: ts, value: row.open_interest });
+          if (row.cex_oi_total_hype !== null && row.cex_oi_total_hype !== undefined)
+            cexData.push({ time: ts, value: row.cex_oi_total_hype });
+        });
+        if (hlData.length) c2Hl.setData(hlData);
+        if (cexData.length) c2Cex.setData(cexData);
+        applyRange(c2, r2.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  bindTfGroup('lev-chart2-tf', c2, r2, refreshC2);
+
+  // ── Chart 3: Crowd L/S ratios ─────────────────────────────────────────────
+  var c3 = null, c3Lines = {}, c3Ref = null, r3 = { v: '1W' };
+  var LSR_COLORS = {
+    lsr_binance_global: accent,
+    lsr_okx_account:    '#F59E0B',
+    lsr_bybit_account:  '#A78BFA',
+    lsr_agg_long_frac:  '#22D3EE',
+  };
+
+  function mountC3() {
+    if (c3) return;
+    c3 = levChartBase('lev-chart3', 220);
+    if (!c3) return;
+    Object.keys(LSR_COLORS).forEach(function (key) {
+      c3Lines[key] = c3.addLineSeries({ color: LSR_COLORS[key], lineWidth: 1, priceFormat: { type: 'price', precision: 3 } });
+    });
+    c3Ref = c3.addLineSeries({
+      color: 'rgba(255,255,255,0.18)', lineWidth: 1, lineStyle: 2,
+      crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+    });
+  }
+
+  function refreshC3() {
+    mountC3();
+    if (!c3) return;
+    var meta   = document.getElementById('lev-chart3-meta');
+    var fields = Object.keys(LSR_COLORS).join(',');
+    fetch('/api/market/history?fields=' + fields + '&range=' + r3.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var lineDatas = {};
+        Object.keys(LSR_COLORS).forEach(function (k) { lineDatas[k] = []; });
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          Object.keys(LSR_COLORS).forEach(function (k) {
+            if (row[k] !== null && row[k] !== undefined) lineDatas[k].push({ time: ts, value: row[k] });
+          });
+        });
+        Object.keys(LSR_COLORS).forEach(function (k) {
+          if (lineDatas[k].length) c3Lines[k].setData(lineDatas[k]);
+        });
+        if (d.rows.length >= 2) {
+          var t0 = Math.floor(d.rows[0].ts / 1000);
+          var t1 = Math.floor(d.rows[d.rows.length - 1].ts / 1000);
+          c3Ref.setData([{ time: t0, value: 1.0 }, { time: t1 + 3600, value: 1.0 }]);
+        }
+        applyRange(c3, r3.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  bindTfGroup('lev-chart3-tf', c3, r3, refreshC3);
+
+  // ── Tab activation (lazy init) ────────────────────────────────────────────
+  var levInited = false;
+  document.querySelector('.market-tab[data-tab="leverage"]').addEventListener('click', function () {
+    if (levInited) return;
+    levInited = true;
+    fetchAndRenderCards();
+    setTimeout(function () { refreshC1(); refreshC2(); refreshC3(); }, 60);
+  });
 
 })();
 </script>
