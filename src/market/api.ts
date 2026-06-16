@@ -5,8 +5,10 @@
 //   GET /api/market/snapshots        → snapshots.csv shape
 //   GET /api/market/bias?horizon=4   → BiasResponse JSON
 //   GET /api/market/signals          → current signal values JSON
+//   GET /api/market/candles          → HYPE candles always from mainnet
 
 import { Router } from "express";
+import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
 import { loadManifest } from "./manifest.js";
 import {
   buildScorecard,
@@ -27,6 +29,8 @@ interface ScorecardCache {
 }
 
 const caches = new Map<string, ScorecardCache>();
+
+let liveCache: { data: object; expiresAt: number } | null = null;
 
 function getScorecard(store: MarketStore, symbol: string): ScorecardCache {
   const cached = caches.get(symbol);
@@ -105,6 +109,89 @@ export function createMarketRouter(store: MarketStore): Router {
       }));
 
     res.json({ symbol, capturedAt: latest?.capturedAt ?? null, signals });
+  });
+
+  // ── GET /api/market/live ──────────────────────────────────────────────────
+  // Display-only — not persisted. Always reads mainnet. 2s server-side cache
+  // so burst browser polling stays cheap.
+  router.get("/api/market/live", async (_req, res) => {
+    if (liveCache && liveCache.expiresAt > Date.now()) { res.json(liveCache.data); return; }
+    try {
+      const client = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
+      const [perpResult, book] = await Promise.all([
+        client.metaAndAssetCtxs(),
+        client.l2Book({ coin: "HYPE" }).catch(() => null),
+      ]);
+      const [perpMeta, perpCtxs] = perpResult;
+      const idx = perpMeta.universe.findIndex((u) => u.name === "HYPE");
+      const ctx = idx >= 0 ? perpCtxs[idx] : null;
+
+      const markPx       = ctx ? parseFloat(ctx.markPx)       : null;
+      const midPx        = ctx?.midPx ? parseFloat(ctx.midPx) : null;
+      const funding      = ctx ? parseFloat(ctx.funding)       : null;
+      const openInterest = ctx ? parseFloat(ctx.openInterest)  : null;
+
+      // Bid-ask spread from top-of-book
+      const topBid = book?.levels?.[0]?.[0]?.px ? parseFloat(String(book.levels[0][0].px)) : null;
+      const topAsk = book?.levels?.[1]?.[0]?.px ? parseFloat(String(book.levels[1][0].px)) : null;
+      const refPx  = midPx ?? markPx;
+      const spreadBps = topBid && topAsk && refPx
+        ? ((topAsk - topBid) / refPx) * 10_000
+        : null;
+
+      // CVD from latest snapshot (hourly cadence — display only)
+      const [latest] = store.getRecentSnapshots("HYPE", 1);
+      const cvd24h = latest?.metrics["cvd_perp_24h"]?.value ?? null;
+
+      const data = { markPx, midPx, funding, openInterest, spreadBps, cvd24h, ts: Date.now() };
+      liveCache = { data, expiresAt: Date.now() + 2_000 };
+      res.json(data);
+    } catch (e) {
+      res.status(502).json({ error: (e as Error).message });
+    }
+  });
+
+  // ── GET /api/market/candles ───────────────────────────────────────────────
+  // Always reads mainnet — market data is observe-only (spec §0 + §6).
+  const CANDLE_INTERVALS = new Set(["1m","3m","5m","15m","30m","1h","2h","4h","8h","12h","1d"]);
+  const CANDLE_TF_MS: Record<string, number> = {
+    "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+    "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "8h": 28_800_000,
+    "12h": 43_200_000, "1d": 86_400_000,
+  };
+  const candleCache = new Map<string, { data: object; expiresAt: number }>();
+
+  router.get("/api/market/candles", async (req, res) => {
+    const coin     = typeof req.query.coin     === "string" ? req.query.coin.toUpperCase()     : "HYPE";
+    const interval = typeof req.query.interval === "string" ? req.query.interval               : "4h";
+    if (!CANDLE_INTERVALS.has(interval)) {
+      res.status(400).json({ error: `Invalid interval: ${interval}` });
+      return;
+    }
+    const cacheKey = `${coin}:${interval}`;
+    const cached   = candleCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) { res.json(cached.data); return; }
+
+    try {
+      const client    = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
+      const now       = Date.now();
+      const startTime = now - 200 * (CANDLE_TF_MS[interval] ?? 14_400_000);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = await client.candleSnapshot({ coin, interval: interval as any, startTime, endTime: now });
+      const candles = raw.map((c) => ({
+        time:   Math.floor(Number(c.t) / 1000),
+        open:   parseFloat(String(c.o)),
+        high:   parseFloat(String(c.h)),
+        low:    parseFloat(String(c.l)),
+        close:  parseFloat(String(c.c)),
+        volume: parseFloat(String(c.v)),
+      }));
+      const data = { coin, interval, candles };
+      candleCache.set(cacheKey, { data, expiresAt: Date.now() + 60_000 });
+      res.json(data);
+    } catch (e) {
+      res.status(502).json({ error: `Failed to fetch candles: ${(e as Error).message}` });
+    }
   });
 
   return router;

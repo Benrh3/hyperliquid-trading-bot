@@ -1,6 +1,22 @@
 <%- include('_head', { title: 'HYPE Market' }) %>
 <style>
-  /* ── Market section: sub-tab strip ── */
+  /* ═══════════════════════════════════════════════════════
+     Market page: tinted blue-black palette override
+     These `:root` additions override _head.ejs defaults for
+     this page only. body.light from _head.ejs still wins in
+     light mode (higher specificity), so light mode stays intact.
+  ═══════════════════════════════════════════════════════ */
+  :root {
+    --bg:       #0A0E14;
+    --surface:  #0D1520;
+    --surface2: #111E2D;
+    --border:   rgba(56,189,248,0.09);
+    --muted:    #3D5A78;
+  }
+
+  /* Light mode still reads from _head.ejs body.light — no override needed */
+
+  /* ── Sub-tab strip ──────────────────────────────────────────── */
   .market-tabs-bar {
     background: var(--surface);
     border-bottom: 1px solid var(--border);
@@ -14,7 +30,6 @@
     padding: 0 1.5rem;
     display: flex;
     align-items: center;
-    gap: 0;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -27,106 +42,199 @@
     font-size: 12px;
     font-family: inherit;
     font-weight: 500;
-    padding: 0.6rem 0.75rem;
+    padding: 0.55rem 0.75rem;
     cursor: pointer;
     white-space: nowrap;
     transition: color .12s;
     flex-shrink: 0;
   }
-  .market-tab:hover { color: var(--text); }
+  .market-tab:hover  { color: var(--text); }
   .market-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-  /* ── Market toolbar (horizon selector + beginner toggle) ── */
+  /* ── Live ticker bar ───────────────────────────────────────── */
+  .market-ticker-bar {
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+  }
+  .market-ticker-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .tk-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0 0.75rem;
+    border-right: 1px solid var(--border);
+    height: 100%;
+    flex-shrink: 0;
+  }
+  .tk-item:first-child { padding-left: 0; }
+  .tk-label {
+    color: var(--muted);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+  }
+  .tk-val  { color: var(--text); }
+  .tk-unit { color: var(--muted); font-size: 10px; }
+  .tk-up   { color: var(--up); }
+  .tk-dn   { color: var(--down); }
+  .tk-live {
+    margin-left: auto;
+    padding-right: 0;
+    border-right: none;
+    color: var(--muted);
+    gap: 0.35rem;
+  }
+  .dot-accent {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+    animation: pulse 2s infinite;
+  }
+
+  /* ── Layout ────────────────────────────────────────────────── */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1.25rem 1.5rem;
+  }
+
+  /* ── Market toolbar ────────────────────────────────────────── */
   .market-toolbar {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
     flex-wrap: wrap;
   }
   .horizon-label {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--muted);
     text-transform: uppercase;
-    letter-spacing: .05em;
-    margin-right: .25rem;
+    letter-spacing: .06em;
   }
-  .horizon-group { display: flex; gap: 3px; }
+  .horizon-group { display: flex; gap: 2px; }
   .hz-btn {
     background: none;
     border: 1px solid var(--border);
     color: var(--muted);
     font-size: 11px;
     font-family: inherit;
-    padding: 3px 8px;
+    padding: 2px 7px;
     border-radius: 3px;
     cursor: pointer;
-    transition: color .1s, border-color .1s;
+    transition: color .1s, border-color .1s, background .1s;
   }
-  .hz-btn:hover { color: var(--text); border-color: var(--muted); }
-  .hz-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
-
-  /* ── Beginner toggle ── */
+  .hz-btn:hover { color: var(--text); border-color: rgba(56,189,248,0.3); }
+  .hz-btn.active {
+    background: var(--accent-dim);
+    border-color: var(--accent-border);
+    color: var(--accent);
+  }
   .beginner-toggle {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.3rem;
     margin-left: auto;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--muted);
     user-select: none;
   }
   .beginner-toggle input { cursor: pointer; accent-color: var(--accent); }
   .beginner-toggle.active { color: var(--accent); }
 
-  /* ── Bias hero ── */
+  /* ── Bias hero ─────────────────────────────────────────────── */
   .bias-hero {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.5rem 2rem;
-    margin-bottom: 1.25rem;
-    display: flex;
-    align-items: center;
-    gap: 2rem;
-    flex-wrap: wrap;
+    border-top: 2px solid var(--accent-border);
+    border-radius: 0 0 8px 8px;
+    padding: 1.25rem 1.5rem 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.35);
+    max-width: 720px;
   }
-  .bias-label-block { flex: 0 0 auto; }
+  .bias-hero-top {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+  }
   .bias-label {
-    font-size: 2rem;
-    font-weight: 700;
+    font-family: Georgia, 'Palatino Linotype', serif;
+    font-size: 2.5rem;
+    font-weight: normal;
     letter-spacing: -.02em;
     line-height: 1;
+    flex: 1;
   }
-  .bias-label.bullish  { color: var(--up); }
-  .bias-label.bearish  { color: var(--down); }
-  .bias-label.neutral  { color: var(--muted); }
-  .bias-label.warming  { color: var(--muted); font-size: 1.25rem; }
-  .bias-score-block { flex: 1 1 160px; }
-  .bias-score-bar-wrap {
+  .bias-label.bullish { color: var(--up);   }
+  .bias-label.bearish { color: var(--down); }
+  .bias-label.neutral { color: var(--muted); }
+  .bias-label.warming { color: var(--muted); font-size: 1.75rem; }
+  .conf-badge {
+    display: inline-block;
+    padding: .2rem .55rem;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  .conf-high { background: rgba(34,197,94,0.15);  color: var(--up);     }
+  .conf-low  { background: rgba(56,189,248,0.10); color: var(--muted);  }
+
+  /* Split bar */
+  .bias-bar-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: .35rem;
+    margin-bottom: 0.4rem;
   }
-  .bias-score-track {
-    flex: 1;
-    height: 6px;
-    background: var(--border);
-    border-radius: 3px;
-    overflow: hidden;
+  .bias-bar-wrap {
     position: relative;
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: rgba(56,189,248,0.06);
+    overflow: hidden;
   }
-  .bias-score-fill {
+  .bias-bar-bull {
     position: absolute;
-    height: 100%;
-    border-radius: 3px;
-    transition: width .3s, left .3s;
+    left: 0; top: 0; bottom: 0;
+    background: var(--up);
+    transition: width .5s ease;
   }
-  .bias-score-fill.bullish { background: var(--up); left: 50%; }
-  .bias-score-fill.bearish { background: var(--down); right: 50%; }
-  .bias-score-fill.neutral { background: var(--muted); left: 50%; }
+  .bias-bar-bear {
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    background: var(--down);
+    transition: width .5s ease;
+  }
+  .bias-bar-center {
+    position: absolute;
+    left: 50%;
+    top: -1px; bottom: -1px;
+    width: 2px;
+    background: rgba(255,255,255,0.22);
+    transform: translateX(-50%);
+    z-index: 2;
+  }
   .bias-score-val {
     font-size: 11px;
     font-family: 'SFMono-Regular', Consolas, monospace;
@@ -137,80 +245,92 @@
     text-align: right;
   }
   .bias-counts {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--muted);
+    margin-bottom: 0.3rem;
   }
-  .bias-counts .bc-up   { color: var(--up); }
-  .bias-counts .bc-dn   { color: var(--down); }
-  .bias-conf-block { flex: 0 0 auto; }
-  .conf-badge {
-    display: inline-block;
-    padding: .2rem .55rem;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-  }
-  .conf-high { background: rgba(34,197,94,0.12);  color: var(--up); }
-  .conf-low  { background: rgba(210,153,34,0.12); color: var(--yellow); }
+  .bias-counts .bc-up { color: var(--up);   }
+  .bias-counts .bc-dn { color: var(--down); }
   .bias-warming-note {
     font-size: 11px;
     color: var(--muted);
-    margin-top: .35rem;
+    font-style: italic;
+    margin-bottom: 0.5rem;
   }
+  /* Driver chips */
+  .bias-drivers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    min-height: 1.2rem;
+  }
+  .driver-chip {
+    display: inline-block;
+    padding: .15rem .45rem;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .driver-chip.bull { background: rgba(34,197,94,0.13);  color: var(--up);   }
+  .driver-chip.bear { background: rgba(239,68,68,0.13);  color: var(--down); }
 
-  /* ── Category cards ── */
-  .cat-section { margin-bottom: 1.25rem; }
+  /* ── Category cards ──────────────────────────────────────── */
   .cat-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: .625rem;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: .5rem;
+    margin-bottom: 1rem;
   }
   .cat-card {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: .625rem .875rem;
-    border-left: 3px solid var(--border);
+    border: none;
+    border-left: 3px solid rgba(56,189,248,0.15);
+    border-radius: 0 5px 5px 0;
+    padding: .5rem .75rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    transition: border-left-color .15s;
   }
-  .cat-card.bullish { border-left-color: var(--up); }
+  .cat-card.bullish { border-left-color: var(--up);   }
   .cat-card.bearish { border-left-color: var(--down); }
   .cat-card.neutral { border-left-color: var(--muted); }
-  .cat-card.warming { border-left-color: var(--border); opacity: .65; }
-  .cat-name { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .25rem; }
-  .cat-bias { font-size: 13px; font-weight: 600; }
-  .cat-bias.bullish { color: var(--up); }
+  .cat-card.warming { border-left-color: rgba(56,189,248,0.12); opacity: .7; }
+  .cat-name { font-size: 9px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: .2rem; }
+  .cat-bias { font-size: 12px; font-weight: 600; }
+  .cat-bias.bullish { color: var(--up);   }
   .cat-bias.bearish { color: var(--down); }
   .cat-bias.neutral, .cat-bias.warming { color: var(--muted); }
 
-  /* ── Signal card (headline tiles) ── */
+  /* ── Headline tiles ──────────────────────────────────────── */
   .tiles-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: .75rem;
-    margin-bottom: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    gap: .5rem;
+    margin-bottom: 1rem;
   }
   .signal-card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: .875rem 1rem;
-    transition: border-color .12s;
+    padding: .75rem .875rem;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.25);
+    transition: border-color .15s, box-shadow .15s;
   }
-  .signal-card:hover { border-color: var(--accent-border); }
+  .signal-card:hover {
+    border-color: var(--accent-border);
+    box-shadow: 0 2px 10px rgba(56,189,248,0.08);
+  }
   .sc-header {
     display: flex;
     align-items: center;
-    gap: .3rem;
-    margin-bottom: .35rem;
+    gap: .25rem;
+    margin-bottom: .3rem;
   }
   .sc-label {
-    font-size: 10px;
+    font-size: 9px;
     text-transform: uppercase;
-    letter-spacing: .06em;
+    letter-spacing: .07em;
     color: var(--muted);
-    font-weight: 600;
+    font-weight: 700;
   }
   .sc-info-btn {
     background: none;
@@ -221,109 +341,152 @@
     padding: 0;
     line-height: 1;
     transition: color .1s;
+    opacity: .65;
   }
-  .sc-info-btn:hover { color: var(--accent); }
+  .sc-info-btn:hover { color: var(--accent); opacity: 1; }
   .sc-value {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     letter-spacing: -.02em;
     line-height: 1.1;
-    margin-bottom: .2rem;
+    margin-bottom: .15rem;
   }
-  .sc-value.val-pos { color: var(--up); }
+  .sc-value.val-pos { color: var(--up);   }
   .sc-value.val-neg { color: var(--down); }
-  .sc-subline { font-size: 11px; color: var(--muted); margin-bottom: .35rem; }
+  .sc-subline {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: .3rem;
+  }
   .sc-read {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--muted);
     font-style: italic;
-    margin-bottom: .35rem;
+    margin-bottom: .3rem;
     line-height: 1.4;
   }
-  .sc-badges { display: flex; gap: .3rem; flex-wrap: wrap; }
+  .sc-badges { display: flex; gap: .25rem; flex-wrap: wrap; margin-top: .35rem; }
   .sc-badge {
     display: inline-block;
-    padding: .1rem .4rem;
+    padding: .08rem .35rem;
     border-radius: 20px;
-    font-size: 10px;
-    font-weight: 500;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: .03em;
   }
-  /* kind badge colours */
-  .sc-kind-level      { background: rgba(139,148,158,0.12); color: var(--muted); }
-  .sc-kind-window     { background: var(--accent-dim);      color: var(--accent); }
-  .sc-kind-delta-prev { background: rgba(139,92,246,0.12);  color: #a78bfa; }
-  .sc-kind-ratio      { background: rgba(20,184,166,0.12);  color: #2dd4bf; }
-  .sc-kind-aggregate  { background: rgba(251,146,60,0.12);  color: #fb923c; }
-  .sc-kind-count      { background: rgba(139,148,158,0.10); color: var(--muted); }
-  /* source badge colours */
-  .sc-src-hlmarket  { background: rgba(88,166,255,0.10); color: var(--blue); }
-  .sc-src-hlnative  { background: rgba(56,189,248,0.10); color: var(--accent); }
-  .sc-src-onchain   { background: rgba(251,146,60,0.10); color: #fb923c; }
-  .sc-src-cexagg    { background: rgba(210,153,34,0.10); color: var(--yellow); }
+  /* kind badges — color coded per spec */
+  .sc-kind-level      { background: rgba(56,189,248,0.14);  color: #38BDF8; }
+  .sc-kind-window     { background: rgba(245,158,11,0.14);  color: #F59E0B; }
+  .sc-kind-delta-prev { background: rgba(139,92,246,0.14);  color: #A78BFA; }
+  .sc-kind-ratio      { background: rgba(236,72,153,0.14);  color: #F472B6; }
+  .sc-kind-aggregate  { background: rgba(34,211,238,0.14);  color: #22D3EE; }
+  .sc-kind-count      { background: rgba(56,189,248,0.07);  color: var(--muted); }
+  /* source badges — muted uniform pill */
+  .sc-source {
+    background: rgba(56,189,248,0.06);
+    color: var(--muted);
+  }
 
-  /* ── Chart card wrapper ── */
+  /* ── Chart card ──────────────────────────────────────────── */
   .chart-card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 6px;
     overflow: hidden;
-    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.25);
   }
   .chart-card-toolbar {
     display: flex;
     align-items: center;
-    gap: .75rem;
-    padding: .45rem .875rem;
+    gap: .5rem;
+    padding: .4rem .875rem;
     border-bottom: 1px solid var(--border);
-    font-size: 12px;
+    font-size: 11px;
   }
   .chart-card-title { font-weight: 600; color: var(--text); }
-  .chart-card-meta  { color: var(--muted); margin-left: auto; font-size: 11px; }
+  .chart-card-meta  { color: var(--muted); margin-left: auto; font-size: 10px; }
+  .tf-group { display: flex; gap: 2px; }
+  .tf {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 10px;
+    font-family: inherit;
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color .1s, border-color .1s;
+  }
+  .tf:hover  { color: var(--text); border-color: rgba(56,189,248,0.3); }
+  .tf.active { background: var(--accent-dim); border-color: var(--accent-border); color: var(--accent); }
 
-  /* ── Stub tab placeholder ── */
+  /* ── Section label ───────────────────────────────────────── */
+  .mkt-section-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: .4rem;
+  }
+
+  /* ── Stub tab placeholder ─────────────────────────────────── */
   .tab-stub {
     padding: 3rem 1rem;
     text-align: center;
     color: var(--muted);
     font-size: 13px;
   }
-  .tab-stub-title { font-size: 1.1rem; font-weight: 600; color: var(--text); margin-bottom: .5rem; }
+  .tab-stub-title {
+    font-family: Georgia, serif;
+    font-size: 1.25rem;
+    font-weight: normal;
+    color: var(--text);
+    margin-bottom: .5rem;
+  }
 
-  /* ── Tooltip ── */
+  /* ── Tooltip ─────────────────────────────────────────────── */
   #market-tip {
     position: fixed;
     pointer-events: none;
     display: none;
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--surface2);
+    border: 1px solid var(--accent-border);
     color: var(--text);
     font-size: 11px;
-    padding: .35rem .6rem;
-    border-radius: 4px;
+    padding: .4rem .65rem;
+    border-radius: 5px;
     max-width: 220px;
     line-height: 1.5;
     z-index: 9999;
-    box-shadow: 0 4px 12px rgba(0,0,0,.4);
+    box-shadow: 0 6px 20px rgba(0,0,0,.5);
   }
 
-  /* ── Stale / live indicator ── */
-  .dot-accent {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--accent);
-    display: inline-block;
-    animation: pulse 2s infinite;
+  /* ── Value-change flash ─────────────────────────────────── */
+  @keyframes mkt-flash-up {
+    from { background-color: rgba(34,197,94,0.22); }
+    to   { background-color: transparent; }
+  }
+  @keyframes mkt-flash-down {
+    from { background-color: rgba(239,68,68,0.22); }
+    to   { background-color: transparent; }
+  }
+  .flash-up   { border-radius: 3px; animation: mkt-flash-up   700ms ease-out forwards; }
+  .flash-down { border-radius: 3px; animation: mkt-flash-down 700ms ease-out forwards; }
+  @media (prefers-reduced-motion: reduce) {
+    .flash-up, .flash-down { animation: none !important; }
   }
 
-  /* ── Mobile ── */
+  /* ── Mobile ──────────────────────────────────────────────── */
   @media (max-width: 768px) {
     .market-tabs-inner { padding: 0 .75rem; }
-    .container { padding: 1rem .75rem; }
-    .bias-hero { padding: 1rem 1.25rem; gap: 1rem; }
-    .bias-label { font-size: 1.5rem; }
-    .tiles-grid { grid-template-columns: 1fr 1fr; }
-    .cat-grid   { grid-template-columns: 1fr 1fr; }
+    .container         { padding: 1rem .75rem; }
+    .bias-hero         { padding: 1rem; }
+    .bias-label        { font-size: 1.75rem; }
+    .tiles-grid        { grid-template-columns: 1fr 1fr; }
+    .cat-grid          { grid-template-columns: 1fr 1fr; }
+    .market-ticker-inner { padding: 0 .75rem; }
   }
   @media (max-width: 480px) {
     .tiles-grid { grid-template-columns: 1fr; }
@@ -331,7 +494,7 @@
   }
 </style>
 
-<!-- ── Main nav: Bots | Market ── -->
+<!-- ── Top nav: Bots | Market ── -->
 <nav class="nav">
   <a href="/" class="nav-brand">HL Bot</a>
   <button class="hamburger" id="nav-hamburger" aria-label="Menu">&#9776;</button>
@@ -342,13 +505,12 @@
   <div class="nav-right">
     <span class="dot-accent"></span>
     <span class="badge badge-net"><%= network %></span>
-    <span class="text-muted" id="market-captured-at" style="font-size:11px"></span>
     <% if (isAdmin) { %><a href="/logout" class="nav-link">Logout</a><% } else if (authConfigured) { %><a href="/login" class="nav-link">Login</a><% } %>
     <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
   </div>
 </nav>
 
-<!-- ── Market sub-tab strip ── -->
+<!-- ── Sub-tab strip ── -->
 <div class="market-tabs-bar">
   <div class="market-tabs-inner" id="market-tab-strip">
     <button class="market-tab active" data-tab="summary">Summary</button>
@@ -365,18 +527,48 @@
   </div>
 </div>
 
+<!-- ── Live ticker bar ── -->
+<div class="market-ticker-bar">
+  <div class="market-ticker-inner">
+    <div class="tk-item">
+      <span class="tk-label">HYPE</span>
+      <span class="tk-val" id="tk-price">—</span>
+      <span class="tk-val" id="tk-dir"></span>
+    </div>
+    <div class="tk-item">
+      <span class="tk-label">FUNDING</span>
+      <span class="tk-val" id="tk-funding">—</span>
+    </div>
+    <div class="tk-item">
+      <span class="tk-label">CVD 24H</span>
+      <span class="tk-val" id="tk-cvd">—</span>
+    </div>
+    <div class="tk-item">
+      <span class="tk-label">SPREAD</span>
+      <span class="tk-val" id="tk-spread">—</span>
+      <span class="tk-unit">bps</span>
+    </div>
+    <div class="tk-item tk-live">
+      <span class="dot-accent"></span>
+      <span id="tk-upd">0</span>
+      <span class="tk-unit">upd/min</span>
+      <span class="tk-unit" id="market-captured-at" style="margin-left:.35rem"></span>
+    </div>
+  </div>
+</div>
+
 <!-- ── Tooltip ── -->
 <div id="market-tip" role="tooltip"></div>
 
-<!-- ── Page body ── -->
+<!-- ── Page content ── -->
 <div class="container" id="market-main">
 
-  <!-- ════ SUMMARY TAB ════ -->
+  <!-- ════ SUMMARY ════ -->
   <div id="tab-summary" class="tab-panel">
 
-    <!-- Toolbar: horizon selector + beginner toggle -->
+    <!-- Toolbar -->
     <div class="market-toolbar">
-      <span class="horizon-label">Holding horizon</span>
+      <span class="horizon-label">Horizon</span>
       <div class="horizon-group" id="horizon-group">
         <button class="hz-btn" data-h="4">4h</button>
         <button class="hz-btn active" data-h="24">24h</button>
@@ -391,49 +583,45 @@
 
     <!-- Bias hero -->
     <div class="bias-hero" id="bias-hero">
-      <div class="bias-label-block">
-        <div class="bias-label warming" id="bias-label">LOADING…</div>
-      </div>
-      <div class="bias-score-block">
-        <div class="bias-score-bar-wrap">
-          <div class="bias-score-track">
-            <div class="bias-score-fill neutral" id="bias-fill" style="width:0%"></div>
-          </div>
-          <span class="bias-score-val" id="bias-score-val">—</span>
-        </div>
-        <div class="bias-counts" id="bias-counts">—</div>
-      </div>
-      <div class="bias-conf-block">
+      <div class="bias-hero-top">
+        <span class="bias-label warming" id="bias-label">Neutral</span>
         <span class="conf-badge conf-low" id="conf-badge">WARMING</span>
-        <div class="bias-warming-note" id="bias-warming-note"></div>
       </div>
+      <div class="bias-bar-row">
+        <div class="bias-bar-wrap">
+          <div class="bias-bar-bull" id="bias-bar-bull" style="width:0%"></div>
+          <div class="bias-bar-bear" id="bias-bar-bear" style="width:0%"></div>
+          <div class="bias-bar-center"></div>
+        </div>
+        <span class="bias-score-val" id="bias-score-val">—</span>
+      </div>
+      <div class="bias-counts" id="bias-counts">—</div>
+      <div class="bias-warming-note" id="bias-warming-note">Signals still warming — IC not yet proven</div>
+      <div class="bias-drivers" id="bias-drivers"></div>
     </div>
 
-    <!-- Market read by category -->
-    <p class="section-title" style="margin-bottom:.5rem">Market read by category</p>
-    <div class="cat-section">
-      <div class="cat-grid" id="cat-grid">
-        <div class="cat-card warming"><div class="cat-name">Leverage</div><div class="cat-bias warming">WARMING</div></div>
-        <div class="cat-card warming"><div class="cat-name">Order Flow</div><div class="cat-bias warming">WARMING</div></div>
-        <div class="cat-card warming"><div class="cat-name">Supply</div><div class="cat-bias warming">WARMING</div></div>
-        <div class="cat-card warming"><div class="cat-name">On-chain</div><div class="cat-bias warming">WARMING</div></div>
-        <div class="cat-card warming"><div class="cat-name">Microstructure</div><div class="cat-bias warming">WARMING</div></div>
-        <div class="cat-card warming"><div class="cat-name">Liquidations</div><div class="cat-bias warming">WARMING</div></div>
-      </div>
+    <!-- Category cards -->
+    <div class="mkt-section-label">Market read by category</div>
+    <div class="cat-grid" id="cat-grid">
+      <div class="cat-card warming"><div class="cat-name">Leverage</div><div class="cat-bias warming">—</div></div>
+      <div class="cat-card warming"><div class="cat-name">Order Flow</div><div class="cat-bias warming">—</div></div>
+      <div class="cat-card warming"><div class="cat-name">Supply</div><div class="cat-bias warming">—</div></div>
+      <div class="cat-card warming"><div class="cat-name">On-chain</div><div class="cat-bias warming">—</div></div>
+      <div class="cat-card warming"><div class="cat-name">Microstructure</div><div class="cat-bias warming">—</div></div>
+      <div class="cat-card warming"><div class="cat-name">Liquidations</div><div class="cat-bias warming">—</div></div>
     </div>
 
-    <!-- Headline tiles (6 SignalCards) -->
-    <p class="section-title" style="margin-bottom:.5rem">Key metrics</p>
+    <!-- Key metric tiles -->
+    <div class="mkt-section-label">Key metrics</div>
     <div class="tiles-grid" id="tiles-grid">
-      <!-- JS-rendered signal cards go here -->
-      <div class="signal-card" style="opacity:.4">
-        <div class="sc-header"><span class="sc-label">LOADING…</span></div>
+      <div class="signal-card" style="opacity:.35">
+        <div class="sc-header"><span class="sc-label">Loading…</span></div>
         <div class="sc-value">—</div>
       </div>
     </div>
 
-    <!-- HYPE price chart -->
-    <div class="chart-card" id="price-chart-card">
+    <!-- Price chart -->
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">HYPE / USDT</span>
         <div class="tf-group" id="px-tf-group">
@@ -441,60 +629,60 @@
           <button class="tf active" data-ptf="4h">4h</button>
           <button class="tf" data-ptf="1d">1d</button>
         </div>
-        <span class="chart-card-meta" id="px-chart-updated"></span>
+        <span class="chart-card-meta" id="px-chart-meta"></span>
       </div>
-      <div id="px-chart" style="height:240px;position:relative"></div>
+      <div id="px-chart" style="height:200px;position:relative"></div>
     </div>
 
   </div><!-- /tab-summary -->
 
-  <!-- ════ STUB TABS ════ -->
+  <!-- ════ STUBS ════ -->
 
   <div id="tab-timemachine" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">Time Machine</div>
       <p>Pick a past moment + horizon → bias as-it-stood vs what price actually did.</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming in a future build once snapshot history accumulates.</p>
+      <p style="margin-top:.5rem;font-size:11px">Coming once snapshot history accumulates.</p>
     </div>
   </div>
 
   <div id="tab-orderflow" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">Order Flow</div>
-      <p>CVD windows, TWAP/scheduled flow, AF buys.</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming soon.</p>
+      <p>CVD windows · TWAP/scheduled flow · AF buys</p>
+      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
     </div>
   </div>
 
   <div id="tab-leverage" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">Leverage</div>
-      <p>Funding, premium, basis, OI (HL + CEX), long/short ratios, OI delta.</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming soon.</p>
+      <p>Funding · premium · basis · OI (HL + CEX) · L/S ratios · OI delta</p>
+      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
     </div>
   </div>
 
   <div id="tab-supply" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">Supply</div>
-      <p>Staking, unstake queue/maturing, AF balance, circulating supply.</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming soon.</p>
+      <p>Staking · unstake queue/maturing · AF balance · circulating supply</p>
+      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
     </div>
   </div>
 
   <div id="tab-onchain" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">On-chain</div>
-      <p>CEX flows/balance, holder concentration, holders.</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming soon.</p>
+      <p>CEX flows/balance · holder concentration · holders</p>
+      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
     </div>
   </div>
 
   <div id="tab-microstructure" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">Microstructure</div>
-      <p>Book imbalance, spread, depth (perp + spot).</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming soon.</p>
+      <p>Book imbalance · spread · depth (perp + spot)</p>
+      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
     </div>
   </div>
 
@@ -502,30 +690,34 @@
     <div class="tab-stub">
       <div class="tab-stub-title">Liquidations</div>
       <p>CEX liquidations and HL liquidations — kept in separate blocks (different methodologies).</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming soon.</p>
+      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
     </div>
   </div>
 
   <div id="tab-signals" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">Signals</div>
-      <p>IC table · hit-rate table · signal meaning cards (39 scoring signals × 4 horizons).</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming soon — scorecard fills in over the first months.</p>
+      <p>IC table · hit-rate table · 39 scoring signals × 4 horizons</p>
+      <p style="margin-top:.5rem;font-size:11px">Scorecard fills in over months — only 2 signals have measured IC today.</p>
     </div>
   </div>
 
   <div id="tab-data" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">Data</div>
-      <p>Recent snapshots table · <a href="/api/market/snapshots" style="color:var(--accent)">snapshots.csv</a> · <a href="/api/market/scorecard" style="color:var(--accent)">scorecard.csv</a></p>
+      <p>
+        Recent snapshots table ·
+        <a href="/api/market/snapshots" style="color:var(--accent)">snapshots.csv</a> ·
+        <a href="/api/market/scorecard"  style="color:var(--accent)">scorecard.csv</a>
+      </p>
     </div>
   </div>
 
   <div id="tab-glossary" class="tab-panel" style="display:none">
     <div class="tab-stub">
       <div class="tab-stub-title">Glossary</div>
-      <p>Concept explanations + per-metric plain English from the manifest.</p>
-      <p style="margin-top:.5rem;font-size:12px">Coming soon.</p>
+      <p>Concepts + per-metric plain English from the manifest.</p>
+      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
     </div>
   </div>
 
@@ -533,30 +725,30 @@
 
 <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 
-<!-- ── Shared: tab switching + beginner mode + tooltip ── -->
+<!-- ── Shared: tabs + tooltip + beginner mode ── -->
 <script>
 (function () {
   'use strict';
 
-  // ── Tab switching ──────────────────────────────────────────────────────────
+  // Tab switching
   var tabs = document.querySelectorAll('.market-tab');
   tabs.forEach(function (btn) {
     btn.addEventListener('click', function () {
       tabs.forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
-      var target = btn.getAttribute('data-tab');
+      var t = btn.getAttribute('data-tab');
       document.querySelectorAll('.tab-panel').forEach(function (p) {
-        p.style.display = p.id === 'tab-' + target ? '' : 'none';
+        p.style.display = p.id === 'tab-' + t ? '' : 'none';
       });
     });
   });
 
-  // ── Tooltip ───────────────────────────────────────────────────────────────
+  // Tooltip
   var tipEl = document.getElementById('market-tip');
   function showTip(el, text) {
     tipEl.textContent = text;
     tipEl.style.display = 'block';
-    var r = el.getBoundingClientRect();
+    var r  = el.getBoundingClientRect();
     var tw = tipEl.offsetWidth;
     var th = tipEl.offsetHeight;
     var left = Math.min(r.left + r.width / 2 - tw / 2, window.innerWidth - tw - 8);
@@ -568,19 +760,18 @@
   }
   function hideTip() { tipEl.style.display = 'none'; }
   document.addEventListener('mouseover', function (e) {
-    var btn = e.target.closest('[data-tip]');
-    if (btn) showTip(btn, btn.getAttribute('data-tip'));
+    var el = e.target.closest('[data-tip]');
+    if (el) showTip(el, el.getAttribute('data-tip'));
   });
   document.addEventListener('mouseout', function (e) {
     if (e.target.closest('[data-tip]')) hideTip();
   });
 
-  // ── Beginner mode ─────────────────────────────────────────────────────────
-  var beginnerChk = document.getElementById('beginner-chk');
-  var beginnerLbl = document.getElementById('beginner-lbl');
-
+  // Beginner mode
+  var bChk = document.getElementById('beginner-chk');
+  var bLbl = document.getElementById('beginner-lbl');
   function applyBeginner(on) {
-    beginnerLbl.classList.toggle('active', on);
+    bLbl.classList.toggle('active', on);
     document.querySelectorAll('[data-expert]').forEach(function (el) {
       el.textContent = on ? el.getAttribute('data-beginner') : el.getAttribute('data-expert');
     });
@@ -589,29 +780,42 @@
     });
     try { localStorage.setItem('mkt-beginner', on ? '1' : '0'); } catch (_) {}
   }
-
-  // Restore persisted state
   try {
-    var saved = localStorage.getItem('mkt-beginner');
-    if (saved === '1') { beginnerChk.checked = true; applyBeginner(true); }
+    if (localStorage.getItem('mkt-beginner') === '1') { bChk.checked = true; applyBeginner(true); }
   } catch (_) {}
-
-  beginnerChk.addEventListener('change', function () { applyBeginner(beginnerChk.checked); });
-
-  // Expose globally so signal-card builder can call after injecting new cards
+  bChk.addEventListener('change', function () { applyBeginner(bChk.checked); });
   window.MKT = window.MKT || {};
-  window.MKT.applyBeginner = function () { applyBeginner(beginnerChk.checked); };
+  window.MKT.applyBeginner = function () { applyBeginner(bChk.checked); };
+
+  // Flash: remove→reflow→re-add so the animation can re-trigger on repeated updates
+  window.MKT.flashEl = function (el, dir) {
+    el.classList.remove('flash-up', 'flash-down');
+    void el.offsetWidth; // force reflow to restart CSS animation
+    el.classList.add(dir === 'up' ? 'flash-up' : 'flash-down');
+  };
+  // Clean up flash class after animation ends (enables re-triggering on next change)
+  document.addEventListener('animationend', function (e) {
+    var t = e.target;
+    if (t && (t.classList.contains('flash-up') || t.classList.contains('flash-down'))) {
+      t.classList.remove('flash-up', 'flash-down');
+    }
+  }, true);
 
 })();
 </script>
 
-<!-- ── Summary tab: bias + signals + chart ── -->
+<!-- ── Summary: bias + ticker + signals + chart ── -->
 <script>
 (function () {
   'use strict';
 
-  // ── Horizon selector state ─────────────────────────────────────────────────
-  var activeH = 24;
+  // ── State ──────────────────────────────────────────────────────────────────
+  var activeH     = 24;
+  var lastTkPrice = null;
+  var tkTimes     = [];
+  var prevVals    = {}; // metric key → last displayed number, for flash comparison
+
+  // ── Horizon selector ───────────────────────────────────────────────────────
   document.getElementById('horizon-group').addEventListener('click', function (e) {
     var btn = e.target.closest('.hz-btn');
     if (!btn) return;
@@ -622,98 +826,91 @@
     fetchBias(activeH);
   });
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
   function esc(s) {
     return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
-
   function fmtCompact(v) {
     if (v === null || v === undefined || !isFinite(v)) return '—';
-    var abs = Math.abs(v);
-    var sign = v < 0 ? '-' : '';
+    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
     if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
     if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
     if (abs >= 1e3) return sign + (abs / 1e3).toFixed(0) + 'K';
     return sign + abs.toFixed(2);
   }
+  function fmtPrice(v)   { return (v === null || !isFinite(v)) ? '—' : '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function fmtFunding(v) { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(4) + '%'; }
+  function fmtSigned(v)  { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + fmtCompact(v); }
+  function fmtBps(v)     { return (v === null || !isFinite(v)) ? '—' : v.toFixed(2); }
 
-  function fmtPrice(v) {
-    if (v === null || v === undefined || !isFinite(v)) return '—';
-    return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  function fmtFunding(v) {
-    if (v === null || v === undefined || !isFinite(v)) return '—';
-    var sign = v >= 0 ? '+' : '';
-    return sign + (v * 100).toFixed(4) + '%/h';
-  }
-
-  function fmtSigned(v) {
-    if (v === null || v === undefined || !isFinite(v)) return '—';
-    var sign = v >= 0 ? '+' : '';
-    return sign + fmtCompact(v);
-  }
-
-  // ── Headline tile definitions (key, labels, format fn) ────────────────────
+  // ── Tile definitions ───────────────────────────────────────────────────────
   var TILES = [
-    { key: 'perp_mark_px',      label: 'PRICE (FUTURES)', beginner: 'Price (futures)',
-      kind: 'level', source: 'hl-market', read: null,
-      fmt: fmtPrice, sign: false },
-    { key: 'funding_rate',      label: 'FUNDING /H', beginner: 'Funding rate',
+    { key: 'perp_mark_px',       label: 'PRICE (FUTURES)', beginner: 'Price (futures)',
+      kind: 'level', source: 'hl-market',  read: null, fmt: fmtPrice,   sign: false },
+    { key: 'funding_rate',       label: 'FUNDING /H',      beginner: 'Funding rate',
       kind: 'level', source: 'hl-market',
       read: 'high + = crowded longs (contrarian bearish); tiny scale',
       fmt: fmtFunding, sign: true },
-    { key: 'open_interest',     label: 'PERP OI (HL)', beginner: 'Open positions (HL)',
-      kind: 'level', source: 'hl-market', read: null,
-      fmt: fmtCompact, sign: false },
-    { key: 'cvd_perp_24h',      label: 'CVD PERP 24H', beginner: 'Aggressive buying 24h (futures)',
+    { key: 'open_interest',      label: 'PERP OI (HL)',    beginner: 'Open positions (HL)',
+      kind: 'level', source: 'hl-market',  read: null, fmt: fmtCompact, sign: false },
+    { key: 'cvd_perp_24h',       label: 'CVD PERP 24H',   beginner: 'Aggressive buying 24h',
       kind: 'window', source: 'hl-market',
-      read: 'daily aggressor pressure; px up + CVD down = distribution',
+      read: 'px up + CVD down = distribution; px down + CVD up = absorption',
       fmt: fmtSigned, sign: true },
-    { key: 'cex_net_flow_hype', label: 'CEX NET FLOW', beginner: 'Coins moving to exchanges',
+    { key: 'cex_net_flow_hype',  label: 'CEX NET FLOW',   beginner: 'Coins moving to exchanges',
       kind: 'window', source: 'on-chain',
       read: '+ = into exchanges = SELL intent (bearish); - = withdrawals (bullish)',
       fmt: fmtSigned, sign: true },
-    { key: 'total_staked_hype', label: 'TOTAL STAKED', beginner: 'Coins locked (staked)',
+    { key: 'total_staked_hype',  label: 'TOTAL STAKED',   beginner: 'Coins locked (staked)',
       kind: 'level', source: 'hl-native',
       read: 'rising = float reduction (bullish)',
       fmt: fmtCompact, sign: false },
   ];
 
-  // Source → CSS class suffix
-  var SRC_CLS = {
-    'hl-market': 'hlmarket',
-    'hl-native': 'hlnative',
-    'on-chain':  'onchain',
-    'cex-agg':   'cexagg',
-  };
+  var SRC_CLS = { 'hl-market': 'hlmarket', 'hl-native': 'hlnative', 'on-chain': 'onchain', 'cex-agg': 'cexagg' };
 
-  function signClass(v, signSensitive) {
-    if (!signSensitive || v === null || !isFinite(v)) return '';
+  // In-place tile value update with flash — used by the 4s live poll.
+  // Avoids full card re-render so beginner-mode text and badge classes are preserved.
+  function updateFastTileValue(key, newVal, fmtFn, signSensitive) {
+    if (newVal === null || newVal === undefined) return;
+    var card = document.querySelector('.signal-card[data-key="' + key + '"]');
+    if (!card) return;
+    var valEl = card.querySelector('.sc-value');
+    if (!valEl) return;
+    var oldVal = prevVals[key];
+    valEl.textContent = fmtFn(newVal);
+    if (signSensitive) {
+      valEl.classList.remove('val-pos', 'val-neg');
+      if (newVal > 0) valEl.classList.add('val-pos');
+      else if (newVal < 0) valEl.classList.add('val-neg');
+    }
+    if (oldVal !== undefined && oldVal !== null && newVal !== oldVal && window.MKT && window.MKT.flashEl) {
+      window.MKT.flashEl(valEl, newVal > oldVal ? 'up' : 'down');
+    }
+    prevVals[key] = newVal;
+  }
+
+  function signCls(v, s) {
+    if (!s || v === null || !isFinite(v)) return '';
     return v > 0 ? ' val-pos' : v < 0 ? ' val-neg' : '';
   }
 
   function makeCard(tile, value) {
-    var val = value !== null && value !== undefined ? tile.fmt(value) : '—';
-    var cls = signClass(value, tile.sign);
+    var val    = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var cls    = signCls(value, tile.sign);
     var srcCls = SRC_CLS[tile.source] || '';
-    var infoBtn = tile.read
+    var ib     = tile.read
       ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
       : '';
-    var readEl = tile.read
-      ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>'
-      : '';
+    var rd     = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
     return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
       + '<div class="sc-header">'
       +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
-      +   infoBtn
+      +   ib
       + '</div>'
       + '<div class="sc-value' + cls + '">' + esc(val) + '</div>'
-      + readEl
+      + rd
       + '<div class="sc-badges">'
       +   '<span class="sc-badge sc-kind sc-kind-' + esc(tile.kind) + '">' + esc(tile.kind) + '</span>'
       +   '<span class="sc-badge sc-source sc-src-' + esc(srcCls) + '">' + esc(tile.source) + '</span>'
@@ -723,172 +920,218 @@
 
   // ── Category name map ──────────────────────────────────────────────────────
   var CAT_NAMES = {
-    leverage:       'Leverage',
-    orderflow:      'Order Flow',
-    supply:         'Supply',
-    onchain:        'On-chain',
-    microstructure: 'Microstructure',
-    liquidations:   'Liquidations',
+    leverage: 'Leverage', orderflow: 'Order Flow', supply: 'Supply',
+    onchain: 'On-chain', microstructure: 'Microstructure', liquidations: 'Liquidations',
   };
   var CAT_ORDER = ['leverage', 'orderflow', 'supply', 'onchain', 'microstructure', 'liquidations'];
+
+  // ── Live ticker update ─────────────────────────────────────────────────────
+  function updateTicker(signals, capturedAt) {
+    var vm = {};
+    signals.forEach(function (s) { vm[s.key] = s.currentValue; });
+
+    var price = vm['perp_mark_px'];
+    var priceEl = document.getElementById('tk-price');
+    var dirEl   = document.getElementById('tk-dir');
+    if (priceEl && price !== null && price !== undefined) {
+      if (lastTkPrice !== null && price !== lastTkPrice && window.MKT && window.MKT.flashEl) {
+        window.MKT.flashEl(priceEl, price > lastTkPrice ? 'up' : 'down');
+      }
+      priceEl.textContent = fmtPrice(price);
+      if (dirEl && lastTkPrice !== null) {
+        if (price > lastTkPrice)       { dirEl.textContent = '▲'; dirEl.className = 'tk-val tk-up'; }
+        else if (price < lastTkPrice)  { dirEl.textContent = '▼'; dirEl.className = 'tk-val tk-dn'; }
+        else                           { dirEl.textContent = '';  dirEl.className = 'tk-val'; }
+      }
+      lastTkPrice = price;
+    }
+
+    var fundEl = document.getElementById('tk-funding');
+    if (fundEl) { var fr = vm['funding_rate']; fundEl.textContent = fr !== null && fr !== undefined ? fmtFunding(fr) : '—'; fundEl.className = 'tk-val' + (fr > 0 ? ' tk-up' : fr < 0 ? ' tk-dn' : ''); }
+
+    var cvdEl = document.getElementById('tk-cvd');
+    if (cvdEl) { var cv = vm['cvd_perp_24h']; cvdEl.textContent = cv !== null && cv !== undefined ? fmtSigned(cv) : '—'; cvdEl.className = 'tk-val' + (cv > 0 ? ' tk-up' : cv < 0 ? ' tk-dn' : ''); }
+
+    var spEl = document.getElementById('tk-spread');
+    if (spEl) { var sp = vm['book_spread_bps']; spEl.textContent = sp !== null && sp !== undefined ? fmtBps(sp) : '—'; }
+
+    // Updates/min counter
+    var now = Date.now();
+    tkTimes.push(now);
+    tkTimes = tkTimes.filter(function (t) { return now - t < 60000; });
+    var updEl = document.getElementById('tk-upd');
+    if (updEl) updEl.textContent = String(tkTimes.length);
+
+    // Timestamp
+    if (capturedAt) {
+      var atEl = document.getElementById('market-captured-at');
+      if (atEl) atEl.textContent = new Date(capturedAt).toLocaleTimeString();
+    }
+  }
 
   // ── Bias fetch + render ────────────────────────────────────────────────────
   async function fetchBias(h) {
     try {
       var r = await fetch('/api/market/bias?horizon=' + h);
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      var d = await r.json();
-      renderBias(d);
-    } catch (e) {
-      document.getElementById('bias-label').textContent = 'Error';
-      document.getElementById('bias-label').className = 'bias-label neutral';
+      renderBias(await r.json());
+    } catch (_) {
+      var el = document.getElementById('bias-label');
+      if (el) { el.textContent = 'Error'; el.className = 'bias-label neutral'; }
     }
   }
 
   function renderBias(d) {
-    var labelEl  = document.getElementById('bias-label');
-    var fillEl   = document.getElementById('bias-fill');
-    var scoreEl  = document.getElementById('bias-score-val');
-    var countsEl = document.getElementById('bias-counts');
-    var confEl   = document.getElementById('conf-badge');
-    var noteEl   = document.getElementById('bias-warming-note');
-
     var lc = (d.label || '').toLowerCase();
+
+    // Label
+    var labelEl = document.getElementById('bias-label');
     labelEl.textContent = d.label || '—';
     labelEl.className = 'bias-label ' + (lc === 'bullish' ? 'bullish' : lc === 'bearish' ? 'bearish' : 'neutral');
 
-    var score = typeof d.score === 'number' ? d.score : 0;
-    var pct   = Math.abs(score) * 100;
-    scoreEl.textContent = (score >= 0 ? '+' : '') + score.toFixed(3);
-    fillEl.className = 'bias-score-fill ' + (lc === 'bullish' ? 'bullish' : lc === 'bearish' ? 'bearish' : 'neutral');
-    if (lc === 'bearish') {
-      fillEl.style.left  = '';
-      fillEl.style.right = '50%';
-      fillEl.style.width = Math.min(pct / 2, 50) + '%';
-    } else {
-      fillEl.style.right = '';
-      fillEl.style.left  = '50%';
-      fillEl.style.width = Math.min(pct / 2, 50) + '%';
-    }
-
-    var up = d.bullCount || 0;
-    var dn = d.bearCount || 0;
-    countsEl.innerHTML = '<span class="bc-up">▲ ' + up + ' bullish</span> &middot; <span class="bc-dn">▼ ' + dn + ' bearish</span>';
-
+    // Confidence badge
     var isHigh = d.confidence === 'HIGH';
+    var confEl = document.getElementById('conf-badge');
     confEl.textContent = d.confidence || 'WARMING';
     confEl.className = 'conf-badge ' + (isHigh ? 'conf-high' : 'conf-low');
-    noteEl.textContent = isHigh ? '' : 'Signals still warming — IC not yet proven';
+
+    // Split bar
+    var up = d.bullCount || 0;
+    var dn = d.bearCount || 0;
+    var total = up + dn;
+    var bullPct = total > 0 ? (up / total * 100) : 0;
+    var bearPct = total > 0 ? (dn / total * 100) : 0;
+    document.getElementById('bias-bar-bull').style.width = bullPct.toFixed(1) + '%';
+    document.getElementById('bias-bar-bear').style.width = bearPct.toFixed(1) + '%';
+
+    // Score
+    var score = typeof d.score === 'number' ? d.score : 0;
+    document.getElementById('bias-score-val').textContent = (score >= 0 ? '+' : '') + score.toFixed(3);
+
+    // Counts
+    document.getElementById('bias-counts').innerHTML =
+      '<span class="bc-up">▲ ' + up + ' bullish</span> &middot; <span class="bc-dn">▼ ' + dn + ' bearish</span>';
+
+    // Warming note
+    var noteEl = document.getElementById('bias-warming-note');
+    noteEl.textContent = isHigh ? '' : 'Signals warming — IC not yet proven';
+    noteEl.style.display = isHigh ? 'none' : '';
+
+    // Driver chips from category biases
+    var driversEl = document.getElementById('bias-drivers');
+    var chips = (d.categoryBiases || [])
+      .filter(function (b) { return b.label === 'Bullish' || b.label === 'Bearish'; })
+      .map(function (b) {
+        var cls = b.label === 'Bullish' ? 'bull' : 'bear';
+        var sym = b.label === 'Bullish' ? '▲' : '▼';
+        return '<span class="driver-chip ' + cls + '">' + sym + ' ' + esc(CAT_NAMES[b.category] || b.category) + '</span>';
+      }).join('');
+    driversEl.innerHTML = chips;
 
     // Category cards
     renderCatCards(d.categoryBiases || []);
   }
 
   function renderCatCards(biases) {
-    var grid  = document.getElementById('cat-grid');
     var byKey = {};
     biases.forEach(function (b) { byKey[b.category] = b; });
-
     var html = CAT_ORDER.map(function (cat) {
-      var b   = byKey[cat];
-      var lc  = b ? (b.label || '').toLowerCase() : 'warming';
-      var lbl = b ? (b.label || 'NEUTRAL') : 'WARMING';
+      var b  = byKey[cat];
+      var lc = b ? (b.label || '').toLowerCase() : 'warming';
+      var lb = b ? (b.label || 'Neutral') : '—';
       return '<div class="cat-card ' + lc + '">'
         + '<div class="cat-name">' + esc(CAT_NAMES[cat] || cat) + '</div>'
-        + '<div class="cat-bias ' + lc + '">' + esc(lbl) + '</div>'
+        + '<div class="cat-bias ' + lc + '">' + esc(lb) + '</div>'
         + '</div>';
     }).join('');
-    grid.innerHTML = html;
+    document.getElementById('cat-grid').innerHTML = html;
   }
 
-  // ── Signals fetch + render headline tiles ─────────────────────────────────
+  // ── Signals fetch + tiles ──────────────────────────────────────────────────
   async function fetchSignals() {
     try {
       var r = await fetch('/api/market/signals');
       if (!r.ok) throw new Error('HTTP ' + r.status);
       var d = await r.json();
       renderTiles(d.signals || [], d.capturedAt);
+      updateTicker(d.signals || [], d.capturedAt);
     } catch (_) {
       document.getElementById('tiles-grid').innerHTML =
-        '<p class="text-muted" style="font-size:13px">Could not load signals.</p>';
+        '<p style="color:var(--muted);font-size:12px;padding:.5rem">Could not load signals.</p>';
     }
   }
 
   function renderTiles(signals, capturedAt) {
-    var valMap = {};
-    signals.forEach(function (s) { valMap[s.key] = s.currentValue; });
-
+    var vm = {};
+    signals.forEach(function (s) { vm[s.key] = s.currentValue; });
     var html = TILES.map(function (tile) {
-      return makeCard(tile, valMap[tile.key] !== undefined ? valMap[tile.key] : null);
+      return makeCard(tile, vm[tile.key] !== undefined ? vm[tile.key] : null);
     }).join('');
-
     document.getElementById('tiles-grid').innerHTML = html;
-
-    // Update live-bar timestamp
-    if (capturedAt) {
-      var el = document.getElementById('market-captured-at');
-      if (el) el.textContent = 'as of ' + new Date(capturedAt).toLocaleTimeString();
-    }
-
-    // Reapply beginner mode to newly injected cards
+    // Flash tiles whose value changed since last render
+    TILES.forEach(function (tile) {
+      var newVal = vm[tile.key];
+      var oldVal = prevVals[tile.key];
+      if (newVal !== null && newVal !== undefined && oldVal !== null && oldVal !== undefined && newVal !== oldVal) {
+        var card = document.querySelector('.signal-card[data-key="' + tile.key + '"]');
+        if (card) {
+          var valEl = card.querySelector('.sc-value');
+          if (valEl && window.MKT && window.MKT.flashEl) window.MKT.flashEl(valEl, newVal > oldVal ? 'up' : 'down');
+        }
+      }
+      if (newVal !== null && newVal !== undefined) prevVals[tile.key] = newVal;
+    });
     if (window.MKT && window.MKT.applyBeginner) window.MKT.applyBeginner();
   }
 
-  // ── Price chart (LightweightCharts area series) ───────────────────────────
-  var pxChart = null;
+  // ── Price chart — always mainnet via /api/market/candles ──────────────────
+  var pxChart  = null;
   var pxSeries = null;
-  var pxTf = '4h';
+  var pxTf     = '4h';
 
-  function getCssVar(n) {
-    return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  }
+  function getCssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 
-  function mountPriceChart() {
+  function mountChart() {
     if (pxChart) return;
     var LC = window.LightweightCharts;
     if (!LC) return;
+    var bg     = getCssVar('--surface')  || '#0D1520';
+    var muted  = getCssVar('--muted')    || '#3D5A78';
+    var border = getCssVar('--border')   || 'rgba(56,189,248,0.09)';
+    var accent = getCssVar('--accent')   || '#38BDF8';
     pxChart = LC.createChart(document.getElementById('px-chart'), {
-      height: 240,
-      layout: {
-        background: { type: 'solid', color: getCssVar('--surface') || '#161b22' },
-        textColor:  getCssVar('--muted')  || '#8b949e',
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { color: getCssVar('--border') || '#30363d' },
-        horzLines: { color: getCssVar('--border') || '#30363d' },
-      },
+      height: 200,
+      layout: { background: { type: 'solid', color: bg }, textColor: muted, attributionLogo: false },
+      grid:   { vertLines: { color: border }, horzLines: { color: border } },
       crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: getCssVar('--border') || '#30363d' },
-      timeScale:  { borderColor: getCssVar('--border') || '#30363d', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: border },
+      timeScale: { borderColor: border, timeVisible: true, secondsVisible: false },
       handleScroll: { mouseWheel: true },
       handleScale:  { mouseWheel: true, pinch: true },
     });
     pxSeries = pxChart.addAreaSeries({
-      lineColor:   getCssVar('--accent') || '#38BDF8',
-      topColor:    'rgba(56,189,248,0.18)',
+      lineColor:   accent,
+      topColor:    'rgba(56,189,248,0.16)',
       bottomColor: 'rgba(56,189,248,0)',
       lineWidth: 2,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
   }
 
-  async function refreshPriceChart() {
-    mountPriceChart();
+  async function refreshChart() {
+    mountChart();
     if (!pxChart || !pxSeries) return;
-    var updEl = document.getElementById('px-chart-updated');
+    var metaEl = document.getElementById('px-chart-meta');
     try {
-      var url  = '/api/candles/dynamic?coin=HYPE&interval=' + pxTf;
-      var resp = await fetch(url);
-      if (!resp.ok) return;
+      var resp = await fetch('/api/market/candles?coin=HYPE&interval=' + pxTf);
+      if (!resp.ok) { if (metaEl) metaEl.textContent = 'error'; return; }
       var data = await resp.json();
-      if (!data.candles || !data.candles.length) return;
-      var areaData = data.candles.map(function (c) { return { time: c.time, value: c.close }; });
-      pxSeries.setData(areaData);
+      if (!data.candles || !data.candles.length) { if (metaEl) metaEl.textContent = 'no data'; return; }
+      pxSeries.setData(data.candles.map(function (c) { return { time: c.time, value: c.close }; }));
       pxChart.timeScale().fitContent();
-      if (updEl) updEl.textContent = 'updated ' + new Date().toLocaleTimeString();
+      if (metaEl) metaEl.textContent = 'mainnet · ' + new Date().toLocaleTimeString();
     } catch (_) {
-      if (updEl) updEl.textContent = 'error';
+      if (metaEl) metaEl.textContent = 'error';
     }
   }
 
@@ -899,20 +1142,37 @@
     document.querySelectorAll('#px-tf-group .tf').forEach(function (b) {
       b.classList.toggle('active', b === btn);
     });
-    refreshPriceChart();
+    refreshChart();
   });
 
-  // ── Init ──────────────────────────────────────────────────────────────────
+  // ── Live feed: price/funding/spread every 4s ──────────────────────────────
+  async function fetchLive() {
+    try {
+      var r = await fetch('/api/market/live');
+      if (!r.ok) return;
+      var d = await r.json();
+      // Ticker update via the same updateTicker path (reuse format fns + flash)
+      var liveSigs = [
+        { key: 'perp_mark_px',    currentValue: d.markPx    },
+        { key: 'funding_rate',    currentValue: d.funding    },
+        { key: 'cvd_perp_24h',   currentValue: d.cvd24h     },
+        { key: 'book_spread_bps', currentValue: d.spreadBps  },
+      ];
+      updateTicker(liveSigs, d.ts);
+      // Fast tile in-place updates — no full re-render, flash fires through updateFastTileValue
+      updateFastTileValue('perp_mark_px',  d.markPx,       fmtPrice,   false);
+      updateFastTileValue('funding_rate',  d.funding,      fmtFunding, true);
+      updateFastTileValue('open_interest', d.openInterest, fmtCompact, false);
+    } catch (_) {}
+  }
+
+  // ── Init + 60s refresh ────────────────────────────────────────────────────
   fetchBias(activeH);
   fetchSignals();
-  refreshPriceChart();
-
-  // Refresh every 60s
-  setInterval(function () {
-    fetchBias(activeH);
-    fetchSignals();
-    refreshPriceChart();
-  }, 60000);
+  refreshChart();
+  fetchLive();
+  setInterval(function () { fetchBias(activeH); fetchSignals(); refreshChart(); }, 60000);
+  setInterval(fetchLive, 4000);
 
 })();
 </script>
