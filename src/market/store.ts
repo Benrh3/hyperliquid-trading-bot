@@ -152,6 +152,57 @@ export class MarketStore {
     }
   }
 
+  /**
+   * Full time series of a single metric for a symbol — both raw (snapshot_metrics)
+   * and rolled-up hourly (snapshot_metrics_hourly) rows, oldest first. Nulls preserved.
+   * Used by the scoring engine and the snapshots.csv export.
+   */
+  getMetricTimeSeries(symbol: string, key: string): Array<{ capturedAt: number; value: number | null }> {
+    const raw = this.db.prepare(`
+      SELECT sm.captured_at AS capturedAt, sm.value
+      FROM snapshot_metrics sm
+      JOIN snapshots s ON s.id = sm.snapshot_id
+      WHERE s.symbol = ? AND sm.metric_key = ?
+      ORDER BY sm.captured_at ASC
+    `).all(symbol, key) as { capturedAt: number; value: number | null }[];
+
+    const hourly = this.db.prepare(`
+      SELECT ts_hour AS capturedAt, avg_value AS value
+      FROM snapshot_metrics_hourly
+      WHERE symbol = ? AND metric_key = ?
+        AND ts_hour < (SELECT COALESCE(MIN(sm.captured_at), 9999999999999) FROM snapshot_metrics sm JOIN snapshots s ON s.id = sm.snapshot_id WHERE s.symbol = ? AND sm.metric_key = ?)
+      ORDER BY ts_hour ASC
+    `).all(symbol, key, symbol, key) as { capturedAt: number; value: number | null }[];
+
+    return [...hourly, ...raw];
+  }
+
+  /**
+   * Snapshot key-list for building the snapshots.csv export: all distinct capturedAt
+   * values for a symbol, oldest first.
+   */
+  getSnapshotTimestamps(symbol: string): number[] {
+    return (this.db.prepare(
+      "SELECT captured_at FROM snapshots WHERE symbol = ? ORDER BY captured_at ASC",
+    ).all(symbol) as { captured_at: number }[]).map((r) => r.captured_at);
+  }
+
+  /**
+   * Get all metric values for a single snapshot (by capturedAt) — used for
+   * CSV row assembly.
+   */
+  getSnapshotMetrics(symbol: string, capturedAt: number): Record<string, number | null> {
+    const rows = this.db.prepare(`
+      SELECT sm.metric_key, sm.value
+      FROM snapshot_metrics sm
+      JOIN snapshots s ON s.id = sm.snapshot_id
+      WHERE s.symbol = ? AND s.captured_at = ?
+    `).all(symbol, capturedAt) as { metric_key: string; value: number | null }[];
+    const out: Record<string, number | null> = {};
+    for (const r of rows) out[r.metric_key] = r.value;
+    return out;
+  }
+
   close(): void {
     this.db.close();
   }

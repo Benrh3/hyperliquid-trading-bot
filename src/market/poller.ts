@@ -27,6 +27,8 @@ import { DefaultOnChainBalanceReader } from "./onchain/balanceReader.js";
 import { aggregateBalances, computeFlows, computeHolderMetrics } from "./onchain/flows.js";
 import { fetchHolderDistribution } from "./onchain/hypurrscan.js";
 import { isPlaceholderAddress, type CexWalletsConfig, type OnChainBalanceReader, type HolderDistribution, type HolderMetrics } from "./onchain/types.js";
+import { computeDerived, type DerivedValues } from "./derived.js";
+import type { SnapshotRow } from "./store.js";
 
 const DEFAULT_POLL_INTERVAL_MS  = 60_000;
 const DEFAULT_RETENTION_RAW_DAYS = 7;
@@ -333,13 +335,16 @@ export class SnapshotPoller {
         }
       }
 
+      // Fetch the previous snapshot once — shared by fetchHlNative (AF fills window) and fetchDerived.
+      const [prevSnap] = this.store.getRecentSnapshots(symbol, 1);
+
       const { cvd, cvdMeta } = this.readCvdWindows(symbol);
       const book = await this.pollBook(symbol, spotCoinId);
 
       let hlNative: MarketPollContext["hlNative"] = null;
       const needsHlNative = implemented.some((m) => HL_NATIVE_KEYS.includes(m.key) && metricAppliesTo(m, symbol));
       if (needsHlNative) {
-        hlNative = await this.fetchHlNative(symbol, spotCoinId, tokenIndex, capturedAt);
+        hlNative = await this.fetchHlNative(symbol, spotCoinId, tokenIndex, capturedAt, prevSnap);
       }
 
       let cex: MarketPollContext["cex"] = null;
@@ -355,7 +360,11 @@ export class SnapshotPoller {
         onChain = await this.fetchOnChain(symbol, perpCtx.markPx);
       }
 
-      const ctx: MarketPollContext = { symbol, perpCtx, spotCtx, circulatingSupply, cvd, book, hlNative, cex, onChain };
+      // Build the partial context (without derived) so fetchDerived can inspect it.
+      const partialCtx = { symbol, perpCtx, spotCtx, circulatingSupply, cvd, book, hlNative, cex, onChain };
+      const derived = this.fetchDerived(partialCtx, prevSnap, capturedAt);
+
+      const ctx: MarketPollContext = { ...partialCtx, derived };
 
       const metrics: MetricInput[] = [];
       for (const metric of implemented) {
@@ -428,10 +437,11 @@ export class SnapshotPoller {
     spotCoinId: string | null,
     tokenIndex: number | null,
     capturedAt: number,
+    prevSnap: SnapshotRow | undefined,
   ): Promise<MarketPollContext["hlNative"]> {
     const [staking, af] = await Promise.all([
       this.fetchStaking(),
-      this.fetchAf(symbol, spotCoinId, tokenIndex, capturedAt),
+      this.fetchAf(symbol, spotCoinId, tokenIndex, capturedAt, prevSnap),
     ]);
     return { staking, af };
   }
@@ -456,9 +466,9 @@ export class SnapshotPoller {
     spotCoinId: string | null,
     tokenIndex: number | null,
     capturedAt: number,
+    prevSnap: SnapshotRow | undefined,
   ): Promise<AfMetrics | null> {
-    const [prev] = this.store.getRecentSnapshots(symbol, 1);
-    const sinceMs = prev?.capturedAt ?? capturedAt - this.pollIntervalMs;
+    const sinceMs = prevSnap?.capturedAt ?? capturedAt - this.pollIntervalMs;
     try {
       const [state, fills] = await Promise.all([
         this.info.spotClearinghouseState({ user: AF_ADDRESS }),
@@ -469,6 +479,20 @@ export class SnapshotPoller {
       console.warn(`[snapshot-poller] AF data fetch failed for ${symbol}: ${(e as Error).message}`);
       return null;
     }
+  }
+
+  /** Compute all 10 derived signals from current context + previous snapshot. Never throws. */
+  private fetchDerived(
+    ctx: Omit<MarketPollContext, "derived">,
+    prevSnap: SnapshotRow | undefined,
+    capturedAt: number,
+  ): DerivedValues {
+    const prev: Record<string, number | null | undefined> = {};
+    if (prevSnap) {
+      for (const [key, mv] of Object.entries(prevSnap.metrics)) prev[key] = mv.value;
+    }
+    const intervalMs = prevSnap ? capturedAt - prevSnap.capturedAt : null;
+    return computeDerived(ctx, { prev, intervalMs });
   }
 
   /**

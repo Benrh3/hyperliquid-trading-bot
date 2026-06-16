@@ -19,6 +19,7 @@ import type { BotManager, BotsFile, OrphanedPosition } from "../bot-manager.js";
 import type { DydxFundingPoller } from "../dydx-funding.js";
 import type { FundingMatrixPoller } from "../funding-matrix.js";
 import type { MarketStore } from "../market/store.js";
+import { createMarketRouter } from "../market/api.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
@@ -259,6 +260,13 @@ export function createRouter(
       strategy:    config.strategy.type,
       interval:    state.currentInterval,
       primaryPrice,
+    });
+  });
+
+  router.get("/market", (_req, res) => {
+    res.render("market", {
+      title:   "HYPE Market",
+      network: config.exchange.network,
     });
   });
 
@@ -545,6 +553,11 @@ export function createRouter(
       res.status(500).json({ error: error.message });
     }
   });
+
+  // ── Market data API (stage 6: scoring, scorecard, bias, signals CSV) ────────
+  if (marketStore) {
+    router.use(createMarketRouter(marketStore));
+  }
 
   // ── Market data snapshots (observe-only, read-only) ──────────────────────
 

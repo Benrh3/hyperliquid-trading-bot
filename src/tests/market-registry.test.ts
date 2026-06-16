@@ -85,7 +85,23 @@ const ON_CHAIN_KEYS = [
   "holder_top100_share",
 ];
 
-const STAGE_1_5_IMPLEMENTED_KEYS = [...HL_MARKET_LEVEL_KEYS, ...CVD_KEYS, ...BOOK_KEYS, ...HL_NATIVE_KEYS, ...CEX_KEYS, ...ON_CHAIN_KEYS];
+const DERIVED_KEYS = [
+  "net_twap_hype",
+  "net_twap_full_hype",
+  "oi_delta",
+  "spot_perp_basis",
+  "unstake_q_delta",
+  "staked_delta",
+  "af_buy_rate",
+  "cex_balance_delta",
+  "holder_top10_delta",
+  "cex_oi_delta",
+];
+
+const ALL_IMPLEMENTED_KEYS = [
+  ...HL_MARKET_LEVEL_KEYS, ...CVD_KEYS, ...BOOK_KEYS, ...HL_NATIVE_KEYS,
+  ...CEX_KEYS, ...ON_CHAIN_KEYS, ...DERIVED_KEYS,
+];
 
 const ctx: MarketPollContext = {
   symbol: "HYPE",
@@ -126,6 +142,11 @@ const ctx: MarketPollContext = {
       long1h: 10, short1h: 5, long24h: 200, short24h: 150, net24h: -50, count24h: 42,
     },
   },
+  derived: {
+    netTwapHype: 5, netTwapFullHype: 8, oiDelta: 1000, spotPerpBasis: 0.1,
+    unstakeQDelta: -500, stakedDelta: 2000, afBuyRate: 12.5,
+    cexBalanceDelta: 50, holderTop10Delta: 0.002, cexOiDelta: 100_000,
+  },
   onChain: {
     totalBalance: 12_345.6,
     walletsPolled: 3,
@@ -160,15 +181,15 @@ describe("buildRegistry", () => {
     expect(registry.length).toBe(manifest.counts.total);
   });
 
-  it("implements compute() for exactly the 60 stage 1-5 metrics (9 level + 8 CVD/count + 7 book + 7 hl-native + 18 cex-agg + 11 on-chain)", () => {
+  it("implements compute() for exactly the 70 stage 1-6 metrics (9 level + 8 CVD/count + 7 book + 7 hl-native + 18 cex-agg + 11 on-chain + 10 derived)", () => {
     const implemented = getImplementedMetrics().map((m) => m.key).sort();
-    expect(implemented).toEqual([...STAGE_1_5_IMPLEMENTED_KEYS].sort());
+    expect(implemented).toEqual([...ALL_IMPLEMENTED_KEYS].sort());
   });
 
   it("leaves every other entry as a stub (compute === undefined)", () => {
     const registry = buildRegistry();
     for (const m of registry) {
-      if (STAGE_1_5_IMPLEMENTED_KEYS.includes(m.key)) continue;
+      if (ALL_IMPLEMENTED_KEYS.includes(m.key)) continue;
       expect(m.compute).toBeUndefined();
     }
   });
@@ -355,6 +376,41 @@ describe("compute() for on-chain CEX-flow + holder metrics", () => {
       expect(getImplementedMetrics().find((m) => m.key === key)!.compute!(empty)).toBeNull();
     }
     expect(getImplementedMetrics().find((m) => m.key === "cex_wallets_polled")!.compute!(empty)).toBe(0);
+  });
+});
+
+describe("compute() for derived signal metrics", () => {
+  for (const key of DERIVED_KEYS) {
+    it(`computes a non-undefined value for ${key}`, () => {
+      const metric = getImplementedMetrics().find((m) => m.key === key);
+      expect(metric).toBeDefined();
+      // ctx.derived has finite test values for all 10 fields → value should be finite or null, never undefined
+      const value = metric!.compute!(ctx);
+      expect(value).not.toBeUndefined();
+    });
+  }
+
+  it("passes ctx.derived values through directly (no re-computation in registry)", () => {
+    expect(getImplementedMetrics().find((m) => m.key === "oi_delta")!.compute!(ctx)).toBe(1000);
+    expect(getImplementedMetrics().find((m) => m.key === "spot_perp_basis")!.compute!(ctx)).toBe(0.1);
+    expect(getImplementedMetrics().find((m) => m.key === "af_buy_rate")!.compute!(ctx)).toBe(12.5);
+    expect(getImplementedMetrics().find((m) => m.key === "staked_delta")!.compute!(ctx)).toBe(2000);
+    expect(getImplementedMetrics().find((m) => m.key === "cex_oi_delta")!.compute!(ctx)).toBe(100_000);
+  });
+
+  it("returns null for derived metrics when ctx.derived fields are null", () => {
+    const nullDerived: MarketPollContext = {
+      ...ctx,
+      derived: {
+        netTwapHype: null, netTwapFullHype: null, oiDelta: null, spotPerpBasis: null,
+        unstakeQDelta: null, stakedDelta: null, afBuyRate: null,
+        cexBalanceDelta: null, holderTop10Delta: null, cexOiDelta: null,
+      },
+    };
+    for (const key of DERIVED_KEYS) {
+      const metric = getImplementedMetrics().find((m) => m.key === key)!;
+      expect(metric.compute!(nullDerived)).toBeNull();
+    }
   });
 });
 

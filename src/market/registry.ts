@@ -5,8 +5,10 @@
 // metaAndAssetCtxs + spotMetaAndAssetCtxs poll). Stage 2 adds the 8 CVD/trade-count
 // metrics (trades WS aggregator) and the 7 L2 book microstructure metrics. Stage 3
 // adds 7 hl-native staking + Assistance Fund metrics. Stage 4 adds 18 cex-agg
-// metrics (CEX open interest, long/short ratios, CEX liquidations). Every other
-// entry is a stub (compute === undefined) until its stage is built.
+// metrics (CEX open interest, long/short ratios, CEX liquidations). Stage 5 adds
+// 11 on-chain CEX-flow + holder metrics. Stage 6 adds 10 derived signals computed
+// from snapshot history. Every other entry is a stub (compute === undefined) until
+// its stage is built.
 
 import { loadManifest, type ManifestMetric } from "./manifest.js";
 
@@ -81,6 +83,19 @@ export interface MarketPollContext {
       count24h: number | null;
     } | null;
   } | null;
+  /** 10 derived signals computed from current + previous snapshot (market-spec.md §7 stage 6). Always present, fields null when inputs are unavailable/stubbed. */
+  derived: {
+    netTwapHype:      number | null;
+    netTwapFullHype:  number | null;
+    oiDelta:          number | null;
+    spotPerpBasis:    number | null;
+    unstakeQDelta:    number | null;
+    stakedDelta:      number | null;
+    afBuyRate:        number | null;
+    cexBalanceDelta:  number | null;
+    holderTop10Delta: number | null;
+    cexOiDelta:       number | null;
+  };
   /** From labeled CEX wallet balances + holder distribution (market-spec.md §7 stage 5). Null fields are the default until config/cex-wallets.json is populated. */
   onChain: {
     totalBalance:  number | null;
@@ -181,6 +196,21 @@ const CEX_COMPUTE: Record<string, (ctx: MarketPollContext) => number | null> = {
   cex_liq_count_24h:  (ctx) => ctx.cex?.liq?.count24h ?? null,
 };
 
+// ── compute() implementations for the 10 derived signals (stage 6) ──────────
+
+const DERIVED_COMPUTE: Record<string, (ctx: MarketPollContext) => number | null> = {
+  net_twap_hype:      (ctx) => ctx.derived.netTwapHype,
+  net_twap_full_hype: (ctx) => ctx.derived.netTwapFullHype,
+  oi_delta:           (ctx) => ctx.derived.oiDelta,
+  spot_perp_basis:    (ctx) => ctx.derived.spotPerpBasis,
+  unstake_q_delta:    (ctx) => ctx.derived.unstakeQDelta,
+  staked_delta:       (ctx) => ctx.derived.stakedDelta,
+  af_buy_rate:        (ctx) => ctx.derived.afBuyRate,
+  cex_balance_delta:  (ctx) => ctx.derived.cexBalanceDelta,
+  holder_top10_delta: (ctx) => ctx.derived.holderTop10Delta,
+  cex_oi_delta:       (ctx) => ctx.derived.cexOiDelta,
+};
+
 // ── compute() implementations for the 11 on-chain CEX-flow + holder metrics ─
 
 const ON_CHAIN_COMPUTE: Record<string, (ctx: MarketPollContext) => number | null> = {
@@ -205,6 +235,7 @@ const COMPUTE_BY_KEY: Record<string, (ctx: MarketPollContext) => number | null> 
   ...HL_NATIVE_COMPUTE,
   ...CEX_COMPUTE,
   ...ON_CHAIN_COMPUTE,
+  ...DERIVED_COMPUTE,
 };
 
 let cached: MetricDefinition[] | null = null;

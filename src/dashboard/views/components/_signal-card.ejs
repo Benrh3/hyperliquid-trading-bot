@@ -1,0 +1,33 @@
+<%
+/*
+ * SignalCard partial — server-side render of one metric card.
+ * Params (all strings/null unless noted):
+ *   key           metric key (data-key attribute)
+ *   label         expert label (uppercased in header)
+ *   beginnerLabel beginner-mode label text
+ *   read          inline help text shown in beginner mode (null = no ⓘ)
+ *   value         formatted value string (null → "—")
+ *   subline       optional secondary line below the value (null = hidden)
+ *   kind          badge: "level" | "window" | "delta-prev" | "ratio" | "aggregate" | "count"
+ *   source        badge: "hl-market" | "hl-native" | "on-chain" | "cex-agg"
+ */
+%>
+<div class="signal-card" data-key="<%= key %>">
+  <div class="sc-header">
+    <span class="sc-label"
+          data-expert="<%= label.toUpperCase() %>"
+          data-beginner="<%= beginnerLabel %>"><%= label.toUpperCase() %></span>
+    <% if (read) { %>
+    <button class="sc-info-btn" data-tip="<%= read %>" aria-label="About <%= label %>">ⓘ</button>
+    <% } %>
+  </div>
+  <div class="sc-value sc-val-<%= key.replace(/_/g, '-') %>">
+    <%= (value !== undefined && value !== null) ? value : '—' %>
+  </div>
+  <% if (subline) { %><div class="sc-subline"><%= subline %></div><% } %>
+  <% if (read) { %><div class="sc-read" style="display:none"><%= read %></div><% } %>
+  <div class="sc-badges">
+    <span class="sc-badge sc-kind sc-kind-<%= kind %>"><%= kind %></span>
+    <span class="sc-badge sc-source sc-src-<%= source.replace(/-/g, '') %>"><%= source %></span>
+  </div>
+</div>
