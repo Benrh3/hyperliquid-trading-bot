@@ -1020,11 +1020,75 @@
   </div>
 
   <div id="tab-microstructure" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Microstructure</div>
-      <p>Book imbalance · spread · depth (perp + spot)</p>
-      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; Order-book depth &amp; imbalance</strong> are <em>gameable</em> — resting walls can be spoofed and pulled. Read imbalance as a hint, not conviction.
     </div>
+    <div class="lev-caveat">
+      <strong>&#9888; Spread &amp; depth</strong> are point-in-time L2 snapshots (one read per poll), not averages — a momentary liquidity picture.
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Microstructure</div>
+      <div class="lev-section-sub">Bid-ask spread, book depth, and order-book imbalance — perp + spot</div>
+    </div>
+
+    <div class="lev-cards-grid" id="ms-cards-grid">
+      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Charts</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Spread (Perp + Spot)</span>
+        <div class="tf-group" id="ms-chart1-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="ms-chart1-meta"></span>
+      </div>
+      <div id="ms-chart1" style="height:220px"></div>
+      <div class="lev-chart-caption">Bid-ask gap in bps — tighter = more liquid; spikes = stress/illiquidity.</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Book Imbalance (Perp + Spot)</span>
+        <div class="tf-group" id="ms-chart2-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="ms-chart2-meta"></span>
+      </div>
+      <div id="ms-chart2" style="height:220px"></div>
+      <div class="lev-chart-caption">Above zero = bid-heavy (buy-side walls); gameable — read as a hint, not conviction.</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Book Depth — Bid vs Ask (Perp)</span>
+        <div class="tf-group" id="ms-chart3-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="ms-chart3-meta"></span>
+      </div>
+      <div id="ms-chart3" style="height:220px"></div>
+      <div class="lev-chart-caption">Resting buy-side vs sell-side size — the raw walls behind the imbalance ratio.</div>
+    </div>
+
   </div>
 
   <div id="tab-liquidations" class="tab-panel" style="display:none">
@@ -2275,6 +2339,283 @@
     ofInited = true;
     fetchAndRenderCards();
     setTimeout(function () { refreshOfc1(); refreshOfc2(); refreshOfc3(); }, 60);
+  });
+
+})();
+</script>
+
+<!-- ── Microstructure tab ─────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  // ── Format helpers ───────────────────────────────────────────────────────
+  function fmtC(v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + Math.round(abs / 1e3) + 'K';
+    return sign + Math.round(abs).toString();
+  }
+  function fmtPx(v)  { return (v === null || !isFinite(v)) ? '—' : '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function fmtBps(v)  { return (v === null || !isFinite(v)) ? '—' : v.toFixed(2) + ' bps'; }
+  function fmtImb(v)  { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(3); }
+
+  // ── Direction helpers ─────────────────────────────────────────────────────
+  // Imbalance = (bid-ask)/total, centered at 0. Positive = bid-heavy = bullish.
+  function dirBullEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-pos', text: '▲ bullish' };
+      if (v < -eps) return { cls: 'val-neg', text: '▼ bearish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  var SRC_CLS = { 'hl-market': 'hlmarket', 'hl-native': 'hlnative', 'on-chain': 'onchain', 'cex-agg': 'cexagg' };
+
+  // ── Tile definitions (7 tiles) ────────────────────────────────────────────
+  var MS_TILES = [
+    { key: 'book_imbalance',      label: 'BOOK IMBALANCE (PERP)', beginner: 'Buy vs sell wall (futures)',
+      kind: 'ratio',  source: 'hl-native', fmt: fmtImb,  dir: dirBullEps(0.05),
+      read: '+ = bid support; - = overhead supply; flips fast; inside-book only' },
+    { key: 'book_spot_imbalance', label: 'BOOK IMBALANCE (SPOT)', beginner: 'Buy vs sell wall (spot)',
+      kind: 'ratio',  source: 'hl-native', fmt: fmtImb,  dir: dirBullEps(0.05),
+      read: 'spot vs perp divergence = real demand vs leverage' },
+    { key: 'book_spread_bps',      label: 'SPREAD (PERP)',        beginner: 'Bid-ask gap (futures)',
+      kind: 'level',  source: 'hl-native', fmt: fmtBps,  dir: null,
+      read: 'wider = thinner liquidity/stress' },
+    { key: 'book_spot_spread_bps', label: 'SPREAD (SPOT)',        beginner: 'Bid-ask gap (spot)',
+      kind: 'level',  source: 'hl-native', fmt: fmtBps,  dir: null, read: null },
+    { key: 'book_bid_depth',       label: 'BID DEPTH (PERP)',     beginner: 'Buy-side support (futures)',
+      kind: 'level',  source: 'hl-native', fmt: fmtC,    dir: null,
+      read: 'resting buy-side liquidity = support' },
+    { key: 'book_ask_depth',       label: 'ASK DEPTH (PERP)',     beginner: 'Sell-side supply (futures)',
+      kind: 'level',  source: 'hl-native', fmt: fmtC,    dir: null,
+      read: 'resting sell-side liquidity = overhead supply' },
+    { key: 'book_mid',             label: 'BOOK MID',             beginner: 'Book mid price',
+      kind: 'level',  source: 'hl-native', fmt: fmtPx,   dir: null, read: null },
+  ];
+
+  // ── Card builder ──────────────────────────────────────────────────────────
+  function makeCard(tile, value) {
+    var val     = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var dirInfo = (tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
+    var valCls  = dirInfo && dirInfo.cls ? ' ' + dirInfo.cls : '';
+    var dirCls  = dirInfo ? (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral') : '';
+    var srcCls  = SRC_CLS[tile.source] || '';
+    var ib = tile.read
+      ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
+      : '';
+    var rd = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
+    var subLabel = dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '';
+    return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
+      + '<div class="sc-header">'
+      +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
+      +   ib
+      + '</div>'
+      + '<div class="sc-value' + valCls + '">' + esc(val) + '</div>'
+      + subLabel
+      + rd
+      + '<div class="sc-badges">'
+      +   '<span class="sc-badge sc-kind sc-kind-' + esc(tile.kind) + '">' + esc(tile.kind) + '</span>'
+      +   '<span class="sc-badge sc-source sc-src-' + esc(srcCls) + '">' + esc(tile.source) + '</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── Signals fetch → render cards ──────────────────────────────────────────
+  function fetchAndRenderCards() {
+    fetch('/api/market/signals?subtab=microstructure')
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        var vm = {};
+        (d.signals || []).forEach(function (s) { vm[s.key] = s.currentValue; });
+        var html = MS_TILES.map(function (tile) {
+          return makeCard(tile, vm[tile.key] !== undefined ? vm[tile.key] : null);
+        }).join('');
+        document.getElementById('ms-cards-grid').innerHTML = html;
+        if (window.MKT && window.MKT.applyBeginner) window.MKT.applyBeginner();
+      })
+      .catch(function () {
+        document.getElementById('ms-cards-grid').innerHTML =
+          '<p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Could not load signals.</p>';
+      });
+  }
+
+  // ── Chart infrastructure ──────────────────────────────────────────────────
+  var _border = 'rgba(56,189,248,0.09)';
+  var _accent = '#38BDF8';
+  var _gridC  = 'rgba(56,189,248,0.05)';
+  var _muted  = '#3D5A78';
+
+  function msChartBase(containerId, h) {
+    var LC = window.LightweightCharts;
+    if (!LC) return null;
+    return LC.createChart(document.getElementById(containerId), {
+      autoSize: true, height: h || 220,
+      layout: { background: { type: 'solid', color: '#0D1520' }, textColor: _muted, attributionLogo: false },
+      grid:   { vertLines: { color: _gridC, style: 1 }, horzLines: { color: _gridC, style: 1 } },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+        horzLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+      },
+      rightPriceScale: { borderColor: _border },
+      timeScale: { borderColor: _border, timeVisible: true, secondsVisible: false },
+    });
+  }
+  function msApplyRange(chart, rangeKey) {
+    if (rangeKey === 'All') { chart.timeScale().fitContent(); return; }
+    var secs = { '1D': 86400, '1W': 604800, '1M': 2592000, '3M': 7776000 }[rangeKey];
+    if (secs) {
+      var now = Math.floor(Date.now() / 1000);
+      chart.timeScale().setVisibleRange({ from: now - secs, to: now + 3600 });
+    }
+  }
+  function msBindTfGroup(groupId, rangeRef, refreshFn) {
+    document.getElementById(groupId).addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeRef.v = btn.getAttribute('data-range');
+      document.querySelectorAll('#' + groupId + ' .tf').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      refreshFn();
+    });
+  }
+
+  // ── Chart 1: Spread (perp + spot) ─────────────────────────────────────────
+  var msc1 = null, msc1Perp = null, msc1Spot = null, mr1 = { v: '1W' };
+
+  function mountMsc1() {
+    if (msc1) return;
+    msc1 = msChartBase('ms-chart1', 220);
+    if (!msc1) return;
+    msc1Perp = msc1.addLineSeries({ color: _accent,  lineWidth: 1, priceFormat: { type: 'price', precision: 2 } });
+    msc1Spot = msc1.addLineSeries({ color: '#F59E0B', lineWidth: 1, priceFormat: { type: 'price', precision: 2 } });
+  }
+
+  function refreshMsc1() {
+    mountMsc1();
+    if (!msc1) return;
+    var meta = document.getElementById('ms-chart1-meta');
+    fetch('/api/market/history?fields=book_spread_bps,book_spot_spread_bps&range=' + mr1.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var pData = [], sData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.book_spread_bps !== null && row.book_spread_bps !== undefined)      pData.push({ time: ts, value: row.book_spread_bps });
+          if (row.book_spot_spread_bps !== null && row.book_spot_spread_bps !== undefined) sData.push({ time: ts, value: row.book_spot_spread_bps });
+        });
+        if (pData.length) msc1Perp.setData(pData);
+        if (sData.length) msc1Spot.setData(sData);
+        msApplyRange(msc1, mr1.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  msBindTfGroup('ms-chart1-tf', mr1, refreshMsc1);
+
+  // ── Chart 2: Imbalance (perp + spot) + zero reference ─────────────────────
+  var msc2 = null, msc2Perp = null, msc2Spot = null, msc2Ref = null, mr2 = { v: '1W' };
+
+  function mountMsc2() {
+    if (msc2) return;
+    msc2 = msChartBase('ms-chart2', 220);
+    if (!msc2) return;
+    msc2Perp = msc2.addLineSeries({ color: _accent,  lineWidth: 1, priceFormat: { type: 'price', precision: 3 } });
+    msc2Spot = msc2.addLineSeries({ color: '#F59E0B', lineWidth: 1, priceFormat: { type: 'price', precision: 3 } });
+    msc2Ref  = msc2.addLineSeries({
+      color: 'rgba(255,255,255,0.18)', lineWidth: 1, lineStyle: 2,
+      crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false,
+    });
+  }
+
+  function refreshMsc2() {
+    mountMsc2();
+    if (!msc2) return;
+    var meta = document.getElementById('ms-chart2-meta');
+    fetch('/api/market/history?fields=book_imbalance,book_spot_imbalance&range=' + mr2.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var pData = [], sData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.book_imbalance !== null && row.book_imbalance !== undefined)      pData.push({ time: ts, value: row.book_imbalance });
+          if (row.book_spot_imbalance !== null && row.book_spot_imbalance !== undefined) sData.push({ time: ts, value: row.book_spot_imbalance });
+        });
+        if (pData.length) msc2Perp.setData(pData);
+        if (sData.length) msc2Spot.setData(sData);
+        if (d.rows.length >= 2) {
+          var t0 = Math.floor(d.rows[0].ts / 1000);
+          var t1 = Math.floor(d.rows[d.rows.length - 1].ts / 1000);
+          msc2Ref.setData([{ time: t0, value: 0 }, { time: t1 + 3600, value: 0 }]);
+        }
+        msApplyRange(msc2, mr2.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  msBindTfGroup('ms-chart2-tf', mr2, refreshMsc2);
+
+  // ── Chart 3: Book Depth — bid vs ask areas (perp) ─────────────────────────
+  var msc3 = null, msc3Bid = null, msc3Ask = null, mr3 = { v: '1W' };
+
+  function mountMsc3() {
+    if (msc3) return;
+    msc3 = msChartBase('ms-chart3', 220);
+    if (!msc3) return;
+    msc3Bid = msc3.addAreaSeries({
+      lineColor: '#26C281', topColor: 'rgba(38,194,129,0.14)', bottomColor: 'rgba(38,194,129,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+    msc3Ask = msc3.addAreaSeries({
+      lineColor: '#E5494D', topColor: 'rgba(229,73,77,0.14)', bottomColor: 'rgba(229,73,77,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+  }
+
+  function refreshMsc3() {
+    mountMsc3();
+    if (!msc3) return;
+    var meta = document.getElementById('ms-chart3-meta');
+    fetch('/api/market/history?fields=book_bid_depth,book_ask_depth&range=' + mr3.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var bidData = [], askData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.book_bid_depth !== null && row.book_bid_depth !== undefined) bidData.push({ time: ts, value: row.book_bid_depth });
+          if (row.book_ask_depth !== null && row.book_ask_depth !== undefined) askData.push({ time: ts, value: row.book_ask_depth });
+        });
+        if (bidData.length) msc3Bid.setData(bidData);
+        if (askData.length) msc3Ask.setData(askData);
+        msApplyRange(msc3, mr3.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  msBindTfGroup('ms-chart3-tf', mr3, refreshMsc3);
+
+  // ── Tab activation (lazy init) ────────────────────────────────────────────
+  var msInited = false;
+  document.querySelector('.market-tab[data-tab="microstructure"]').addEventListener('click', function () {
+    if (msInited) return;
+    msInited = true;
+    fetchAndRenderCards();
+    setTimeout(function () { refreshMsc1(); refreshMsc2(); refreshMsc3(); }, 60);
   });
 
 })();

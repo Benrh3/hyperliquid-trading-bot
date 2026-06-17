@@ -61,15 +61,17 @@ export function computeDerived(
   const twapPerpBuyFull  = prev("twap_perp_buy_full_hype");
   const twapPerpSellFull = prev("twap_perp_sell_full_hype");
 
-  const netTwapHype =
-    twapSpotBuy !== null && twapSpotSell !== null && twapPerpBuy !== null && twapPerpSell !== null
-      ? twapSpotBuy + twapPerpBuy - twapSpotSell - twapPerpSell
-      : null;
+  // Coalesce each leg to 0 so one absent leg doesn't null the whole net.
+  // Only return null when every leg is absent (genuinely no TWAP data).
+  const anyProrated = twapSpotBuy !== null || twapSpotSell !== null || twapPerpBuy !== null || twapPerpSell !== null;
+  const netTwapHype = anyProrated
+    ? (twapSpotBuy ?? 0) + (twapPerpBuy ?? 0) - (twapSpotSell ?? 0) - (twapPerpSell ?? 0)
+    : null;
 
-  const netTwapFullHype =
-    twapSpotBuyFull !== null && twapSpotSellFull !== null && twapPerpBuyFull !== null && twapPerpSellFull !== null
-      ? twapSpotBuyFull + twapPerpBuyFull - twapSpotSellFull - twapPerpSellFull
-      : null;
+  const anyFull = twapSpotBuyFull !== null || twapSpotSellFull !== null || twapPerpBuyFull !== null || twapPerpSellFull !== null;
+  const netTwapFullHype = anyFull
+    ? (twapSpotBuyFull ?? 0) + (twapPerpBuyFull ?? 0) - (twapSpotSellFull ?? 0) - (twapPerpSellFull ?? 0)
+    : null;
 
   // ── Market-level deltas ────────────────────────────────────────────────────
   const oi        = safeNum(ctx.perpCtx.openInterest);

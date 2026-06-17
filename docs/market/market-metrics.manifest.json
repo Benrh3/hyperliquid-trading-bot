@@ -309,7 +309,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "+ = bid support; - = overhead supply; flips fast; inside-book only"
+      "read": "+ = bid support; - = overhead supply; flips fast; inside-book only",
+      "dir": "dirBullPos"
     },
     {
       "key": "book_spot_spread_bps",
@@ -334,7 +335,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "spot vs perp divergence = real demand vs leverage"
+      "read": "spot vs perp divergence = real demand vs leverage",
+      "dir": "dirBullPos"
     },
     {
       "key": "total_staked_hype",
