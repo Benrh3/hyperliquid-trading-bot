@@ -690,6 +690,49 @@
   .sc-dir-pos      { color: var(--up); }
   .sc-dir-neg      { color: var(--down); }
   .sc-dir-neutral  { color: var(--muted); }
+
+  /* ── Signals tab (scorecard table) ──────────────────────────────────────── */
+  .sig-controls {
+    display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+    padding: 0 var(--sp-4) var(--sp-3);
+  }
+  .sig-controls select, .sig-controls button {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--muted); cursor: pointer; font-size: var(--t-label); font-weight: 600;
+    padding: 3px 8px;
+  }
+  .sig-controls select:focus, .sig-controls button:hover { color: var(--accent); border-color: rgba(56,189,248,0.3); }
+  .sig-controls button.active { background: rgba(56,189,248,0.1); color: var(--accent); border-color: rgba(56,189,248,0.25); }
+  .sig-table-wrap {
+    overflow-x: auto; padding: 0 var(--sp-4) var(--sp-4);
+    -webkit-overflow-scrolling: touch;
+  }
+  .sig-table {
+    border-collapse: collapse; width: 100%; min-width: 680px;
+    font-size: var(--t-label); line-height: 1.5;
+  }
+  .sig-table th {
+    border-bottom: 2px solid var(--border); color: var(--muted);
+    font-weight: 700; letter-spacing: .06em; padding: var(--sp-2) var(--sp-3);
+    position: sticky; top: 0; background: var(--bg); text-align: left;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .sig-table th.th-h { text-align: center; min-width: 90px; }
+  .sig-table td { border-bottom: 1px solid var(--border); padding: var(--sp-2) var(--sp-3); white-space: nowrap; }
+  .sig-table td.td-ic { text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sig-table .fam-head td {
+    background: var(--surface); color: var(--muted); font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase; padding: var(--sp-2) var(--sp-3);
+  }
+  .sig-table .sig-key { color: #7AA5C8; }
+  .sig-table .sig-sub { color: var(--muted); font-weight: 400; margin-left: var(--sp-2); }
+  .ic-proven  { opacity: 1; }
+  .ic-warming { opacity: 0.4; }
+  .ic-pos     { color: var(--up); }
+  .ic-neg     { color: var(--down); }
+  .recon-ok   { color: var(--muted); opacity: 0.5; }
+  .recon-warn { color: #F59E0B; font-weight: 700; }
+  .recon-na   { color: var(--muted); opacity: 0.3; }
 </style>
 
 <!-- ── Top nav: Bots | Market ── -->
@@ -1004,19 +1047,147 @@
   </div>
 
   <div id="tab-supply" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Supply</div>
-      <p>Staking · unstake queue/maturing · AF balance · circulating supply</p>
-      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; Staked supply can exceed circulating</strong> — staking includes locked/team allocations, so staked-vs-circulating isn't a simple float ratio.
     </div>
+    <div class="lev-caveat">
+      <strong>&#9888; Unstake pipeline</strong> (queue + maturing) is warming — it needs the native indexer (same stage-3b gap as TWAP).
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Supply</div>
+      <div class="lev-section-sub">Staking, validators, the unlock pipeline, and the assistance-fund balance</div>
+    </div>
+
+    <div class="lev-cards-grid" id="su-cards-grid">
+      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Charts</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Staked vs Circulating</span>
+        <div class="tf-group" id="su-chart1-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="su-chart1-meta"></span>
+      </div>
+      <div id="su-chart1" style="height:220px"></div>
+      <div class="lev-chart-caption">Locked (staked) vs circulating — more staked = less sell-side float.</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Net Staking Flow</span>
+        <div class="tf-group" id="su-chart2-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="su-chart2-meta"></span>
+      </div>
+      <div id="su-chart2" style="height:220px"></div>
+      <div class="lev-chart-caption">Net staking — locking (+, bullish) vs unlocking (−, bearish).</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Unstake Pipeline</span>
+        <div class="tf-group" id="su-chart3-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="su-chart3-meta"></span>
+      </div>
+      <div id="su-chart3" style="height:220px"></div>
+      <div class="lev-chart-caption">Coins lining up to unlock — rising = forward sell-pressure overhang. Warming until the indexer lands.</div>
+    </div>
+
   </div>
 
   <div id="tab-onchain" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">On-chain</div>
-      <p>CEX flows/balance · holder concentration · holders</p>
-      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; Holder concentration</strong> excludes flagged system/protocol wallets (bridge, assistance fund). If that list is incomplete, top-N share is <strong>overstated</strong> — the full exclusion set is still being populated.
     </div>
+    <div class="lev-caveat">
+      <strong>&#9888; CEX flows</strong> are address-heuristic from a watched wallet set — coverage is partial; an unlabeled exchange wallet is invisible. The wallet set is still being populated (cards warming).
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">On-chain</div>
+      <div class="lev-section-sub">Exchange deposit/withdrawal flows and holder concentration — HYPE only</div>
+    </div>
+
+    <div class="lev-cards-grid" id="oc-cards-grid">
+      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Charts</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Holder Concentration</span>
+        <div class="tf-group" id="oc-chart1-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="oc-chart1-meta"></span>
+      </div>
+      <div id="oc-chart1" style="height:220px"></div>
+      <div class="lev-chart-caption">Whale ownership by tier — rising = fewer hands. Excludes system wallets (overstated if the list is incomplete).</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">CEX Net Flow</span>
+        <div class="tf-group" id="oc-chart2-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="oc-chart2-meta"></span>
+      </div>
+      <div id="oc-chart2" style="height:220px"></div>
+      <div class="lev-chart-caption">Net HYPE to (+, bearish) / from (−, bullish) exchanges — warming until the wallet set is populated.</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">CEX Balance</span>
+        <div class="tf-group" id="oc-chart3-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="oc-chart3-meta"></span>
+      </div>
+      <div id="oc-chart3" style="height:220px"></div>
+      <div class="lev-chart-caption">HYPE parked on exchanges — rising = more sell-ready supply.</div>
+    </div>
+
   </div>
 
   <div id="tab-microstructure" class="tab-panel" style="display:none">
@@ -1092,19 +1263,135 @@
   </div>
 
   <div id="tab-liquidations" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Liquidations</div>
-      <p>CEX liquidations and HL liquidations — kept in separate blocks (different methodologies).</p>
-      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; CEX and HL liquidations are separate pools — never added.</strong> A combined "total" would be meaningless; they are shown in separate blocks for this reason.
     </div>
+    <div class="lev-caveat">
+      <strong>&#9888; Liquidation magnitudes undercount</strong> — venues report partial/throttled liq data. Treat these as a floor, not a true total.
+    </div>
+    <div class="lev-caveat">
+      <strong>&#9888; Forced selling reads bearish and forced buying bullish</strong> — but extreme flushes often mark capitulation/reversal. Read big spikes as possible turning points, not just continuation.
+    </div>
+
+    <!-- ── Block A: Hyperliquid ─────────────────────────────────────────── -->
+    <div class="lev-section-head">
+      <div class="lev-section-title">Hyperliquid — Liquidations</div>
+      <div class="lev-section-sub">Forced selling (long liqs) and forced buying (short liqs) on Hyperliquid — warming</div>
+    </div>
+
+    <div class="lev-cards-grid" id="lq-hl-cards-grid">
+      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">HL Forced Flow</span>
+        <div class="tf-group" id="lq-chart1-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="lq-chart1-meta"></span>
+      </div>
+      <div id="lq-chart1" style="height:220px"></div>
+      <div class="lev-chart-caption">Forced selling (red) vs forced buying (green) on Hyperliquid — warming until native indexer lands.</div>
+    </div>
+
+    <!-- ── Block B: CEX ─────────────────────────────────────────────────── -->
+    <div class="lev-section-head">
+      <div class="lev-section-title">CEX — Liquidations (separate pool)</div>
+      <div class="lev-section-sub">Forced selling and forced buying on CEX venues — partial coverage, never added to HL</div>
+    </div>
+
+    <div class="lev-cards-grid" id="lq-cex-cards-grid">
+      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">CEX Forced Flow</span>
+        <div class="tf-group" id="lq-chart2-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="lq-chart2-meta"></span>
+      </div>
+      <div id="lq-chart2" style="height:220px"></div>
+      <div class="lev-chart-caption">Forced selling (red) vs forced buying (green) on CEX venues — a separate pool, never added to HL.</div>
+    </div>
+
+    <!-- ── Blow-up count comparison (counts OK to compare) ──────────────── -->
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Blow-up Events — HL vs CEX</span>
+        <div class="tf-group" id="lq-chart3-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="lq-chart3-meta"></span>
+      </div>
+      <div id="lq-chart3" style="height:220px"></div>
+      <div class="lev-chart-caption">Liquidation event counts by venue — counts only; magnitudes are not comparable across venues.</div>
+    </div>
+
   </div>
 
   <div id="tab-signals" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Signals</div>
-      <p>IC table · hit-rate table · 39 scoring signals × 4 horizons</p>
-      <p style="margin-top:.5rem;font-size:11px">Scorecard fills in over months — only 2 signals have measured IC today.</p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; IC is warming</strong> — clean hourly pairs only started accumulating recently; treat magnitudes as provisional and nothing as proven until <code>n</code> is large and <code>|IC| &#8805; 0.10</code>.
     </div>
+    <div class="lev-caveat">
+      <strong>&#9888; Weak or zero IC</strong> means the signal doesn't predict price here — that's a finding, not a bug. Only a <em>strong</em> IC pointing the <strong>opposite</strong> way from a signal's mapping is a red flag.
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Signal Scorecard</div>
+      <div class="lev-section-sub">Spearman IC per scored signal × 4 horizons — grouped by expected direction</div>
+    </div>
+
+    <div class="sig-controls" id="sig-controls">
+      <label style="color:var(--muted);font-size:var(--t-label);font-weight:600">Sort on:</label>
+      <select id="sig-sort-hz">
+        <option value="4">4h</option>
+        <option value="24" selected>24h</option>
+        <option value="72">72h</option>
+        <option value="168">168h</option>
+      </select>
+      <label style="color:var(--muted);font-size:var(--t-label);font-weight:600;margin-left:var(--sp-2)">Family:</label>
+      <button class="active" data-fam="all">All</button>
+      <button data-fam="bear">Contrarian</button>
+      <button data-fam="bull">Follow</button>
+    </div>
+
+    <div class="sig-table-wrap">
+      <table class="sig-table" id="sig-table">
+        <thead>
+          <tr>
+            <th>Signal</th>
+            <th>Dir</th>
+            <th class="th-h">4h</th>
+            <th class="th-h">24h</th>
+            <th class="th-h">72h</th>
+            <th class="th-h">168h</th>
+            <th>Check</th>
+          </tr>
+        </thead>
+        <tbody id="sig-tbody">
+          <tr><td colspan="7" style="color:var(--muted);padding:var(--sp-4)">Loading&#8230;</td></tr>
+        </tbody>
+      </table>
+    </div>
+
   </div>
 
   <div id="tab-data" class="tab-panel" style="display:none">
@@ -1711,13 +1998,13 @@
   // ── Tile definitions ─────────────────────────────────────────────────────
   var LEV_TILES = [
     { key: 'funding_rate',        label: 'FUNDING /H',              beginner: 'Funding rate',
-      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearPos,
+      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearHigh(0, 0.00001),
       read: 'high + = crowded longs (contrarian bearish); tiny scale' },
     { key: 'perp_premium',        label: 'FUTURES PREMIUM',         beginner: 'Futures premium',
-      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearPos,
+      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearHigh(0, 0.0001),
       read: 'persistent + = crowded longs (contrarian bearish)' },
     { key: 'spot_perp_basis',     label: 'SPOT-PERP BASIS',         beginner: 'Spot vs futures gap',
-      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBullPos,
+      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBullHigh(0, 0.0005),
       read: '+ = spot rich/perp discount; - = perp premium (crowded longs)' },
     { key: 'lsr_agg_long_frac',   label: 'AGGREGATE LONG %',        beginner: 'Crowd long %',
       kind: 'aggregate',  source: 'cex-agg',   fmt: fmtPct,     dir: dirBearHigh(0.5, 0.03),
@@ -2616,6 +2903,1080 @@
     msInited = true;
     fetchAndRenderCards();
     setTimeout(function () { refreshMsc1(); refreshMsc2(); refreshMsc3(); }, 60);
+  });
+
+})();
+</script>
+
+<!-- ── On-chain tab ───────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  // ── Format helpers ───────────────────────────────────────────────────────
+  function fmtC(v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + Math.round(abs / 1e3) + 'K';
+    return sign + Math.round(abs).toString();
+  }
+  function fmtSignedC(v) { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + fmtC(v); }
+  function fmtPct(v)     { return (v === null || !isFinite(v)) ? '—' : (v * 100).toFixed(1) + '%'; }
+  function fmtPctSigned(v) { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%'; }
+
+  // ── Direction helpers ─────────────────────────────────────────────────────
+  function dirBullEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-pos', text: '▲ bullish' };
+      if (v < -eps) return { cls: 'val-neg', text: '▼ bearish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+  function dirBearEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-neg', text: '▼ bearish' };
+      if (v < -eps) return { cls: 'val-pos', text: '▲ bullish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  var SRC_CLS = { 'hl-market': 'hlmarket', 'hl-native': 'hlnative', 'on-chain': 'onchain', 'cex-agg': 'cexagg' };
+
+  // ── Tile definitions (13 tiles) ───────────────────────────────────────────
+  var OC_TILES = [
+    // Directional — live holder delta
+    { key: 'holder_top10_delta',    label: 'CHANGE IN WHALE OWNERSHIP', beginner: 'Change in whale ownership',
+      kind: 'delta-prev', source: 'on-chain', fmt: fmtPctSigned, dir: dirBullEps(0.001),
+      read: '+ = whales accumulating (track the delta)' },
+    // Holder counts/shares (live)
+    { key: 'holders_count',         label: 'HOLDERS',                   beginner: 'Holders',
+      kind: 'count',      source: 'on-chain', fmt: fmtC,         dir: null, read: null },
+    { key: 'holder_supply_ex_system', label: 'SUPPLY (EX-SYSTEM)',      beginner: 'Supply excl. system wallets',
+      kind: 'level',      source: 'on-chain', fmt: fmtC,         dir: null, read: null },
+    { key: 'holder_top10_share',    label: 'TOP-10 SHARE',              beginner: 'Whale ownership (top 10)',
+      kind: 'ratio',      source: 'on-chain', fmt: fmtPct,       dir: null,
+      read: 'rising = whale accumulation; falling = distribution' },
+    { key: 'holder_top50_share',    label: 'TOP-50 SHARE',              beginner: 'Whale ownership (top 50)',
+      kind: 'ratio',      source: 'on-chain', fmt: fmtPct,       dir: null, read: null },
+    { key: 'holder_top100_share',   label: 'TOP-100 SHARE',             beginner: 'Whale ownership (top 100)',
+      kind: 'ratio',      source: 'on-chain', fmt: fmtPct,       dir: null,
+      read: 'structural ownership context' },
+    // CEX flows — warming (null until wallet set populated)
+    { key: 'cex_inflow_hype',      label: 'CEX INFLOW',                beginner: 'Deposits to exchanges',
+      kind: 'window',     source: 'on-chain', fmt: fmtC,         dir: dirBearEps(0),
+      read: 'gross sell-intent deposits' },
+    { key: 'cex_outflow_hype',     label: 'CEX OUTFLOW',               beginner: 'Withdrawals from exchanges',
+      kind: 'window',     source: 'on-chain', fmt: fmtC,         dir: dirBullEps(0),
+      read: null },
+    { key: 'cex_net_flow_hype',    label: 'CEX NET FLOW',              beginner: 'Coins moving to exchanges',
+      kind: 'window',     source: 'on-chain', fmt: fmtSignedC,   dir: dirBearEps(10),
+      read: '+ = into exchanges = SELL intent (bearish); - = withdrawals (bullish)' },
+    { key: 'cex_balance_delta',    label: 'CHANGE IN EXCHANGE HOLDINGS', beginner: 'Change in exchange holdings',
+      kind: 'delta-prev', source: 'on-chain', fmt: fmtSignedC,   dir: dirBearEps(10),
+      read: '+ = accumulating on exchanges (bearish); balance-based cross-check of flow' },
+    { key: 'cex_net_flow_usdc',    label: 'CEX NET FLOW (USDC)',        beginner: 'Net flow (USDC)',
+      kind: 'window',     source: 'on-chain', fmt: fmtSignedC,   dir: null, read: null },
+    { key: 'cex_total_balance_hype', label: 'CEX BALANCE',              beginner: 'Coins parked on exchanges',
+      kind: 'aggregate',  source: 'on-chain', fmt: fmtC,         dir: null,
+      read: 'rising = accumulating on exchanges (bearish)' },
+    { key: 'cex_wallets_polled',   label: 'WALLETS POLLED',             beginner: 'Wallets polled',
+      kind: 'count',      source: 'on-chain', fmt: fmtC,         dir: null, read: null },
+  ];
+
+  // ── Card builder ──────────────────────────────────────────────────────────
+  function makeCard(tile, value) {
+    var val     = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var dirInfo = (tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
+    var valCls  = dirInfo && dirInfo.cls ? ' ' + dirInfo.cls : '';
+    var dirCls  = dirInfo ? (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral') : '';
+    var srcCls  = SRC_CLS[tile.source] || '';
+    var ib = tile.read
+      ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
+      : '';
+    var rd = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
+    var subLabel = dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '';
+    return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
+      + '<div class="sc-header">'
+      +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
+      +   ib
+      + '</div>'
+      + '<div class="sc-value' + valCls + '">' + esc(val) + '</div>'
+      + subLabel
+      + rd
+      + '<div class="sc-badges">'
+      +   '<span class="sc-badge sc-kind sc-kind-' + esc(tile.kind) + '">' + esc(tile.kind) + '</span>'
+      +   '<span class="sc-badge sc-source sc-src-' + esc(srcCls) + '">' + esc(tile.source) + '</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── Signals fetch → render cards ──────────────────────────────────────────
+  function fetchAndRenderCards() {
+    fetch('/api/market/signals?subtab=onchain')
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        var vm = {};
+        (d.signals || []).forEach(function (s) { vm[s.key] = s.currentValue; });
+        var html = OC_TILES.map(function (tile) {
+          return makeCard(tile, vm[tile.key] !== undefined ? vm[tile.key] : null);
+        }).join('');
+        document.getElementById('oc-cards-grid').innerHTML = html;
+        if (window.MKT && window.MKT.applyBeginner) window.MKT.applyBeginner();
+      })
+      .catch(function () {
+        document.getElementById('oc-cards-grid').innerHTML =
+          '<p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Could not load signals.</p>';
+      });
+  }
+
+  // ── Chart infrastructure ──────────────────────────────────────────────────
+  var _border = 'rgba(56,189,248,0.09)';
+  var _accent = '#38BDF8';
+  var _gridC  = 'rgba(56,189,248,0.05)';
+  var _muted  = '#3D5A78';
+
+  function ocChartBase(containerId, h) {
+    var LC = window.LightweightCharts;
+    if (!LC) return null;
+    return LC.createChart(document.getElementById(containerId), {
+      autoSize: true, height: h || 220,
+      layout: { background: { type: 'solid', color: '#0D1520' }, textColor: _muted, attributionLogo: false },
+      grid:   { vertLines: { color: _gridC, style: 1 }, horzLines: { color: _gridC, style: 1 } },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+        horzLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+      },
+      rightPriceScale: { borderColor: _border },
+      timeScale: { borderColor: _border, timeVisible: true, secondsVisible: false },
+    });
+  }
+  function ocApplyRange(chart, rangeKey) {
+    if (rangeKey === 'All') { chart.timeScale().fitContent(); return; }
+    var secs = { '1D': 86400, '1W': 604800, '1M': 2592000, '3M': 7776000 }[rangeKey];
+    if (secs) {
+      var now = Math.floor(Date.now() / 1000);
+      chart.timeScale().setVisibleRange({ from: now - secs, to: now + 3600 });
+    }
+  }
+  function ocBindTfGroup(groupId, rangeRef, refreshFn) {
+    document.getElementById(groupId).addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeRef.v = btn.getAttribute('data-range');
+      document.querySelectorAll('#' + groupId + ' .tf').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      refreshFn();
+    });
+  }
+
+  // ── Chart 1: Holder Concentration (3 lines) ──────────────────────────────
+  var oc1 = null, oc1T10 = null, oc1T50 = null, oc1T100 = null, or1 = { v: '1W' };
+
+  function mountOc1() {
+    if (oc1) return;
+    oc1 = ocChartBase('oc-chart1', 220);
+    if (!oc1) return;
+    oc1T10  = oc1.addLineSeries({ color: _accent,  lineWidth: 1, priceFormat: { type: 'percent', precision: 1 } });
+    oc1T50  = oc1.addLineSeries({ color: '#F59E0B', lineWidth: 1, priceFormat: { type: 'percent', precision: 1 } });
+    oc1T100 = oc1.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceFormat: { type: 'percent', precision: 1 } });
+  }
+
+  function refreshOc1() {
+    mountOc1();
+    if (!oc1) return;
+    var meta = document.getElementById('oc-chart1-meta');
+    fetch('/api/market/history?fields=holder_top10_share,holder_top50_share,holder_top100_share&range=' + or1.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var d10 = [], d50 = [], d100 = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.holder_top10_share !== null && row.holder_top10_share !== undefined) d10.push({ time: ts, value: row.holder_top10_share * 100 });
+          if (row.holder_top50_share !== null && row.holder_top50_share !== undefined) d50.push({ time: ts, value: row.holder_top50_share * 100 });
+          if (row.holder_top100_share !== null && row.holder_top100_share !== undefined) d100.push({ time: ts, value: row.holder_top100_share * 100 });
+        });
+        if (d10.length)  oc1T10.setData(d10);
+        if (d50.length)  oc1T50.setData(d50);
+        if (d100.length) oc1T100.setData(d100);
+        ocApplyRange(oc1, or1.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  ocBindTfGroup('oc-chart1-tf', or1, refreshOc1);
+
+  // ── Chart 2: CEX Net Flow (signed bars) ───────────────────────────────────
+  var oc2 = null, oc2Bars = null, or2 = { v: '1W' };
+
+  function mountOc2() {
+    if (oc2) return;
+    oc2 = ocChartBase('oc-chart2', 220);
+    if (!oc2) return;
+    oc2Bars = oc2.addHistogramSeries({ priceFormat: { type: 'volume', precision: 0 } });
+  }
+
+  function refreshOc2() {
+    mountOc2();
+    if (!oc2) return;
+    var meta = document.getElementById('oc-chart2-meta');
+    fetch('/api/market/history?fields=cex_net_flow_hype&range=' + or2.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'warming'; return; }
+        var data = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.cex_net_flow_hype !== null && row.cex_net_flow_hype !== undefined)
+            data.push({ time: ts, value: row.cex_net_flow_hype, color: row.cex_net_flow_hype >= 0 ? '#E5494D' : '#26C281' });
+        });
+        if (!data.length) { if (meta) meta.textContent = 'warming'; return; }
+        oc2Bars.setData(data);
+        ocApplyRange(oc2, or2.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  ocBindTfGroup('oc-chart2-tf', or2, refreshOc2);
+
+  // ── Chart 3: CEX Balance (area) ───────────────────────────────────────────
+  var oc3 = null, oc3Area = null, or3 = { v: '1W' };
+
+  function mountOc3() {
+    if (oc3) return;
+    oc3 = ocChartBase('oc-chart3', 220);
+    if (!oc3) return;
+    oc3Area = oc3.addAreaSeries({
+      lineColor: _accent, topColor: 'rgba(56,189,248,0.14)', bottomColor: 'rgba(56,189,248,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+  }
+
+  function refreshOc3() {
+    mountOc3();
+    if (!oc3) return;
+    var meta = document.getElementById('oc-chart3-meta');
+    fetch('/api/market/history?fields=cex_total_balance_hype&range=' + or3.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'warming'; return; }
+        var data = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.cex_total_balance_hype !== null && row.cex_total_balance_hype !== undefined)
+            data.push({ time: ts, value: row.cex_total_balance_hype });
+        });
+        if (!data.length) { if (meta) meta.textContent = 'warming'; return; }
+        oc3Area.setData(data);
+        ocApplyRange(oc3, or3.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  ocBindTfGroup('oc-chart3-tf', or3, refreshOc3);
+
+  // ── Tab activation (lazy init) ────────────────────────────────────────────
+  var ocInited = false;
+  document.querySelector('.market-tab[data-tab="onchain"]').addEventListener('click', function () {
+    if (ocInited) return;
+    ocInited = true;
+    fetchAndRenderCards();
+    setTimeout(function () { refreshOc1(); refreshOc2(); refreshOc3(); }, 60);
+  });
+
+})();
+</script>
+
+<!-- ── Supply tab ─────────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  // ── Format helpers ───────────────────────────────────────────────────────
+  function fmtC(v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + Math.round(abs / 1e3) + 'K';
+    return sign + Math.round(abs).toString();
+  }
+  function fmtSignedC(v) { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + fmtC(v); }
+
+  // ── Direction helpers ─────────────────────────────────────────────────────
+  function dirBullEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-pos', text: '▲ bullish' };
+      if (v < -eps) return { cls: 'val-neg', text: '▼ bearish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+  function dirBearEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-neg', text: '▼ bearish' };
+      if (v < -eps) return { cls: 'val-pos', text: '▲ bullish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  var SRC_CLS = { 'hl-market': 'hlmarket', 'hl-native': 'hlnative', 'on-chain': 'onchain', 'cex-agg': 'cexagg' };
+
+  // ── Tile definitions (10 tiles) ───────────────────────────────────────────
+  var SU_TILES = [
+    // Directional deltas
+    { key: 'staked_delta',        label: 'CHANGE IN LOCKED COINS',  beginner: 'Change in locked coins',
+      kind: 'delta-prev', source: 'hl-native', fmt: fmtSignedC, dir: dirBullEps(100),
+      read: '+ = net stake inflow (bullish lock-up)' },
+    { key: 'unstake_q_delta',     label: 'CHANGE IN UNLOCK LINE',   beginner: 'Change in unlock line',
+      kind: 'delta-prev', source: 'hl-native', fmt: fmtSignedC, dir: dirBearEps(100),
+      read: '+ = more unstaking intent (bearish)' },
+    // Live levels
+    { key: 'circulating_supply',  label: 'CIRCULATING SUPPLY',      beginner: 'Coins in circulation',
+      kind: 'level',      source: 'hl-market', fmt: fmtC,       dir: null, read: null },
+    { key: 'total_staked_hype',   label: 'TOTAL STAKED',            beginner: 'Coins locked (staked)',
+      kind: 'level',      source: 'hl-native', fmt: fmtC,       dir: null,
+      read: 'rising = float reduction (bullish)' },
+    { key: 'active_staked_hype',  label: 'ACTIVE STAKED',           beginner: 'Active staked',
+      kind: 'level',      source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    { key: 'validator_count',     label: 'VALIDATORS',              beginner: 'Validators',
+      kind: 'count',      source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    { key: 'af_hype_balance',     label: 'AF BALANCE',              beginner: 'Protocol fund balance',
+      kind: 'level',      source: 'hl-native', fmt: fmtC,       dir: null,
+      read: 'structural source of demand' },
+    // Warming unstake pipeline
+    { key: 'unstake_queue_hype',  label: 'UNSTAKE QUEUE',           beginner: 'Coins lining up to unlock',
+      kind: 'level',      source: 'hl-native', fmt: fmtC,       dir: null,
+      read: 'rising = supply overhang (bearish)' },
+    { key: 'unstake_maturing_24h', label: 'MATURING 24H',           beginner: 'Unlocking within 24h',
+      kind: 'level',      source: 'hl-native', fmt: fmtC,       dir: null,
+      read: 'portion of unlock line maturing next day' },
+    { key: 'unstake_maturing_72h', label: 'MATURING 72H',           beginner: 'Unlocking within 72h',
+      kind: 'level',      source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+  ];
+
+  // ── Card builder ──────────────────────────────────────────────────────────
+  function makeCard(tile, value) {
+    var val     = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var dirInfo = (tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
+    var valCls  = dirInfo && dirInfo.cls ? ' ' + dirInfo.cls : '';
+    var dirCls  = dirInfo ? (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral') : '';
+    var srcCls  = SRC_CLS[tile.source] || '';
+    var ib = tile.read
+      ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
+      : '';
+    var rd = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
+    var subLabel = dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '';
+    return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
+      + '<div class="sc-header">'
+      +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
+      +   ib
+      + '</div>'
+      + '<div class="sc-value' + valCls + '">' + esc(val) + '</div>'
+      + subLabel
+      + rd
+      + '<div class="sc-badges">'
+      +   '<span class="sc-badge sc-kind sc-kind-' + esc(tile.kind) + '">' + esc(tile.kind) + '</span>'
+      +   '<span class="sc-badge sc-source sc-src-' + esc(srcCls) + '">' + esc(tile.source) + '</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── Signals fetch → render cards ──────────────────────────────────────────
+  function fetchAndRenderCards() {
+    fetch('/api/market/signals?subtab=supply')
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        var vm = {};
+        (d.signals || []).forEach(function (s) { vm[s.key] = s.currentValue; });
+        var html = SU_TILES.map(function (tile) {
+          return makeCard(tile, vm[tile.key] !== undefined ? vm[tile.key] : null);
+        }).join('');
+        document.getElementById('su-cards-grid').innerHTML = html;
+        if (window.MKT && window.MKT.applyBeginner) window.MKT.applyBeginner();
+      })
+      .catch(function () {
+        document.getElementById('su-cards-grid').innerHTML =
+          '<p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Could not load signals.</p>';
+      });
+  }
+
+  // ── Chart infrastructure ──────────────────────────────────────────────────
+  var _border = 'rgba(56,189,248,0.09)';
+  var _accent = '#38BDF8';
+  var _gridC  = 'rgba(56,189,248,0.05)';
+  var _muted  = '#3D5A78';
+
+  function suChartBase(containerId, h) {
+    var LC = window.LightweightCharts;
+    if (!LC) return null;
+    return LC.createChart(document.getElementById(containerId), {
+      autoSize: true, height: h || 220,
+      layout: { background: { type: 'solid', color: '#0D1520' }, textColor: _muted, attributionLogo: false },
+      grid:   { vertLines: { color: _gridC, style: 1 }, horzLines: { color: _gridC, style: 1 } },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+        horzLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+      },
+      rightPriceScale: { borderColor: _border },
+      timeScale: { borderColor: _border, timeVisible: true, secondsVisible: false },
+    });
+  }
+  function suApplyRange(chart, rangeKey) {
+    if (rangeKey === 'All') { chart.timeScale().fitContent(); return; }
+    var secs = { '1D': 86400, '1W': 604800, '1M': 2592000, '3M': 7776000 }[rangeKey];
+    if (secs) {
+      var now = Math.floor(Date.now() / 1000);
+      chart.timeScale().setVisibleRange({ from: now - secs, to: now + 3600 });
+    }
+  }
+  function suBindTfGroup(groupId, rangeRef, refreshFn) {
+    document.getElementById(groupId).addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeRef.v = btn.getAttribute('data-range');
+      document.querySelectorAll('#' + groupId + ' .tf').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      refreshFn();
+    });
+  }
+
+  // ── Chart 1: Staked vs Circulating ────────────────────────────────────────
+  var su1 = null, su1Staked = null, su1Circ = null, sr1 = { v: '1W' };
+
+  function mountSu1() {
+    if (su1) return;
+    su1 = suChartBase('su-chart1', 220);
+    if (!su1) return;
+    su1Staked = su1.addAreaSeries({
+      lineColor: _accent, topColor: 'rgba(56,189,248,0.14)', bottomColor: 'rgba(56,189,248,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+    su1Circ = su1.addAreaSeries({
+      lineColor: '#F59E0B', topColor: 'rgba(245,158,11,0.10)', bottomColor: 'rgba(245,158,11,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+  }
+
+  function refreshSu1() {
+    mountSu1();
+    if (!su1) return;
+    var meta = document.getElementById('su-chart1-meta');
+    fetch('/api/market/history?fields=total_staked_hype,circulating_supply&range=' + sr1.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var sData = [], cData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.total_staked_hype !== null && row.total_staked_hype !== undefined)  sData.push({ time: ts, value: row.total_staked_hype });
+          if (row.circulating_supply !== null && row.circulating_supply !== undefined) cData.push({ time: ts, value: row.circulating_supply });
+        });
+        if (sData.length) su1Staked.setData(sData);
+        if (cData.length) su1Circ.setData(cData);
+        suApplyRange(su1, sr1.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  suBindTfGroup('su-chart1-tf', sr1, refreshSu1);
+
+  // ── Chart 2: Net Staking Flow (signed bars) ──────────────────────────────
+  var su2 = null, su2Bars = null, sr2 = { v: '1W' };
+
+  function mountSu2() {
+    if (su2) return;
+    su2 = suChartBase('su-chart2', 220);
+    if (!su2) return;
+    su2Bars = su2.addHistogramSeries({ priceFormat: { type: 'volume', precision: 0 } });
+  }
+
+  function refreshSu2() {
+    mountSu2();
+    if (!su2) return;
+    var meta = document.getElementById('su-chart2-meta');
+    fetch('/api/market/history?fields=staked_delta&range=' + sr2.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var data = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.staked_delta !== null && row.staked_delta !== undefined)
+            data.push({ time: ts, value: row.staked_delta, color: row.staked_delta >= 0 ? '#26C281' : '#E5494D' });
+        });
+        if (!data.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        su2Bars.setData(data);
+        suApplyRange(su2, sr2.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  suBindTfGroup('su-chart2-tf', sr2, refreshSu2);
+
+  // ── Chart 3: Unstake Pipeline (3 lines — warming) ────────────────────────
+  var su3 = null, su3Q = null, su3M24 = null, su3M72 = null, sr3 = { v: '1W' };
+
+  function mountSu3() {
+    if (su3) return;
+    su3 = suChartBase('su-chart3', 220);
+    if (!su3) return;
+    su3Q   = su3.addLineSeries({ color: _accent,  lineWidth: 1, priceFormat: { type: 'volume', precision: 0 } });
+    su3M24 = su3.addLineSeries({ color: '#F59E0B', lineWidth: 1, priceFormat: { type: 'volume', precision: 0 } });
+    su3M72 = su3.addLineSeries({ color: '#A78BFA', lineWidth: 1, priceFormat: { type: 'volume', precision: 0 } });
+  }
+
+  function refreshSu3() {
+    mountSu3();
+    if (!su3) return;
+    var meta = document.getElementById('su-chart3-meta');
+    fetch('/api/market/history?fields=unstake_queue_hype,unstake_maturing_24h,unstake_maturing_72h&range=' + sr3.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'warming'; return; }
+        var qData = [], m24Data = [], m72Data = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.unstake_queue_hype !== null && row.unstake_queue_hype !== undefined)    qData.push({ time: ts, value: row.unstake_queue_hype });
+          if (row.unstake_maturing_24h !== null && row.unstake_maturing_24h !== undefined) m24Data.push({ time: ts, value: row.unstake_maturing_24h });
+          if (row.unstake_maturing_72h !== null && row.unstake_maturing_72h !== undefined) m72Data.push({ time: ts, value: row.unstake_maturing_72h });
+        });
+        if (!qData.length && !m24Data.length && !m72Data.length) { if (meta) meta.textContent = 'warming'; return; }
+        if (qData.length)   su3Q.setData(qData);
+        if (m24Data.length) su3M24.setData(m24Data);
+        if (m72Data.length) su3M72.setData(m72Data);
+        suApplyRange(su3, sr3.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  suBindTfGroup('su-chart3-tf', sr3, refreshSu3);
+
+  // ── Tab activation (lazy init) ────────────────────────────────────────────
+  var suInited = false;
+  document.querySelector('.market-tab[data-tab="supply"]').addEventListener('click', function () {
+    if (suInited) return;
+    suInited = true;
+    fetchAndRenderCards();
+    setTimeout(function () { refreshSu1(); refreshSu2(); refreshSu3(); }, 60);
+  });
+
+})();
+</script>
+
+<!-- ── Liquidations tab ──────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  // ── Format helpers ───────────────────────────────────────────────────────
+  function fmtC(v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + Math.round(abs / 1e3) + 'K';
+    return sign + Math.round(abs).toString();
+  }
+  function fmtSignedC(v) { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + fmtC(v); }
+
+  // ── Direction helpers ─────────────────────────────────────────────────────
+  function dirBullEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-pos', text: '▲ bullish' };
+      if (v < -eps) return { cls: 'val-neg', text: '▼ bearish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+  function dirBearEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-neg', text: '▼ bearish' };
+      if (v < -eps) return { cls: 'val-pos', text: '▲ bullish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  var SRC_CLS = { 'hl-market': 'hlmarket', 'hl-native': 'hlnative', 'on-chain': 'onchain', 'cex-agg': 'cexagg' };
+
+  // ── Tile definitions — two separate arrays, never mixed ───────────────────
+  var HL_TILES = [
+    { key: 'hl_liq_long_1h',   label: 'FORCED SELLING 1H',   beginner: 'Forced selling 1h (HL)',
+      kind: 'window',  source: 'hl-native', fmt: fmtC,       dir: dirBearEps(0), read: null },
+    { key: 'hl_liq_short_1h',  label: 'FORCED BUYING 1H',    beginner: 'Forced buying 1h (HL)',
+      kind: 'window',  source: 'hl-native', fmt: fmtC,       dir: dirBullEps(0), read: null },
+    { key: 'hl_liq_long_24h',  label: 'FORCED SELLING 24H',  beginner: 'Forced selling 24h (HL)',
+      kind: 'window',  source: 'hl-native', fmt: fmtC,       dir: dirBearEps(0), read: null },
+    { key: 'hl_liq_short_24h', label: 'FORCED BUYING 24H',   beginner: 'Forced buying 24h (HL)',
+      kind: 'window',  source: 'hl-native', fmt: fmtC,       dir: dirBullEps(0), read: null },
+    { key: 'hl_liq_net_24h',   label: 'FORCED TRADES NET',   beginner: 'Forced trades net (HL)',
+      kind: 'window',  source: 'hl-native', fmt: fmtSignedC, dir: dirBullEps(0),
+      read: '+ = shorts squeezed (net = short − long); never sum with CEX' },
+    { key: 'hl_liq_count_24h', label: 'BLOW-UP EVENTS',      beginner: 'Blow-up events (HL)',
+      kind: 'count',   source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+  ];
+
+  var CEX_TILES = [
+    { key: 'cex_liq_long_1h',   label: 'FORCED SELLING 1H',   beginner: 'Forced selling 1h (CEX)',
+      kind: 'window',  source: 'cex-agg', fmt: fmtC,       dir: dirBearEps(0), read: null },
+    { key: 'cex_liq_short_1h',  label: 'FORCED BUYING 1H',    beginner: 'Forced buying 1h (CEX)',
+      kind: 'window',  source: 'cex-agg', fmt: fmtC,       dir: dirBullEps(0), read: null },
+    { key: 'cex_liq_long_24h',  label: 'FORCED SELLING 24H',  beginner: 'Forced selling 24h (CEX)',
+      kind: 'window',  source: 'cex-agg', fmt: fmtC,       dir: dirBearEps(0),
+      read: 'long-liq = forced SELLS (cascade)' },
+    { key: 'cex_liq_short_24h', label: 'FORCED BUYING 24H',   beginner: 'Forced buying 24h (CEX)',
+      kind: 'window',  source: 'cex-agg', fmt: fmtC,       dir: dirBullEps(0),
+      read: 'short-liq = forced BUYS (squeeze)' },
+    { key: 'cex_liq_net_24h',   label: 'FORCED TRADES NET',   beginner: 'Forced trades net (CEX)',
+      kind: 'window',  source: 'cex-agg', fmt: fmtSignedC, dir: dirBullEps(0),
+      read: '+ = shorts squeezed (bullish thrust); − = longs flushed; undercounts' },
+    { key: 'cex_liq_count_24h', label: 'BLOW-UP EVENTS',      beginner: 'Blow-up events (CEX)',
+      kind: 'count',   source: 'cex-agg', fmt: fmtC,       dir: null, read: null },
+  ];
+
+  // ── Card builder ──────────────────────────────────────────────────────────
+  function makeCard(tile, value) {
+    var val     = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var dirInfo = (tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
+    var valCls  = dirInfo && dirInfo.cls ? ' ' + dirInfo.cls : '';
+    var dirCls  = dirInfo ? (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral') : '';
+    var srcCls  = SRC_CLS[tile.source] || '';
+    var ib = tile.read
+      ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
+      : '';
+    var rd = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
+    var subLabel = dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '';
+    return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
+      + '<div class="sc-header">'
+      +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
+      +   ib
+      + '</div>'
+      + '<div class="sc-value' + valCls + '">' + esc(val) + '</div>'
+      + subLabel
+      + rd
+      + '<div class="sc-badges">'
+      +   '<span class="sc-badge sc-kind sc-kind-' + esc(tile.kind) + '">' + esc(tile.kind) + '</span>'
+      +   '<span class="sc-badge sc-source sc-src-' + esc(srcCls) + '">' + esc(tile.source) + '</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── Signals fetch → render BOTH blocks ────────────────────────────────────
+  function fetchAndRenderCards() {
+    fetch('/api/market/signals?subtab=liquidations')
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        var vm = {};
+        (d.signals || []).forEach(function (s) { vm[s.key] = s.currentValue; });
+        var hlHtml = HL_TILES.map(function (t) {
+          return makeCard(t, vm[t.key] !== undefined ? vm[t.key] : null);
+        }).join('');
+        var cexHtml = CEX_TILES.map(function (t) {
+          return makeCard(t, vm[t.key] !== undefined ? vm[t.key] : null);
+        }).join('');
+        document.getElementById('lq-hl-cards-grid').innerHTML = hlHtml;
+        document.getElementById('lq-cex-cards-grid').innerHTML = cexHtml;
+        if (window.MKT && window.MKT.applyBeginner) window.MKT.applyBeginner();
+      })
+      .catch(function () {
+        var err = '<p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Could not load signals.</p>';
+        document.getElementById('lq-hl-cards-grid').innerHTML = err;
+        document.getElementById('lq-cex-cards-grid').innerHTML = err;
+      });
+  }
+
+  // ── Chart infrastructure ──────────────────────────────────────────────────
+  var _border = 'rgba(56,189,248,0.09)';
+  var _accent = '#38BDF8';
+  var _gridC  = 'rgba(56,189,248,0.05)';
+  var _muted  = '#3D5A78';
+
+  function lqChartBase(containerId, h) {
+    var LC = window.LightweightCharts;
+    if (!LC) return null;
+    return LC.createChart(document.getElementById(containerId), {
+      autoSize: true, height: h || 220,
+      layout: { background: { type: 'solid', color: '#0D1520' }, textColor: _muted, attributionLogo: false },
+      grid:   { vertLines: { color: _gridC, style: 1 }, horzLines: { color: _gridC, style: 1 } },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+        horzLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+      },
+      rightPriceScale: { borderColor: _border },
+      timeScale: { borderColor: _border, timeVisible: true, secondsVisible: false },
+    });
+  }
+  function lqApplyRange(chart, rangeKey) {
+    if (rangeKey === 'All') { chart.timeScale().fitContent(); return; }
+    var secs = { '1D': 86400, '1W': 604800, '1M': 2592000, '3M': 7776000 }[rangeKey];
+    if (secs) {
+      var now = Math.floor(Date.now() / 1000);
+      chart.timeScale().setVisibleRange({ from: now - secs, to: now + 3600 });
+    }
+  }
+  function lqBindTfGroup(groupId, rangeRef, refreshFn) {
+    document.getElementById(groupId).addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeRef.v = btn.getAttribute('data-range');
+      document.querySelectorAll('#' + groupId + ' .tf').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      refreshFn();
+    });
+  }
+
+  // ── Chart 1: HL Forced Flow (warming) ─────────────────────────────────────
+  var lq1 = null, lq1Long = null, lq1Short = null, lr1 = { v: '1W' };
+
+  function mountLq1() {
+    if (lq1) return;
+    lq1 = lqChartBase('lq-chart1', 220);
+    if (!lq1) return;
+    lq1Long  = lq1.addAreaSeries({
+      lineColor: '#E5494D', topColor: 'rgba(229,73,77,0.14)', bottomColor: 'rgba(229,73,77,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+    lq1Short = lq1.addAreaSeries({
+      lineColor: '#26C281', topColor: 'rgba(38,194,129,0.14)', bottomColor: 'rgba(38,194,129,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+  }
+
+  function refreshLq1() {
+    mountLq1();
+    if (!lq1) return;
+    var meta = document.getElementById('lq-chart1-meta');
+    fetch('/api/market/history?fields=hl_liq_long_24h,hl_liq_short_24h&range=' + lr1.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'warming'; return; }
+        var lData = [], sData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.hl_liq_long_24h !== null && row.hl_liq_long_24h !== undefined)  lData.push({ time: ts, value: row.hl_liq_long_24h });
+          if (row.hl_liq_short_24h !== null && row.hl_liq_short_24h !== undefined) sData.push({ time: ts, value: row.hl_liq_short_24h });
+        });
+        if (!lData.length && !sData.length) { if (meta) meta.textContent = 'warming'; return; }
+        if (lData.length) lq1Long.setData(lData);
+        if (sData.length) lq1Short.setData(sData);
+        lqApplyRange(lq1, lr1.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  lqBindTfGroup('lq-chart1-tf', lr1, refreshLq1);
+
+  // ── Chart 2: CEX Forced Flow ──────────────────────────────────────────────
+  var lq2 = null, lq2Long = null, lq2Short = null, lr2 = { v: '1W' };
+
+  function mountLq2() {
+    if (lq2) return;
+    lq2 = lqChartBase('lq-chart2', 220);
+    if (!lq2) return;
+    lq2Long  = lq2.addAreaSeries({
+      lineColor: '#E5494D', topColor: 'rgba(229,73,77,0.14)', bottomColor: 'rgba(229,73,77,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+    lq2Short = lq2.addAreaSeries({
+      lineColor: '#26C281', topColor: 'rgba(38,194,129,0.14)', bottomColor: 'rgba(38,194,129,0)',
+      lineWidth: 1, priceFormat: { type: 'volume', precision: 0 },
+    });
+  }
+
+  function refreshLq2() {
+    mountLq2();
+    if (!lq2) return;
+    var meta = document.getElementById('lq-chart2-meta');
+    fetch('/api/market/history?fields=cex_liq_long_24h,cex_liq_short_24h&range=' + lr2.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var lData = [], sData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.cex_liq_long_24h !== null && row.cex_liq_long_24h !== undefined)  lData.push({ time: ts, value: row.cex_liq_long_24h });
+          if (row.cex_liq_short_24h !== null && row.cex_liq_short_24h !== undefined) sData.push({ time: ts, value: row.cex_liq_short_24h });
+        });
+        if (lData.length) lq2Long.setData(lData);
+        if (sData.length) lq2Short.setData(sData);
+        lqApplyRange(lq2, lr2.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  lqBindTfGroup('lq-chart2-tf', lr2, refreshLq2);
+
+  // ── Chart 3: Blow-up Events — HL vs CEX (counts OK to compare) ───────────
+  var lq3 = null, lq3Hl = null, lq3Cex = null, lr3 = { v: '1W' };
+
+  function mountLq3() {
+    if (lq3) return;
+    lq3 = lqChartBase('lq-chart3', 220);
+    if (!lq3) return;
+    lq3Hl  = lq3.addLineSeries({ color: _accent,  lineWidth: 1, priceFormat: { type: 'volume', precision: 0 } });
+    lq3Cex = lq3.addLineSeries({ color: '#F59E0B', lineWidth: 1, priceFormat: { type: 'volume', precision: 0 } });
+  }
+
+  function refreshLq3() {
+    mountLq3();
+    if (!lq3) return;
+    var meta = document.getElementById('lq-chart3-meta');
+    fetch('/api/market/history?fields=hl_liq_count_24h,cex_liq_count_24h&range=' + lr3.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var hlData = [], cexData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.hl_liq_count_24h !== null && row.hl_liq_count_24h !== undefined)  hlData.push({ time: ts, value: row.hl_liq_count_24h });
+          if (row.cex_liq_count_24h !== null && row.cex_liq_count_24h !== undefined) cexData.push({ time: ts, value: row.cex_liq_count_24h });
+        });
+        if (hlData.length)  lq3Hl.setData(hlData);
+        if (cexData.length) lq3Cex.setData(cexData);
+        lqApplyRange(lq3, lr3.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  lqBindTfGroup('lq-chart3-tf', lr3, refreshLq3);
+
+  // ── Tab activation (lazy init) ────────────────────────────────────────────
+  var lqInited = false;
+  document.querySelector('.market-tab[data-tab="liquidations"]').addEventListener('click', function () {
+    if (lqInited) return;
+    lqInited = true;
+    fetchAndRenderCards();
+    setTimeout(function () { refreshLq1(); refreshLq2(); refreshLq3(); }, 60);
+  });
+
+})();
+</script>
+
+<!-- ── Signals tab (scorecard table) ─────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  var HORIZONS = [4, 24, 72, 168];
+  var MIN_N_PROVEN = 20;
+  var IC_PROVEN = 0.10;
+  var LIQ_KEYS = ['hl_liq_long_1h','hl_liq_long_24h','hl_liq_short_1h','hl_liq_short_24h',
+    'hl_liq_net_24h','cex_liq_long_1h','cex_liq_long_24h','cex_liq_short_1h','cex_liq_short_24h','cex_liq_net_24h'];
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Derive family from dir string: dirBear* → 'bear', dirBull* → 'bull', null → null
+  function dirFamily(dirStr) {
+    if (!dirStr) return null;
+    if (dirStr.indexOf('Bear') !== -1 || dirStr.indexOf('bear') !== -1) return 'bear';
+    if (dirStr.indexOf('Bull') !== -1 || dirStr.indexOf('bull') !== -1) return 'bull';
+    return null;
+  }
+
+  // Expected IC sign: bear-mapped signals should have negative IC, bull-mapped positive
+  function expectedSign(family) {
+    if (family === 'bear') return -1;
+    if (family === 'bull') return +1;
+    return 0;
+  }
+
+  var sigData = null; // { signals, cells } after fetch
+  var sortHz = 24;
+  var filterFam = 'all';
+
+  function fetchData() {
+    Promise.all([
+      fetch('/api/market/scorecard?format=json').then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); }),
+      fetch('/api/market/signals').then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); }),
+    ]).then(function (results) {
+      var sc = results[0], sg = results[1];
+      sigData = { cells: sc.cells || [], signals: sg.signals || [] };
+      render();
+    }).catch(function () {
+      document.getElementById('sig-tbody').innerHTML =
+        '<tr><td colspan="7" style="color:var(--muted);padding:var(--sp-4)">Could not load scorecard.</td></tr>';
+    });
+  }
+
+  function render() {
+    if (!sigData) return;
+
+    // Build lookup: signal key → { dir, label, subtab }
+    var meta = {};
+    sigData.signals.forEach(function (s) { meta[s.key] = s; });
+
+    // Build lookup: signal+horizon → cell
+    var cellMap = {};
+    sigData.cells.forEach(function (c) {
+      cellMap[c.signal + ':' + c.horizon_h] = c;
+    });
+
+    // Unique scored signal keys (from cells)
+    var keysSeen = {};
+    var keys = [];
+    sigData.cells.forEach(function (c) {
+      if (!keysSeen[c.signal]) { keysSeen[c.signal] = true; keys.push(c.signal); }
+    });
+
+    // Enrich with family
+    var rows = keys.map(function (key) {
+      var m = meta[key] || {};
+      var family = dirFamily(m.dir);
+      return { key: key, label: m.label || key, dir: m.dir || null, family: family, subtab: m.subtab || '' };
+    });
+
+    // Filter
+    if (filterFam !== 'all') {
+      rows = rows.filter(function (r) { return r.family === filterFam; });
+    }
+
+    // Sort by |IC| on selected horizon (strongest first)
+    rows.sort(function (a, b) {
+      var ca = cellMap[a.key + ':' + sortHz];
+      var cb = cellMap[b.key + ':' + sortHz];
+      var ai = ca && ca.ic !== null ? Math.abs(ca.ic) : -1;
+      var bi = cb && cb.ic !== null ? Math.abs(cb.ic) : -1;
+      return bi - ai;
+    });
+
+    // Group into families
+    var bearRows = rows.filter(function (r) { return r.family === 'bear'; });
+    var bullRows = rows.filter(function (r) { return r.family === 'bull'; });
+    var nullRows = rows.filter(function (r) { return r.family === null; });
+
+    var html = '';
+
+    function renderGroup(label, groupRows) {
+      if (!groupRows.length) return;
+      html += '<tr class="fam-head"><td colspan="7">' + esc(label) + '</td></tr>';
+      groupRows.forEach(function (r) { html += renderRow(r, cellMap); });
+    }
+
+    if (filterFam === 'all') {
+      renderGroup('Contrarian / sell-pressure (expect IC −)', bearRows);
+      renderGroup('Flow / follow / accumulation (expect IC +)', bullRows);
+      if (nullRows.length) renderGroup('Unclassified', nullRows);
+    } else {
+      rows.forEach(function (r) { html += renderRow(r, cellMap); });
+    }
+
+    if (!html) html = '<tr><td colspan="7" style="color:var(--muted);padding:var(--sp-4)">No scored signals.</td></tr>';
+    document.getElementById('sig-tbody').innerHTML = html;
+  }
+
+  function renderRow(r, cellMap) {
+    var dirLabel = r.family === 'bear' ? '▼ bear' : r.family === 'bull' ? '▲ bull' : '–';
+    var dirCls = r.family === 'bear' ? 'ic-neg' : r.family === 'bull' ? 'ic-pos' : '';
+
+    // Reconciliation: check the sort horizon's IC against expected sign
+    var reconHtml = reconCell(r, cellMap);
+
+    var out = '<tr>';
+    out += '<td><span class="sig-key">' + esc(r.key) + '</span><span class="sig-sub">' + esc(r.subtab) + '</span></td>';
+    out += '<td class="' + dirCls + '" style="font-size:var(--t-label);font-weight:600">' + esc(dirLabel) + '</td>';
+
+    HORIZONS.forEach(function (h) {
+      var c = cellMap[r.key + ':' + h];
+      out += icCell(c);
+    });
+
+    out += '<td>' + reconHtml + '</td>';
+    out += '</tr>';
+    return out;
+  }
+
+  function icCell(c) {
+    if (!c || c.ic === null) {
+      var nLabel = c ? c.n.toString() : '0';
+      return '<td class="td-ic ic-warming" title="n=' + nLabel + ' (warming)">—</td>';
+    }
+    var proven = c.n >= MIN_N_PROVEN && Math.abs(c.ic) >= IC_PROVEN;
+    var cls = proven ? 'ic-proven' : 'ic-warming';
+    var colorCls = c.ic > 0 ? ' ic-pos' : c.ic < 0 ? ' ic-neg' : '';
+    var tip = 'IC=' + c.ic.toFixed(3) + '  n=' + c.n + '  hit=' + (c.hit_rate !== null ? (c.hit_rate * 100).toFixed(1) + '%' : '?');
+    return '<td class="td-ic ' + cls + colorCls + '" title="' + esc(tip) + '">'
+      + c.ic.toFixed(3)
+      + '<span style="display:block;font-size:9px;opacity:.6;font-weight:400">n=' + c.n + '</span>'
+      + '</td>';
+  }
+
+  function reconCell(r, cellMap) {
+    if (!r.family) return '<span class="recon-na">–</span>';
+    // Check all horizons — flag if ANY proven cell disagrees
+    var anyProven = false;
+    var anyMismatch = false;
+    var exp = expectedSign(r.family);
+    var isLiq = LIQ_KEYS.indexOf(r.key) !== -1;
+
+    HORIZONS.forEach(function (h) {
+      var c = cellMap[r.key + ':' + h];
+      if (!c || c.ic === null) return;
+      var proven = c.n >= MIN_N_PROVEN && Math.abs(c.ic) >= IC_PROVEN;
+      if (!proven) return;
+      anyProven = true;
+      if (exp !== 0 && Math.sign(c.ic) !== 0 && Math.sign(c.ic) !== exp) anyMismatch = true;
+    });
+
+    if (!anyProven) return '<span class="recon-na">warming</span>';
+    if (anyMismatch && isLiq) return '<span class="recon-warn" title="Opposite IC — likely capitulation/contrarian effect, NOT a mapping error">⚠ contrarian?</span>';
+    if (anyMismatch) return '<span class="recon-warn" title="Measured IC sign opposes the mapped direction — possible inversion">⚠ check dir</span>';
+    return '<span class="recon-ok" title="IC sign matches expected direction">✓</span>';
+  }
+
+  // ── Controls ──────────────────────────────────────────────────────────────
+  document.getElementById('sig-sort-hz').addEventListener('change', function (e) {
+    sortHz = parseInt(e.target.value, 10);
+    render();
+  });
+
+  document.getElementById('sig-controls').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-fam]');
+    if (!btn) return;
+    filterFam = btn.getAttribute('data-fam');
+    document.querySelectorAll('#sig-controls [data-fam]').forEach(function (b) {
+      b.classList.toggle('active', b === btn);
+    });
+    render();
+  });
+
+  // ── Tab activation (lazy init) ────────────────────────────────────────────
+  var sigInited = false;
+  document.querySelector('.market-tab[data-tab="signals"]').addEventListener('click', function () {
+    if (sigInited) return;
+    sigInited = true;
+    fetchData();
   });
 
 })();

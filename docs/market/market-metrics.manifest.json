@@ -584,7 +584,8 @@
       "subtab": "liquidations",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBearPos"
     },
     {
       "key": "hl_liq_short_1h",
@@ -596,7 +597,8 @@
       "subtab": "liquidations",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBullPos"
     },
     {
       "key": "hl_liq_long_24h",
@@ -608,7 +610,8 @@
       "subtab": "liquidations",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBearPos"
     },
     {
       "key": "hl_liq_short_24h",
@@ -620,7 +623,8 @@
       "subtab": "liquidations",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBullPos"
     },
     {
       "key": "hl_liq_net_24h",
@@ -633,7 +637,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "DIRECTION ONLY (reconstructed lower bound); + = shorts squeezed; never sum with CEX"
+      "read": "DIRECTION ONLY (reconstructed lower bound); + = shorts squeezed; never sum with CEX",
+      "dir": "dirBullPos"
     },
     {
       "key": "hl_liq_count_24h",
@@ -658,7 +663,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "gross sell-intent deposits"
+      "read": "gross sell-intent deposits",
+      "dir": "dirBearPos"
     },
     {
       "key": "cex_outflow_hype",
@@ -670,7 +676,8 @@
       "subtab": "onchain",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBullPos"
     },
     {
       "key": "cex_net_flow_hype",
@@ -683,7 +690,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "+ = into exchanges = SELL intent (bearish); - = withdrawals (bullish)"
+      "read": "+ = into exchanges = SELL intent (bearish); - = withdrawals (bullish)",
+      "dir": "dirBearPos"
     },
     {
       "key": "cex_net_flow_usdc",
@@ -953,7 +961,8 @@
       "subtab": "liquidations",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBearPos"
     },
     {
       "key": "cex_liq_short_1h",
@@ -965,7 +974,8 @@
       "subtab": "liquidations",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBullPos"
     },
     {
       "key": "cex_liq_long_24h",
@@ -978,7 +988,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "long-liq = forced SELLS (cascade)"
+      "read": "long-liq = forced SELLS (cascade)",
+      "dir": "dirBearPos"
     },
     {
       "key": "cex_liq_short_24h",
@@ -991,7 +1002,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "short-liq = forced BUYS (squeeze)"
+      "read": "short-liq = forced BUYS (squeeze)",
+      "dir": "dirBullPos"
     },
     {
       "key": "cex_liq_net_24h",
@@ -1004,7 +1016,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "+ spike = shorts squeezed (bullish thrust); - = longs flushed; UNDERCOUNTS"
+      "read": "+ spike = shorts squeezed (bullish thrust); - = longs flushed; UNDERCOUNTS",
+      "dir": "dirBullPos"
     },
     {
       "key": "cex_liq_count_24h",
@@ -1084,7 +1097,8 @@
       "derived": true,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "+ = more unstaking intent (bearish)"
+      "read": "+ = more unstaking intent (bearish)",
+      "dir": "dirBearPos"
     },
     {
       "key": "staked_delta",
@@ -1097,7 +1111,8 @@
       "derived": true,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "+ = net stake inflow (bullish lock-up)"
+      "read": "+ = net stake inflow (bullish lock-up)",
+      "dir": "dirBullPos"
     },
     {
       "key": "af_buy_rate",
@@ -1124,7 +1139,8 @@
       "derived": true,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "+ = accumulating on exchanges (bearish); balance-based cross-check of flow"
+      "read": "+ = accumulating on exchanges (bearish); balance-based cross-check of flow",
+      "dir": "dirBearPos"
     },
     {
       "key": "holder_top10_delta",
@@ -1137,7 +1153,8 @@
       "derived": true,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "+ = whales accumulating (track the delta)"
+      "read": "+ = whales accumulating (track the delta)",
+      "dir": "dirBullPos"
     },
     {
       "key": "cex_oi_delta",

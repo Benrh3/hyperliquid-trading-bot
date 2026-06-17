@@ -13,6 +13,7 @@ export const DEFAULT_CEX_WALLETS_CONFIG: CexWalletsConfig = {
   wallets: [],
   systemWallets: [
     { address: "0x2222222222222222222222222222222222222222", label: "HyperCore<>EVM bridge" },
+    { address: "0xfefefefefefefefefefefefefefefefefefefefe", label: "Assistance Fund" },
   ],
 };
 

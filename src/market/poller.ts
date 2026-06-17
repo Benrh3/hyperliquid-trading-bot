@@ -30,7 +30,7 @@ import { isPlaceholderAddress, type CexWalletsConfig, type OnChainBalanceReader,
 import { computeDerived, type DerivedValues } from "./derived.js";
 import type { SnapshotRow } from "./store.js";
 
-const DEFAULT_POLL_INTERVAL_MS  = 60_000;
+const DEFAULT_POLL_INTERVAL_MS  = 3_600_000;
 const DEFAULT_RETENTION_RAW_DAYS = 7;
 
 // Max fractional difference allowed between spot_mark_px and perp_mark_px

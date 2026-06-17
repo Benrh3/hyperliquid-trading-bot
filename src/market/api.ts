@@ -46,9 +46,15 @@ export function createMarketRouter(store: MarketStore): Router {
   const router = Router();
 
   // ── GET /api/market/scorecard ──────────────────────────────────────────────
+  // ?format=json  returns JSON array of ScoreCell objects (default: CSV download)
   router.get("/api/market/scorecard", (req, res) => {
     const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : "HYPE";
-    const { csv } = getScorecard(store, symbol);
+    const format = typeof req.query.format === "string" ? req.query.format : "csv";
+    const { csv, cells } = getScorecard(store, symbol);
+    if (format === "json") {
+      res.json({ symbol, cells });
+      return;
+    }
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="scorecard-${symbol}.csv"`);
     res.send(csv);
