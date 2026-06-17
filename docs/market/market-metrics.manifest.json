@@ -152,7 +152,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "+ = net aggressive buying last 1h"
+      "read": "+ = net aggressive buying last 1h",
+      "dir": "dirBullPos"
     },
     {
       "key": "cvd_perp_4h",
@@ -165,7 +166,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "mid-horizon aggressor balance"
+      "read": "mid-horizon aggressor balance",
+      "dir": "dirBullPos"
     },
     {
       "key": "cvd_perp_24h",
@@ -178,7 +180,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "daily aggressor pressure; px up + CVD down = distribution"
+      "read": "daily aggressor pressure; px up + CVD down = distribution",
+      "dir": "dirBullPos"
     },
     {
       "key": "cvd_spot_1h",
@@ -190,7 +193,8 @@
       "subtab": "orderflow",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 120000
+      "staleAfterMs": 120000,
+      "dir": "dirBullPos"
     },
     {
       "key": "cvd_spot_4h",
@@ -202,7 +206,8 @@
       "subtab": "orderflow",
       "derived": false,
       "signalForScoring": false,
-      "staleAfterMs": 120000
+      "staleAfterMs": 120000,
+      "dir": "dirBullPos"
     },
     {
       "key": "cvd_spot_24h",
@@ -215,7 +220,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 120000,
-      "read": "daily real cash demand; vs perp = leverage vs spot led"
+      "read": "daily real cash demand; vs perp = leverage vs spot led",
+      "dir": "dirBullPos"
     },
     {
       "key": "cvd_perp_trades_24h",
@@ -429,7 +435,8 @@
       "derived": false,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "protocol bid executed = demand floor"
+      "read": "protocol bid executed = demand floor",
+      "dir": "dirBullPos"
     },
     {
       "key": "af_buy_usdc_window",
@@ -465,7 +472,8 @@
       "subtab": "orderflow",
       "derived": false,
       "signalForScoring": true,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBullPos"
     },
     {
       "key": "twap_spot_sell_hype",
@@ -477,7 +485,8 @@
       "subtab": "orderflow",
       "derived": false,
       "signalForScoring": true,
-      "staleAfterMs": 3900000
+      "staleAfterMs": 3900000,
+      "dir": "dirBearPos"
     },
     {
       "key": "twap_perp_buy_hype",
@@ -1018,7 +1027,8 @@
       "derived": true,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "+ = net scheduled buying queued = forward bid support"
+      "read": "+ = net scheduled buying queued = forward bid support",
+      "dir": "dirBullPos"
     },
     {
       "key": "net_twap_full_hype",
@@ -1031,7 +1041,8 @@
       "derived": true,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "upper bound of scheduled net pressure"
+      "read": "upper bound of scheduled net pressure",
+      "dir": "dirBullPos"
     },
     {
       "key": "oi_delta",
@@ -1097,7 +1108,8 @@
       "derived": true,
       "signalForScoring": true,
       "staleAfterMs": 3900000,
-      "read": "AF realized buy rate; cross-check vs balance delta"
+      "read": "AF realized buy rate; cross-check vs balance delta",
+      "dir": "dirBullPos"
     },
     {
       "key": "cex_balance_delta",

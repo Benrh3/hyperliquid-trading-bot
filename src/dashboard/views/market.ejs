@@ -860,11 +860,75 @@
   </div>
 
   <div id="tab-orderflow" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Order Flow</div>
-      <p>CVD windows · TWAP/scheduled flow · AF buys</p>
-      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; CVD</strong> measures <em>taker</em> (aggressor) flow only — the resting maker side is invisible. Read it as pressure, not net positioning.
     </div>
+    <div class="lev-caveat">
+      <strong>&#9888; TWAP &amp; AF flows</strong> are <em>programmatic</em> (protocol/scheduled), not crowd conviction — and are warming until the native indexer lands.
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Order Flow</div>
+      <div class="lev-section-sub">Taker flow (CVD, perp + spot) · scheduled TWAP flow · assistance-fund buys</div>
+    </div>
+
+    <div class="lev-cards-grid" id="of-cards-grid">
+      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
+    </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Charts</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">CVD vs Price</span>
+        <div class="tf-group" id="of-chart1-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="of-chart1-meta"></span>
+      </div>
+      <div id="of-chart1" style="height:220px"></div>
+      <div class="lev-chart-caption">Net taker flow (amber, left axis) vs HYPE price (blue, right axis) — CVD rising with price = confirmation; diverging = exhaustion signal.</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Perp vs Spot CVD 24h</span>
+        <div class="tf-group" id="of-chart2-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="of-chart2-meta"></span>
+      </div>
+      <div id="of-chart2" style="height:220px"></div>
+      <div class="lev-chart-caption">Derivatives (perp) vs spot net taker flow — divergence flags who is driving: leverage or real cash.</div>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Programmatic Flow — Net TWAP &amp; AF</span>
+        <div class="tf-group" id="of-chart3-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="of-chart3-meta"></span>
+      </div>
+      <div id="of-chart3" style="height:220px"></div>
+      <div class="lev-chart-caption">Scheduled net TWAP bars + AF protocol buy rate line — warming until native indexer lands; empty state is expected.</div>
+    </div>
+
   </div>
 
   <div id="tab-leverage" class="tab-panel" style="display:none">
@@ -1877,6 +1941,340 @@
     levInited = true;
     fetchAndRenderCards();
     setTimeout(function () { refreshC1(); refreshC2(); refreshC3(); }, 60);
+  });
+
+})();
+</script>
+
+<!-- ── Order Flow tab ─────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  // ── Format helpers ───────────────────────────────────────────────────────
+  function fmtC(v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (abs >= 1e9) return sign + (abs / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + Math.round(abs / 1e3) + 'K';
+    return sign + Math.round(abs).toString();
+  }
+  function fmtSignedC(v) { return (v === null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + fmtC(v); }
+
+  // ── Direction helpers ─────────────────────────────────────────────────────
+  // eps-deadband: values within ±eps of zero read neutral (prevents noise flapping)
+  function dirBullEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-pos', text: '▲ bullish' };
+      if (v < -eps) return { cls: 'val-neg', text: '▼ bearish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+  function dirBearEps(eps) {
+    return function (v) {
+      if (v === null || v === undefined || !isFinite(v)) return null;
+      if (v > eps)  return { cls: 'val-neg', text: '▼ bearish' };
+      if (v < -eps) return { cls: 'val-pos', text: '▲ bullish' };
+      return { cls: '', text: '– neutral' };
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  var SRC_CLS = { 'hl-market': 'hlmarket', 'hl-native': 'hlnative', 'on-chain': 'onchain', 'cex-agg': 'cexagg' };
+
+  // ── Tile definitions (24 tiles) ───────────────────────────────────────────
+  var OF_TILES = [
+    // Live CVD — perp
+    { key: 'cvd_perp_1h',   label: 'CVD PERP 1H',   beginner: 'Aggressive buying 1h (futures)',
+      kind: 'window',    source: 'hl-market', fmt: fmtSignedC, dir: dirBullEps(300),
+      read: '+ = net aggressive buying last 1h' },
+    { key: 'cvd_perp_4h',   label: 'CVD PERP 4H',   beginner: 'Aggressive buying 4h (futures)',
+      kind: 'window',    source: 'hl-market', fmt: fmtSignedC, dir: dirBullEps(600),
+      read: 'mid-horizon aggressor balance' },
+    { key: 'cvd_perp_24h',  label: 'CVD PERP 24H',  beginner: 'Aggressive buying 24h (futures)',
+      kind: 'window',    source: 'hl-market', fmt: fmtSignedC, dir: dirBullEps(1500),
+      read: 'daily aggressor pressure; px up + CVD down = distribution' },
+    // Live CVD — spot
+    { key: 'cvd_spot_1h',   label: 'CVD SPOT 1H',   beginner: 'Aggressive buying 1h (spot)',
+      kind: 'window',    source: 'hl-market', fmt: fmtSignedC, dir: dirBullEps(300),
+      read: null },
+    { key: 'cvd_spot_4h',   label: 'CVD SPOT 4H',   beginner: 'Aggressive buying 4h (spot)',
+      kind: 'window',    source: 'hl-market', fmt: fmtSignedC, dir: dirBullEps(600),
+      read: null },
+    { key: 'cvd_spot_24h',  label: 'CVD SPOT 24H',  beginner: 'Aggressive buying 24h (spot)',
+      kind: 'window',    source: 'hl-market', fmt: fmtSignedC, dir: dirBullEps(1500),
+      read: 'daily real cash demand; vs perp = leverage vs spot led' },
+    // AF
+    { key: 'af_buy_hype_window', label: 'AF BUYS (HYPE)', beginner: 'Protocol buying (HYPE)',
+      kind: 'window',    source: 'hl-native', fmt: fmtC,       dir: dirBullEps(0),
+      read: 'protocol bid executed = demand floor' },
+    { key: 'af_buy_rate',   label: 'PROTOCOL BUY RATE', beginner: 'Protocol buy rate',
+      kind: 'window',    source: 'hl-native', fmt: fmtC,       dir: dirBullEps(0),
+      read: 'AF realized buy rate; cross-check vs balance delta' },
+    // Net TWAP (derived)
+    { key: 'net_twap_hype',      label: 'NET TWAP (PRORATED)', beginner: 'Scheduled buying left',
+      kind: 'aggregate', source: 'hl-native', fmt: fmtSignedC, dir: dirBullEps(50),
+      read: '+ = net scheduled buying queued = forward bid support' },
+    { key: 'net_twap_full_hype', label: 'NET TWAP (FULL)',     beginner: 'Scheduled buying (full size)',
+      kind: 'aggregate', source: 'hl-native', fmt: fmtSignedC, dir: dirBullEps(50),
+      read: 'upper bound of scheduled net pressure' },
+    // Scored TWAP spot legs (warming — null until native indexer)
+    { key: 'twap_spot_buy_hype',  label: 'TWAP SPOT BUY',  beginner: 'Scheduled spot buying',
+      kind: 'window',    source: 'hl-native', fmt: fmtC,       dir: dirBullEps(0),
+      read: 'scheduled accumulation = forward demand' },
+    { key: 'twap_spot_sell_hype', label: 'TWAP SPOT SELL', beginner: 'Scheduled spot selling',
+      kind: 'window',    source: 'hl-native', fmt: fmtC,       dir: dirBearEps(0),
+      read: 'scheduled distribution = forward supply' },
+    // Non-scored TWAP component legs
+    { key: 'twap_perp_buy_hype',       label: 'TWAP PERP BUY',           beginner: 'Scheduled perp buying',
+      kind: 'window',    source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    { key: 'twap_perp_sell_hype',      label: 'TWAP PERP SELL',          beginner: 'Scheduled perp selling',
+      kind: 'window',    source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    { key: 'twap_spot_buy_full_hype',  label: 'TWAP SPOT BUY (FULL)',    beginner: 'Scheduled spot buying (full)',
+      kind: 'aggregate', source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    { key: 'twap_spot_sell_full_hype', label: 'TWAP SPOT SELL (FULL)',   beginner: 'Scheduled spot selling (full)',
+      kind: 'aggregate', source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    { key: 'twap_perp_buy_full_hype',  label: 'TWAP PERP BUY (FULL)',   beginner: 'Scheduled perp buying (full)',
+      kind: 'aggregate', source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    { key: 'twap_perp_sell_full_hype', label: 'TWAP PERP SELL (FULL)',  beginner: 'Scheduled perp selling (full)',
+      kind: 'aggregate', source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    // Counts + volume
+    { key: 'spot_day_ntl_vlm',    label: 'SPOT VOLUME 24H',    beginner: 'Spot volume (24h)',
+      kind: 'level',     source: 'hl-market', fmt: fmtC,       dir: null, read: null },
+    { key: 'cvd_perp_trades_24h', label: 'FUTURES TRADES 24H', beginner: 'Futures trades (24h)',
+      kind: 'count',     source: 'hl-market', fmt: fmtC,       dir: null, read: null },
+    { key: 'cvd_spot_trades_24h', label: 'SPOT TRADES 24H',    beginner: 'Spot trades (24h)',
+      kind: 'count',     source: 'hl-market', fmt: fmtC,       dir: null, read: null },
+    { key: 'af_buy_usdc_window',  label: 'AF BUYS (USDC)',      beginner: 'Protocol buying (USDC)',
+      kind: 'window',    source: 'hl-native', fmt: fmtC,       dir: null,
+      read: 'USDC-denominated counterpart to HYPE leg — do not double-count for direction' },
+    { key: 'af_buy_fills',        label: 'AF BUY FILLS',        beginner: 'Protocol buy fills',
+      kind: 'count',     source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+    { key: 'twap_active_count',   label: 'ACTIVE TWAPS',        beginner: 'Active TWAPs',
+      kind: 'count',     source: 'hl-native', fmt: fmtC,       dir: null, read: null },
+  ];
+
+  // ── Card builder ──────────────────────────────────────────────────────────
+  function makeCard(tile, value) {
+    var val     = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var dirInfo = (tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
+    var valCls  = dirInfo && dirInfo.cls ? ' ' + dirInfo.cls : '';
+    var dirCls  = dirInfo ? (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral') : '';
+    var srcCls  = SRC_CLS[tile.source] || '';
+    var ib = tile.read
+      ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
+      : '';
+    var rd = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
+    var subLabel = dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '';
+    return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
+      + '<div class="sc-header">'
+      +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
+      +   ib
+      + '</div>'
+      + '<div class="sc-value' + valCls + '">' + esc(val) + '</div>'
+      + subLabel
+      + rd
+      + '<div class="sc-badges">'
+      +   '<span class="sc-badge sc-kind sc-kind-' + esc(tile.kind) + '">' + esc(tile.kind) + '</span>'
+      +   '<span class="sc-badge sc-source sc-src-' + esc(srcCls) + '">' + esc(tile.source) + '</span>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ── Signals fetch → render cards ──────────────────────────────────────────
+  function fetchAndRenderCards() {
+    fetch('/api/market/signals?subtab=orderflow')
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        var vm = {};
+        (d.signals || []).forEach(function (s) { vm[s.key] = s.currentValue; });
+        var html = OF_TILES.map(function (tile) {
+          return makeCard(tile, vm[tile.key] !== undefined ? vm[tile.key] : null);
+        }).join('');
+        document.getElementById('of-cards-grid').innerHTML = html;
+        if (window.MKT && window.MKT.applyBeginner) window.MKT.applyBeginner();
+      })
+      .catch(function () {
+        document.getElementById('of-cards-grid').innerHTML =
+          '<p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Could not load signals.</p>';
+      });
+  }
+
+  // ── Chart infrastructure ──────────────────────────────────────────────────
+  var _border = 'rgba(56,189,248,0.09)';
+  var _accent = '#38BDF8';
+  var _gridC  = 'rgba(56,189,248,0.05)';
+  var _muted  = '#3D5A78';
+
+  function ofChartBase(containerId, h) {
+    var LC = window.LightweightCharts;
+    if (!LC) return null;
+    return LC.createChart(document.getElementById(containerId), {
+      autoSize: true,
+      height: h || 220,
+      layout: { background: { type: 'solid', color: '#0D1520' }, textColor: _muted, attributionLogo: false },
+      grid:   { vertLines: { color: _gridC, style: 1 }, horzLines: { color: _gridC, style: 1 } },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+        horzLine: { color: _accent, width: 1, style: 1, labelBackgroundColor: _accent },
+      },
+      rightPriceScale: { borderColor: _border },
+      timeScale: { borderColor: _border, timeVisible: true, secondsVisible: false },
+    });
+  }
+  function ofApplyRange(chart, rangeKey) {
+    if (rangeKey === 'All') { chart.timeScale().fitContent(); return; }
+    var secs = { '1D': 86400, '1W': 604800, '1M': 2592000, '3M': 7776000 }[rangeKey];
+    if (secs) {
+      var now = Math.floor(Date.now() / 1000);
+      chart.timeScale().setVisibleRange({ from: now - secs, to: now + 3600 });
+    }
+  }
+  function ofBindTfGroup(groupId, rangeRef, refreshFn) {
+    document.getElementById(groupId).addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-range]');
+      if (!btn) return;
+      rangeRef.v = btn.getAttribute('data-range');
+      document.querySelectorAll('#' + groupId + ' .tf').forEach(function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      refreshFn();
+    });
+  }
+
+  // ── Chart 1: CVD 24h vs Price ─────────────────────────────────────────────
+  var ofc1 = null, ofc1Cvd = null, ofc1Px = null, or1 = { v: '1W' };
+
+  function mountOfc1() {
+    if (ofc1) return;
+    ofc1 = ofChartBase('of-chart1', 220);
+    if (!ofc1) return;
+    ofc1.applyOptions({ leftPriceScale: { visible: true, borderColor: _border } });
+    ofc1Cvd = ofc1.addLineSeries({
+      color: '#F59E0B', lineWidth: 1, lineStyle: 0,
+      priceScaleId: 'left',
+      priceFormat: { type: 'volume', precision: 0 },
+    });
+    ofc1Px = ofc1.addLineSeries({
+      color: _accent, lineWidth: 1, lineStyle: 0,
+      priceFormat: { type: 'price', precision: 2 },
+    });
+  }
+
+  function refreshOfc1() {
+    mountOfc1();
+    if (!ofc1) return;
+    var meta = document.getElementById('of-chart1-meta');
+    fetch('/api/market/history?fields=perp_mark_px,cvd_perp_24h&range=' + or1.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var pxData = [], cvdData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.perp_mark_px !== null && row.perp_mark_px !== undefined) pxData.push({ time: ts, value: row.perp_mark_px });
+          if (row.cvd_perp_24h !== null && row.cvd_perp_24h !== undefined) cvdData.push({ time: ts, value: row.cvd_perp_24h });
+        });
+        if (pxData.length) ofc1Px.setData(pxData);
+        if (cvdData.length) ofc1Cvd.setData(cvdData);
+        ofApplyRange(ofc1, or1.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  ofBindTfGroup('of-chart1-tf', or1, refreshOfc1);
+
+  // ── Chart 2: Perp CVD 24h vs Spot CVD 24h ────────────────────────────────
+  var ofc2 = null, ofc2Perp = null, ofc2Spot = null, or2 = { v: '1W' };
+
+  function mountOfc2() {
+    if (ofc2) return;
+    ofc2 = ofChartBase('of-chart2', 220);
+    if (!ofc2) return;
+    ofc2Perp = ofc2.addLineSeries({ color: _accent, lineWidth: 1, priceFormat: { type: 'volume', precision: 0 } });
+    ofc2Spot = ofc2.addLineSeries({ color: '#F59E0B', lineWidth: 1, priceFormat: { type: 'volume', precision: 0 } });
+  }
+
+  function refreshOfc2() {
+    mountOfc2();
+    if (!ofc2) return;
+    var meta = document.getElementById('of-chart2-meta');
+    fetch('/api/market/history?fields=cvd_perp_24h,cvd_spot_24h&range=' + or2.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var perpData = [], spotData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.cvd_perp_24h !== null && row.cvd_perp_24h !== undefined) perpData.push({ time: ts, value: row.cvd_perp_24h });
+          if (row.cvd_spot_24h !== null && row.cvd_spot_24h !== undefined) spotData.push({ time: ts, value: row.cvd_spot_24h });
+        });
+        if (perpData.length) ofc2Perp.setData(perpData);
+        if (spotData.length) ofc2Spot.setData(spotData);
+        ofApplyRange(ofc2, or2.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  ofBindTfGroup('of-chart2-tf', or2, refreshOfc2);
+
+  // ── Chart 3: Programmatic flow — net TWAP bars + AF rate line ─────────────
+  var ofc3 = null, ofc3Twap = null, ofc3Af = null, or3 = { v: '1W' };
+
+  function mountOfc3() {
+    if (ofc3) return;
+    ofc3 = ofChartBase('of-chart3', 220);
+    if (!ofc3) return;
+    ofc3.applyOptions({ leftPriceScale: { visible: true, borderColor: _border } });
+    ofc3Twap = ofc3.addHistogramSeries({ priceFormat: { type: 'volume', precision: 0 } });
+    ofc3Af = ofc3.addLineSeries({
+      color: '#A78BFA', lineWidth: 1, lineStyle: 0,
+      priceScaleId: 'left',
+      priceFormat: { type: 'volume', precision: 0 },
+    });
+  }
+
+  function refreshOfc3() {
+    mountOfc3();
+    if (!ofc3) return;
+    var meta = document.getElementById('of-chart3-meta');
+    fetch('/api/market/history?fields=net_twap_hype,af_buy_rate&range=' + or3.v)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (!d.rows || !d.rows.length) { if (meta) meta.textContent = 'no data yet'; return; }
+        var twapData = [], afData = [];
+        d.rows.forEach(function (row) {
+          var ts = Math.floor(row.ts / 1000);
+          if (row.net_twap_hype !== null && row.net_twap_hype !== undefined)
+            twapData.push({ time: ts, value: row.net_twap_hype, color: row.net_twap_hype >= 0 ? '#26C281' : '#E5494D' });
+          if (row.af_buy_rate !== null && row.af_buy_rate !== undefined)
+            afData.push({ time: ts, value: row.af_buy_rate });
+        });
+        if (twapData.length) ofc3Twap.setData(twapData);
+        if (afData.length) ofc3Af.setData(afData);
+        if (!twapData.length && !afData.length) { if (meta) meta.textContent = 'warming'; return; }
+        ofApplyRange(ofc3, or3.v);
+        if (meta) meta.textContent = new Date().toLocaleTimeString();
+      })
+      .catch(function () { if (meta) meta.textContent = 'error'; });
+  }
+
+  ofBindTfGroup('of-chart3-tf', or3, refreshOfc3);
+
+  // ── Tab activation (lazy init) ────────────────────────────────────────────
+  var ofInited = false;
+  document.querySelector('.market-tab[data-tab="orderflow"]').addEventListener('click', function () {
+    if (ofInited) return;
+    ofInited = true;
+    fetchAndRenderCards();
+    setTimeout(function () { refreshOfc1(); refreshOfc2(); refreshOfc3(); }, 60);
   });
 
 })();
