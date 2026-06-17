@@ -193,6 +193,13 @@ export interface BiasResponse {
 const MIN_SCORED_FOR_HIGH_CONFIDENCE = 5;
 
 /**
+ * Mean |IC| across scored signals must exceed this before confidence flips to HIGH.
+ * Prevents early-data noise from inflating confidence: with only days of history,
+ * Spearman IC values cluster near zero by chance even if scoredCount is large.
+ */
+const IC_THRESHOLD_FOR_HIGH_CONFIDENCE = 0.10;
+
+/**
  * Weighted bias vote for a given horizon. Weight = |IC| for scored cells,
  * 0 for warming. Direction = sign(current_value) × sign(IC) — handles
  * contrarian signals naturally (negative IC on a positive signal = bearish vote).
@@ -211,6 +218,7 @@ export function computeBias(
   let bullCount  = 0;
   let bearCount  = 0;
   let scoredCount = 0;
+  let sumAbsIC   = 0;
 
   // Per-category accumulators
   const catRaw    = new Map<string, number>();
@@ -220,6 +228,7 @@ export function computeBias(
     const cell = cells.find((c) => c.signal === sig.key && c.horizon_h === horizonH);
     if (!cell || cell.ic === null) continue; // warming — skip
     scoredCount++;
+    sumAbsIC += Math.abs(cell.ic);
 
     const currentVal = currentValues[sig.key];
     if (currentVal === null || currentVal === undefined || !Number.isFinite(currentVal)) continue;
@@ -241,9 +250,16 @@ export function computeBias(
     else if (vote < 0) bearCount++;
   }
 
-  const score = totalWeight > 0 ? rawSum / totalWeight : 0;
-  const label: BiasResult["label"] = score > 0.05 ? "Bullish" : score < -0.05 ? "Bearish" : "Neutral";
-  const confidence: BiasResult["confidence"] = scoredCount >= MIN_SCORED_FOR_HIGH_CONFIDENCE ? "HIGH" : "LOW";
+  const score     = totalWeight > 0 ? rawSum / totalWeight : 0;
+  const meanAbsIC = scoredCount > 0 ? sumAbsIC / scoredCount : 0;
+  const confidence: BiasResult["confidence"] =
+    scoredCount >= MIN_SCORED_FOR_HIGH_CONFIDENCE && meanAbsIC >= IC_THRESHOLD_FOR_HIGH_CONFIDENCE
+      ? "HIGH"
+      : "LOW";
+  // Suppress Bullish/Bearish labels until IC is proven — early noise reads as Neutral.
+  const label: BiasResult["label"] = confidence === "LOW"
+    ? "Neutral"
+    : score > 0.05 ? "Bullish" : score < -0.05 ? "Bearish" : "Neutral";
 
   const categoryBiases: CategoryBias[] = [];
   for (const [cat, w] of catWeight) {

@@ -1058,7 +1058,7 @@
       "signalForScoring": true,
       "staleAfterMs": 120000,
       "read": "+ = spot rich/perp discount; - = perp premium (crowded longs)",
-      "dir": "dirBearPos"
+      "dir": "dirBullPos"
     },
     {
       "key": "unstake_q_delta",

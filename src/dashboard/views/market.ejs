@@ -1545,6 +1545,12 @@
   function fmtPct(v)     { return (v === null || !isFinite(v)) ? '—' : (v * 100).toFixed(1) + '%'; }
 
   // ── Direction helpers ────────────────────────────────────────────────────
+  function dirBullPos(v) {
+    if (v === null || v === undefined || !isFinite(v)) return null;
+    if (v > 0) return { cls: 'val-pos', text: '▲ bullish' };
+    if (v < 0) return { cls: 'val-neg', text: '▼ bearish' };
+    return { cls: '', text: '– neutral' };
+  }
   function dirBearPos(v) {
     if (v === null || v === undefined || !isFinite(v)) return null;
     if (v > 0) return { cls: 'val-neg', text: '▼ bearish' };
@@ -1583,7 +1589,7 @@
       kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearPos,
       read: 'persistent + = crowded longs (contrarian bearish)' },
     { key: 'spot_perp_basis',     label: 'SPOT-PERP BASIS',         beginner: 'Spot vs futures gap',
-      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBearPos,
+      kind: 'level',      source: 'hl-market', fmt: fmtFund,    dir: dirBullPos,
       read: '+ = spot rich/perp discount; - = perp premium (crowded longs)' },
     { key: 'lsr_agg_long_frac',   label: 'AGGREGATE LONG %',        beginner: 'Crowd long %',
       kind: 'aggregate',  source: 'cex-agg',   fmt: fmtPct,     dir: dirBearHigh(0.5, 0.03),

@@ -78,7 +78,10 @@ export function computeDerived(
 
   const spotPx    = ctx.spotCtx ? safeNum(ctx.spotCtx.markPx) : null;
   const perpPx    = safeNum(ctx.perpCtx.markPx);
-  const spotPerpBasis = spotPx !== null && perpPx !== null ? spotPx - perpPx : null;
+  // Stored as fraction so fmtFund displays correctly (consistent with perp_premium scale).
+  const spotPerpBasis = spotPx !== null && perpPx !== null && perpPx !== 0
+    ? (spotPx - perpPx) / perpPx
+    : null;
 
   // ── Staking / supply deltas ────────────────────────────────────────────────
   const totalStaked    = ctx.hlNative?.staking?.totalStaked ?? null;
