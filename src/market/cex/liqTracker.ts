@@ -44,8 +44,8 @@ export class CexLiqTracker {
     this.bootTime = now();
   }
 
-  /** Record one liquidation event. */
-  recordLiq(side: "long" | "short", qtyCoins: number, timeMs: number): void {
+  /** Record one liquidation event. `notionalUsd` is the dollar-value (qty × price). */
+  recordLiq(side: "long" | "short", notionalUsd: number, timeMs: number): void {
     const bucketStart = Math.floor(timeMs / LIQ_BUCKET_MS) * LIQ_BUCKET_MS;
     let bucket = this.buckets.find((b) => b.bucketStart === bucketStart);
 
@@ -60,8 +60,8 @@ export class CexLiqTracker {
       while (this.buckets.length > 0 && this.buckets[0].bucketStart < cutoff) this.buckets.shift();
     }
 
-    if (side === "long") bucket.longVol += qtyCoins;
-    else bucket.shortVol += qtyCoins;
+    if (side === "long") bucket.longVol += notionalUsd;
+    else bucket.shortVol += notionalUsd;
     bucket.count += 1;
   }
 

@@ -10,30 +10,32 @@ import type { CexLiqEvent } from "./types.js";
 /** Binance USDⓜ-Futures `<symbol>@forceOrder` — throttled to ~1 push/sec/symbol (undercount, expected). */
 export function parseBinanceForceOrder(raw: unknown): CexLiqEvent | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const msg = raw as { e?: string; o?: { S?: string; q?: string; T?: number }; E?: number };
+  const msg = raw as { e?: string; o?: { S?: string; q?: string; p?: string; ap?: string; T?: number }; E?: number };
   if (msg.e !== "forceOrder" || !msg.o) return null;
 
   const side = msg.o.S === "SELL" ? "long" : msg.o.S === "BUY" ? "short" : null;
   const qtyCoins = Number(msg.o.q);
+  const price = Number(msg.o.ap || msg.o.p);
   const timeMs = Number(msg.o.T ?? msg.E);
-  if (!side || !Number.isFinite(qtyCoins) || !Number.isFinite(timeMs)) return null;
+  if (!side || !Number.isFinite(qtyCoins) || !Number.isFinite(price) || !Number.isFinite(timeMs)) return null;
 
-  return { side, qtyCoins, timeMs };
+  return { side, qtyCoins, notionalUsd: qtyCoins * price, timeMs };
 }
 
 /** Bybit `allLiquidation.<symbol>` — batched, near-complete. */
 export function parseBybitAllLiquidation(raw: unknown): CexLiqEvent[] {
   if (typeof raw !== "object" || raw === null) return [];
-  const msg = raw as { topic?: string; data?: { S?: string; v?: string; T?: number }[] };
+  const msg = raw as { topic?: string; data?: { S?: string; v?: string; p?: string; T?: number }[] };
   if (typeof msg.topic !== "string" || !msg.topic.startsWith("allLiquidation") || !Array.isArray(msg.data)) return [];
 
   const events: CexLiqEvent[] = [];
   for (const d of msg.data) {
-    const side = d.S === "Sell" ? "long" : d.S === "Buy" ? "short" : null;
-    const qtyCoins = Number(d.v);
-    const timeMs = Number(d.T);
-    if (!side || !Number.isFinite(qtyCoins) || !Number.isFinite(timeMs)) continue;
-    events.push({ side, qtyCoins, timeMs });
+    const side = (d as { S?: string }).S === "Sell" ? "long" : (d as { S?: string }).S === "Buy" ? "short" : null;
+    const qtyCoins = Number((d as { v?: string }).v);
+    const price = Number((d as { p?: string }).p);
+    const timeMs = Number((d as { T?: number }).T);
+    if (!side || !Number.isFinite(qtyCoins) || !Number.isFinite(price) || !Number.isFinite(timeMs)) continue;
+    events.push({ side, qtyCoins, notionalUsd: qtyCoins * price, timeMs });
   }
   return events;
 }
@@ -58,9 +60,11 @@ export function parseOkxLiquidationOrders(raw: unknown, instId: string, ctVal: n
     for (const d of entry.details) {
       const side = d.side === "sell" ? "long" : d.side === "buy" ? "short" : null;
       const sz = Number(d.sz);
+      const bkPx = Number((d as { bkPx?: string }).bkPx);
       const timeMs = Number(d.ts);
-      if (!side || !Number.isFinite(sz) || !Number.isFinite(timeMs)) continue;
-      events.push({ side, qtyCoins: sz * ctVal, timeMs });
+      if (!side || !Number.isFinite(sz) || !Number.isFinite(bkPx) || !Number.isFinite(timeMs)) continue;
+      const qtyCoins = sz * ctVal;
+      events.push({ side, qtyCoins, notionalUsd: qtyCoins * bkPx, timeMs });
     }
   }
   return events;

@@ -219,8 +219,16 @@ describe("computeBias", () => {
   });
 
   it("positive IC + positive signal value votes Bullish", () => {
-    const cells = [{ signal: "funding_rate", horizon_h: 4, n: 100, ic: 0.2, hit_rate: 0.6 }];
+    // 5 scored cells needed for HIGH confidence (MIN_SCORED_FOR_HIGH_CONFIDENCE = 5)
+    const cells = [
+      { signal: "funding_rate",       horizon_h: 4, n: 100, ic: 0.2,  hit_rate: 0.6 },
+      { signal: "perp_premium",       horizon_h: 4, n: 100, ic: 0.15, hit_rate: 0.55 },
+      { signal: "cvd_perp_24h",       horizon_h: 4, n: 100, ic: 0.12, hit_rate: 0.52 },
+      { signal: "cvd_spot_24h",       horizon_h: 4, n: 100, ic: 0.11, hit_rate: 0.51 },
+      { signal: "total_staked_hype",  horizon_h: 4, n: 100, ic: 0.13, hit_rate: 0.53 },
+    ];
     // funding_rate = 0.001 (positive), IC = +0.2 → vote = +1 × 0.2 = +0.2 (bullish)
+    // other signals have null current values so they contribute to scoredCount but not to the vote
     const bias = computeBias(cells, { funding_rate: 0.001 }, 4, "HYPE");
     expect(bias.score).toBeGreaterThan(0);
     expect(bias.label).toBe("Bullish");
@@ -229,7 +237,13 @@ describe("computeBias", () => {
   });
 
   it("negative IC + positive signal value votes Bearish (contrarian semantic)", () => {
-    const cells = [{ signal: "funding_rate", horizon_h: 4, n: 100, ic: -0.2, hit_rate: 0.4 }];
+    const cells = [
+      { signal: "funding_rate",       horizon_h: 4, n: 100, ic: -0.2, hit_rate: 0.4 },
+      { signal: "perp_premium",       horizon_h: 4, n: 100, ic: 0.15, hit_rate: 0.55 },
+      { signal: "cvd_perp_24h",       horizon_h: 4, n: 100, ic: 0.12, hit_rate: 0.52 },
+      { signal: "cvd_spot_24h",       horizon_h: 4, n: 100, ic: 0.11, hit_rate: 0.51 },
+      { signal: "total_staked_hype",  horizon_h: 4, n: 100, ic: 0.13, hit_rate: 0.53 },
+    ];
     // funding_rate positive, IC negative → vote = +1 × -0.2 = -0.2 (bearish) — correct for contrarian signal
     const bias = computeBias(cells, { funding_rate: 0.001 }, 4, "HYPE");
     expect(bias.score).toBeLessThan(0);
@@ -353,7 +367,7 @@ describe("computeDerived", () => {
 
   it("spot_perp_basis = spot_mark_px − perp_mark_px", () => {
     const d = computeDerived(makeCtx(), { prev: {}, intervalMs: null });
-    expect(d.spotPerpBasis).toBeCloseTo(0.1, 5); // 25.1 - 25.0
+    expect(d.spotPerpBasis).toBeCloseTo(0.004, 5); // (25.1 - 25.0) / 25.0
   });
 
   it("spot_perp_basis is null when spotCtx is null", () => {

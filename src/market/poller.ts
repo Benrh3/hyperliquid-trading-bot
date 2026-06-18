@@ -273,7 +273,7 @@ export class SnapshotPoller {
       for (const [venueName, source] of Object.entries(sources) as [keyof CexVenueSources, CexDerivsSource][]) {
         if (!source.isAvailable()) continue;
         const tracker = trackers.get(venueName)!;
-        source.startLiquidationStream((event) => tracker.recordLiq(event.side, event.qtyCoins, event.timeMs));
+        source.startLiquidationStream((event) => tracker.recordLiq(event.side, event.notionalUsd, event.timeMs));
       }
     }
   }
@@ -389,9 +389,24 @@ export class SnapshotPoller {
     const perp = agg.getPerpWindows();
     const spot = agg.getSpotWindows();
 
+    // Gate CVD values on filled fraction — suppress windows that aren't mostly warm
+    // to prevent all three windows from showing the same (partial) value after restart.
+    const MIN_FILLED = 0.8;
+    const gateN = (v: number, filled: number): number | null => filled >= MIN_FILLED ? v : null;
+
     const cvd: MarketPollContext["cvd"] = {
-      perp: { cvd1h: perp.cvd1h, cvd4h: perp.cvd4h, cvd24h: perp.cvd24h, trades24h: perp.trades24h },
-      spot: spot ? { cvd1h: spot.cvd1h, cvd4h: spot.cvd4h, cvd24h: spot.cvd24h, trades24h: spot.trades24h } : null,
+      perp: {
+        cvd1h:     gateN(perp.cvd1h, perp.filled1h),
+        cvd4h:     gateN(perp.cvd4h, perp.filled4h),
+        cvd24h:    gateN(perp.cvd24h, perp.filled24h),
+        trades24h: gateN(perp.trades24h, perp.filled24h),
+      },
+      spot: spot ? {
+        cvd1h:     gateN(spot.cvd1h, spot.filled1h),
+        cvd4h:     gateN(spot.cvd4h, spot.filled4h),
+        cvd24h:    gateN(spot.cvd24h, spot.filled24h),
+        trades24h: gateN(spot.trades24h, spot.filled24h),
+      } : null,
     };
 
     const cvdMeta: Record<string, { filled: number }> = {

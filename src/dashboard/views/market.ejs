@@ -776,6 +776,12 @@
   .gls-entry-meta { font-size: var(--t-label); color: var(--muted); margin-top: var(--sp-1); }
   .gls-entry-read { font-size: var(--t-label); color: #7AA5C8; margin-top: var(--sp-1); }
   .gls-entry-dir  { font-size: var(--t-label); font-weight: 600; margin-top: var(--sp-1); }
+  /* ── Warming chart empty state ─────────────────────────────────────────── */
+  .chart-warming {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; min-height: 180px;
+    color: var(--muted); font-size: var(--t-body); font-weight: 600; letter-spacing: .02em;
+  }
   .gls-methodology { padding: var(--sp-4); }
   .gls-methodology h3 { color: #7AA5C8; font-size: var(--t-body); font-weight: 700; margin: var(--sp-4) 0 var(--sp-2); text-transform: uppercase; letter-spacing: .06em; }
   .gls-methodology p, .gls-methodology li { color: var(--muted); font-size: var(--t-label); line-height: 1.6; }
@@ -862,9 +868,9 @@
       <span class="horizon-label">Horizon</span>
       <div class="horizon-group" id="horizon-group">
         <button class="hz-btn" data-h="4">4h</button>
-        <button class="hz-btn active" data-h="24">24h</button>
-        <button class="hz-btn" data-h="72">72h</button>
-        <button class="hz-btn" data-h="168">168h</button>
+        <button class="hz-btn active" data-h="24">1d</button>
+        <button class="hz-btn" data-h="72">3d</button>
+        <button class="hz-btn" data-h="168">7d</button>
       </div>
       <label class="beginner-toggle" id="beginner-lbl">
         <input type="checkbox" id="beginner-chk" autocomplete="off">
@@ -1354,41 +1360,15 @@
       <strong>&#9888; CEX and HL liquidations are separate pools — never added.</strong> A combined "total" would be meaningless; they are shown in separate blocks for this reason.
     </div>
     <div class="lev-caveat">
-      <strong>&#9888; Liquidation magnitudes undercount</strong> — venues report partial/throttled liq data. Treat these as a floor, not a true total.
+      <strong>&#9888; Magnitudes undercount</strong> — Binance &amp; OKX throttle liquidation reporting to ~1/sec; Bybit is more complete; native-HL is a reconstructed lower bound. Read direction and spikes, not absolute notional. Never sum CEX with HL.
     </div>
     <div class="lev-caveat">
       <strong>&#9888; Forced selling reads bearish and forced buying bullish</strong> — but extreme flushes often mark capitulation/reversal. Read big spikes as possible turning points, not just continuation.
     </div>
 
-    <!-- ── Block A: Hyperliquid ─────────────────────────────────────────── -->
+    <!-- ── Block A: CEX (live data — rendered first) ──────────────────── -->
     <div class="lev-section-head">
-      <div class="lev-section-title">Hyperliquid — Liquidations</div>
-      <div class="lev-section-sub">Forced selling (long liqs) and forced buying (short liqs) on Hyperliquid — warming</div>
-    </div>
-
-    <div class="lev-cards-grid" id="lq-hl-cards-grid">
-      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
-    </div>
-
-    <div class="lev-chart-card">
-      <div class="chart-card-toolbar">
-        <span class="chart-card-title">HL Forced Flow</span>
-        <div class="tf-group" id="lq-chart1-tf">
-          <button class="tf" data-range="1D">1D</button>
-          <button class="tf active" data-range="1W">1W</button>
-          <button class="tf" data-range="1M">1M</button>
-          <button class="tf" data-range="3M">3M</button>
-          <button class="tf" data-range="All">All</button>
-        </div>
-        <span class="chart-card-meta" id="lq-chart1-meta"></span>
-      </div>
-      <div id="lq-chart1" style="height:220px"></div>
-      <div class="lev-chart-caption">Forced selling (red) vs forced buying (green) on Hyperliquid — warming until native indexer lands.</div>
-    </div>
-
-    <!-- ── Block B: CEX ─────────────────────────────────────────────────── -->
-    <div class="lev-section-head">
-      <div class="lev-section-title">CEX — Liquidations (separate pool)</div>
+      <div class="lev-section-title">CEX — Liquidations</div>
       <div class="lev-section-sub">Forced selling and forced buying on CEX venues — partial coverage, never added to HL</div>
     </div>
 
@@ -1410,6 +1390,32 @@
       </div>
       <div id="lq-chart2" style="height:220px"></div>
       <div class="lev-chart-caption">Forced selling (red) vs forced buying (green) on CEX venues — a separate pool, never added to HL.</div>
+    </div>
+
+    <!-- ── Block B: Hyperliquid (warming) ──────────────────────────────── -->
+    <div class="lev-section-head">
+      <div class="lev-section-title">Hyperliquid — Liquidations (separate pool)</div>
+      <div class="lev-section-sub">Forced selling and forced buying on Hyperliquid — reconstructed lower bound, warming</div>
+    </div>
+
+    <div class="lev-cards-grid" id="lq-hl-cards-grid">
+      <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
+    </div>
+
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">HL Forced Flow</span>
+        <div class="tf-group" id="lq-chart1-tf">
+          <button class="tf" data-range="1D">1D</button>
+          <button class="tf active" data-range="1W">1W</button>
+          <button class="tf" data-range="1M">1M</button>
+          <button class="tf" data-range="3M">3M</button>
+          <button class="tf" data-range="All">All</button>
+        </div>
+        <span class="chart-card-meta" id="lq-chart1-meta"></span>
+      </div>
+      <div id="lq-chart1" style="height:220px"></div>
+      <div class="lev-chart-caption">Forced selling (red) vs forced buying (green) on Hyperliquid — warming until native indexer lands.</div>
     </div>
 
     <!-- ── Blow-up count comparison (counts OK to compare) ──────────────── -->
@@ -1530,6 +1536,31 @@
         <option value="supply">Supply</option>
         <option value="liquidations">Liquidations</option>
       </select>
+    </div>
+
+    <div class="gls-methodology">
+      <h3>Concepts</h3>
+      <ul>
+        <li><strong>Long / Short</strong> — betting price goes up (long) or down (short).</li>
+        <li><strong>Perp</strong> — perpetual futures contract; tracks an asset's price without expiry.</li>
+        <li><strong>Spot</strong> — the actual asset (real coins), not a derivative.</li>
+        <li><strong>Leverage</strong> — using borrowed capital to amplify a position.</li>
+        <li><strong>Liquidation</strong> — forced close of a leveraged position that hit its margin limit.</li>
+        <li><strong>Funding rate</strong> — periodic payment between longs and shorts to keep perp price near spot.</li>
+        <li><strong>Open interest (OI)</strong> — total value of outstanding leveraged positions.</li>
+        <li><strong>CVD</strong> — Cumulative Volume Delta; net aggressive (taker) buying minus selling.</li>
+        <li><strong>TWAP</strong> — Time-Weighted Average Price; a scheduled order that executes evenly over time.</li>
+        <li><strong>Assistance Fund (AF)</strong> — Hyperliquid's protocol fund that auto-buys HYPE from trading fees.</li>
+        <li><strong>Unstaking queue</strong> — coins waiting to unlock from staking (forward sell-pressure overhang).</li>
+        <li><strong>Basis</strong> — the gap between spot and futures prices; signals crowding.</li>
+        <li><strong>Book imbalance</strong> — ratio of resting buy vs sell orders; hints at near-term pressure.</li>
+        <li><strong>Long/short ratio</strong> — proportion of accounts positioned long vs short (crowd positioning).</li>
+        <li><strong>IC (Information Coefficient)</strong> — Spearman rank correlation between a signal's value and future price return. Measures predictive power.</li>
+        <li><strong>Hit rate</strong> — fraction of times the signal's direction matched the subsequent price move.</li>
+        <li><strong>BPS</strong> — basis points; 1 bps = 0.01%.</li>
+        <li><strong>PP</strong> — percentage points; the arithmetic difference between two percentages.</li>
+        <li><strong>Confidence</strong> — stays LOW until signals are IC-proven (|IC| &#8805; 0.10 over enough hourly pairs). HIGH means the signals have demonstrated predictive power.</li>
+      </ul>
     </div>
 
     <div id="gls-entries" style="padding:0 var(--sp-4)"></div>
@@ -4193,10 +4224,16 @@
   }
 
   function renderTally(t) {
+    var total = t.bull + t.bear + t.neutral;
+    var thin = total < 10;
     document.getElementById('tm-tally').innerHTML =
       '<span style="color:var(--up);font-weight:600">▲ ' + t.bull + ' bull</span>'
       + ' · <span style="color:var(--down);font-weight:600">▼ ' + t.bear + ' bear</span>'
-      + ' · <span style="color:var(--muted)">' + t.neutral + ' neutral</span>';
+      + ' · <span style="color:var(--muted)">' + t.neutral + ' neutral</span>'
+      + '<div style="font-size:var(--t-label);color:var(--muted);margin-top:var(--sp-1)">'
+      + 'Based on ' + total + ' signals available at that moment'
+      + (thin ? ' — early replays are thin; a match here is weak evidence.' : ' — all carried low confidence.')
+      + '</div>';
   }
 
   function renderKeyMetrics(km) {
@@ -4244,30 +4281,31 @@
   function renderReturns(fr, tally) {
     var el = document.getElementById('tm-returns');
     var lean = tally.bull > tally.bear ? 'bullish' : tally.bear > tally.bull ? 'bearish' : 'neutral';
+    var HZ_LABELS = { '4h': '4h', '24h': '1d', '72h': '3d', '168h': '7d' };
     var HORIZONS = ['4h', '24h', '72h', '168h'];
     var html = '';
     HORIZONS.forEach(function (h) {
       var ret = fr[h];
-      var retStr, verdictStr, verdictCls;
+      var retStr, verdictStr, verdictCls, icon;
       if (ret === null) {
-        retStr = '—'; verdictStr = 'in progress'; verdictCls = 'color:var(--muted)';
+        retStr = '—'; verdictStr = 'in progress'; verdictCls = 'color:var(--muted)'; icon = '';
       } else {
         retStr = fmtPct(ret);
         var retDir = ret > 0.005 ? 'bullish' : ret < -0.005 ? 'bearish' : 'flat';
         if (lean === 'neutral' || retDir === 'flat') {
-          verdictStr = 'inconclusive (small move or neutral lean)'; verdictCls = 'color:var(--muted)';
+          verdictStr = 'inconclusive'; verdictCls = 'color:var(--muted)'; icon = '– ';
         } else if (lean === retDir) {
-          verdictStr = 'consistent with this instance'; verdictCls = 'color:var(--up)';
+          verdictStr = 'read confirmed'; verdictCls = 'color:var(--up)'; icon = '✓ ';
         } else {
-          verdictStr = 'inconsistent with this instance'; verdictCls = 'color:var(--down)';
+          verdictStr = 'read missed'; verdictCls = 'color:var(--down)'; icon = '✗ ';
         }
       }
       var retCls = ret === null ? '' : ret > 0 ? 'color:var(--up)' : ret < 0 ? 'color:var(--down)' : '';
       html += '<div style="background:var(--surface);border-radius:6px;padding:var(--sp-3)">'
-        + '<div style="font-size:var(--t-label);color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em">' + esc(h) + ' forward</div>'
+        + '<div style="font-size:var(--t-label);color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em">' + esc(HZ_LABELS[h] || h) + ' forward</div>'
         + '<div style="font-size:var(--t-value-sm);font-weight:600;margin:var(--sp-1) 0;' + retCls + '">' + esc(retStr) + '</div>'
         + '<div style="font-size:var(--t-label);' + verdictCls + '">'
-        + (lean !== 'neutral' ? 'leaned ' + lean + ' · ' : '')
+        + icon + (lean !== 'neutral' ? 'leaned ' + lean + ' · ' : '')
         + esc(verdictStr)
         + '</div></div>';
     });
@@ -4297,7 +4335,7 @@
   document.querySelector('.market-tab[data-tab="timemachine"]').addEventListener('click', function () {
     if (tmInited) return;
     tmInited = true;
-    loadReplay(Date.now());
+    loadReplay(Date.now() - 7 * 24 * 3600000);
   });
 
 })();

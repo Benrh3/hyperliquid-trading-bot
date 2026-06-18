@@ -88,9 +88,14 @@ export function lookupForwardPrice(
   return priceTimeSeries[lo].value ?? null;
 }
 
+/** Minimum ms between accepted entry points — one per hour prevents minute-cadence
+ *  snapshots from inflating n and creating overlapping forward-return windows. */
+const ENTRY_DECIMATION_MS = 3_600_000;
+
 /**
  * Build (signal, forwardReturn) pairs for a single signal × horizon cell.
  * No-lookahead: excludes any snapshot where capturedAt + horizonMs > nowMs.
+ * Entry-decimated: at most one pair per hour (signalSeries is ascending).
  */
 export function buildPairs(
   signalSeries:  ReadonlyArray<{ capturedAt: number; value: number | null }>,
@@ -99,9 +104,10 @@ export function buildPairs(
   nowMs:         number,
 ): Array<[number, number]> {
   const pairs: Array<[number, number]> = [];
+  let lastAcceptedTs = -Infinity;
   for (const { capturedAt, value } of signalSeries) {
     if (value === null || !Number.isFinite(value)) continue;
-    // No lookahead: the horizon window must have fully elapsed.
+    if (capturedAt - lastAcceptedTs < ENTRY_DECIMATION_MS) continue;
     if (capturedAt + horizonMs > nowMs) continue;
     const currentPx = lookupForwardPrice(priceSeries, capturedAt);
     const futurePx  = lookupForwardPrice(priceSeries, capturedAt + horizonMs);
@@ -109,6 +115,7 @@ export function buildPairs(
     const fwdReturn = (futurePx - currentPx) / currentPx;
     if (!Number.isFinite(fwdReturn)) continue;
     pairs.push([value, fwdReturn]);
+    lastAcceptedTs = capturedAt;
   }
   return pairs;
 }
@@ -266,7 +273,7 @@ export function computeBias(
     const s = w > 0 ? (catRaw.get(cat) ?? 0) / w : 0;
     categoryBiases.push({
       category: cat,
-      label: s > 0.05 ? "Bullish" : s < -0.05 ? "Bearish" : "Neutral",
+      label: confidence === "LOW" ? "Neutral" : s > 0.05 ? "Bullish" : s < -0.05 ? "Bearish" : "Neutral",
       score: s,
     });
   }

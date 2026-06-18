@@ -20,9 +20,10 @@ export interface LongShortRatios {
  * `side: "short"` = a short position was force-closed (forced BUY).
  */
 export interface CexLiqEvent {
-  side:     "long" | "short";
-  qtyCoins: number;
-  timeMs:   number;
+  side:       "long" | "short";
+  qtyCoins:   number;
+  notionalUsd: number;
+  timeMs:     number;
 }
 
 /**

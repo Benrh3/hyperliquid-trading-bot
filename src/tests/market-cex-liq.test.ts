@@ -77,22 +77,23 @@ describe("CexLiqTracker", () => {
 });
 
 describe("parseBinanceForceOrder", () => {
-  it("parses a SELL forceOrder as a long liquidation", () => {
+  it("parses a SELL forceOrder as a long liquidation with notional", () => {
     const event = parseBinanceForceOrder({
       e: "forceOrder",
       E: 1700000000000,
-      o: { S: "SELL", q: "12.5", T: 1700000000123 },
+      o: { S: "SELL", q: "12.5", p: "73.5", T: 1700000000123 },
     });
-    expect(event).toEqual({ side: "long", qtyCoins: 12.5, timeMs: 1700000000123 });
+    expect(event).toEqual({ side: "long", qtyCoins: 12.5, notionalUsd: 12.5 * 73.5, timeMs: 1700000000123 });
   });
 
   it("parses a BUY forceOrder as a short liquidation", () => {
     const event = parseBinanceForceOrder({
       e: "forceOrder",
       E: 1700000000000,
-      o: { S: "BUY", q: "3", T: 1700000000456 },
+      o: { S: "BUY", q: "3", p: "74.0", T: 1700000000456 },
     });
     expect(event?.side).toBe("short");
+    expect(event?.notionalUsd).toBe(3 * 74);
   });
 
   it("returns null for non-forceOrder or malformed messages", () => {
@@ -109,13 +110,13 @@ describe("parseBybitAllLiquidation", () => {
     const events = parseBybitAllLiquidation({
       topic: "allLiquidation.HYPEUSDT",
       data: [
-        { S: "Sell", v: "10", T: 1700000000000 },
-        { S: "Buy", v: "5", T: 1700000000111 },
+        { S: "Sell", v: "10", p: "73.5", T: 1700000000000 },
+        { S: "Buy", v: "5", p: "74.0", T: 1700000000111 },
       ],
     });
     expect(events).toEqual([
-      { side: "long", qtyCoins: 10, timeMs: 1700000000000 },
-      { side: "short", qtyCoins: 5, timeMs: 1700000000111 },
+      { side: "long", qtyCoins: 10, notionalUsd: 735, timeMs: 1700000000000 },
+      { side: "short", qtyCoins: 5, notionalUsd: 370, timeMs: 1700000000111 },
     ]);
   });
 
@@ -123,7 +124,7 @@ describe("parseBybitAllLiquidation", () => {
     expect(parseBybitAllLiquidation({ topic: "trade.HYPEUSDT", data: [] })).toEqual([]);
     expect(parseBybitAllLiquidation({ topic: "allLiquidation.HYPEUSDT" })).toEqual([]);
     expect(parseBybitAllLiquidation(null)).toEqual([]);
-    expect(parseBybitAllLiquidation({ topic: "allLiquidation.HYPEUSDT", data: [{ S: "Sell", v: "bad", T: 1 }] })).toEqual([]);
+    expect(parseBybitAllLiquidation({ topic: "allLiquidation.HYPEUSDT", data: [{ S: "Sell", v: "bad", p: "73", T: 1 }] })).toEqual([]);
   });
 });
 
@@ -139,8 +140,8 @@ describe("parseOkxLiquidationOrders", () => {
           {
             instId,
             details: [
-              { side: "sell", sz: "100", ts: "1700000000000" },
-              { side: "buy", sz: "50", ts: "1700000000222" },
+              { side: "sell", sz: "100", bkPx: "73.5", ts: "1700000000000" },
+              { side: "buy", sz: "50", bkPx: "74.0", ts: "1700000000222" },
             ],
           },
         ],
@@ -149,8 +150,8 @@ describe("parseOkxLiquidationOrders", () => {
       ctVal,
     );
     expect(events).toEqual([
-      { side: "long", qtyCoins: 10, timeMs: 1700000000000 },  // 100 * 0.1
-      { side: "short", qtyCoins: 5, timeMs: 1700000000222 },  // 50 * 0.1
+      { side: "long", qtyCoins: 10, notionalUsd: 10 * 73.5, timeMs: 1700000000000 },
+      { side: "short", qtyCoins: 5, notionalUsd: 5 * 74.0, timeMs: 1700000000222 },
     ]);
   });
 
@@ -185,28 +186,28 @@ describe("ReconnectingLiqStream", () => {
 
     const stream = new ReconnectingLiqStream("cex-test", connector, (raw) => {
       const event = parseBinanceForceOrder(raw);
-      if (event) tracker.recordLiq(event.side, event.qtyCoins, event.timeMs);
+      if (event) tracker.recordLiq(event.side, event.notionalUsd, event.timeMs);
     });
 
     stream.start();
     await (stream as unknown as { connect(): Promise<void> }).connect();
 
-    // Record an event before the drop.
-    onMessageCapture!({ e: "forceOrder", o: { S: "SELL", q: "10", T: Date.now() } });
-    expect(tracker.getWindows().longVol1h).toBe(10);
+    // Record an event before the drop (10 coins @ $73.5 = $735 notional).
+    onMessageCapture!({ e: "forceOrder", o: { S: "SELL", q: "10", p: "73.5", T: Date.now() } });
+    expect(tracker.getWindows().longVol1h).toBe(735);
 
     // Simulate a drop: connect() throws once.
     failNext = true;
     await expect((stream as unknown as { connect(): Promise<void> }).connect()).resolves.toBeUndefined();
 
     // Existing data survives the failed reconnect attempt.
-    expect(tracker.getWindows().longVol1h).toBe(10);
+    expect(tracker.getWindows().longVol1h).toBe(735);
 
     // Recover: next reconnect succeeds and new events continue to accumulate.
     failNext = false;
     await (stream as unknown as { connect(): Promise<void> }).connect();
-    onMessageCapture!({ e: "forceOrder", o: { S: "SELL", q: "5", T: Date.now() } });
-    expect(tracker.getWindows().longVol1h).toBe(15);
+    onMessageCapture!({ e: "forceOrder", o: { S: "SELL", q: "5", p: "73.5", T: Date.now() } });
+    expect(tracker.getWindows().longVol1h).toBe(735 + 5 * 73.5);
 
     stream.stop();
   });

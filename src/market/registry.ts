@@ -42,8 +42,8 @@ export interface MarketPollContext {
   circulatingSupply: string | null;
   /** From TradesAggregator — each side null if no windows are available for it. */
   cvd: {
-    perp: { cvd1h: number; cvd4h: number; cvd24h: number; trades24h: number } | null;
-    spot: { cvd1h: number; cvd4h: number; cvd24h: number; trades24h: number } | null;
+    perp: { cvd1h: number | null; cvd4h: number | null; cvd24h: number | null; trades24h: number | null } | null;
+    spot: { cvd1h: number | null; cvd4h: number | null; cvd24h: number | null; trades24h: number | null } | null;
   } | null;
   /** From a point-in-time l2Book poll — null if the book is unavailable. */
   book: {
