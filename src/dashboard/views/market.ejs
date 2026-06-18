@@ -733,6 +733,53 @@
   .recon-ok   { color: var(--muted); opacity: 0.5; }
   .recon-warn { color: #F59E0B; font-weight: 700; }
   .recon-na   { color: var(--muted); opacity: 0.3; }
+
+  /* ── Data tab ───────────────────────────────────────────────────────────── */
+  .data-controls {
+    display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+    padding: 0 var(--sp-4) var(--sp-3);
+  }
+  .data-controls select, .data-controls button, .data-controls a.btn {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--muted); cursor: pointer; font-size: var(--t-label); font-weight: 600;
+    padding: 3px 8px; text-decoration: none;
+  }
+  .data-controls select:focus, .data-controls button:hover, .data-controls a.btn:hover {
+    color: var(--accent); border-color: rgba(56,189,248,0.3);
+  }
+  .data-controls button.active { background: rgba(56,189,248,0.1); color: var(--accent); }
+  .data-table-wrap { overflow-x: auto; padding: 0 var(--sp-4) var(--sp-4); -webkit-overflow-scrolling: touch; }
+  .data-table {
+    border-collapse: collapse; width: 100%; min-width: 600px;
+    font-size: var(--t-label); line-height: 1.5; font-variant-numeric: tabular-nums;
+  }
+  .data-table th {
+    border-bottom: 2px solid var(--border); color: var(--muted); font-weight: 700;
+    letter-spacing: .04em; padding: var(--sp-2) var(--sp-3);
+    position: sticky; top: 0; background: var(--bg); text-align: right; white-space: nowrap;
+  }
+  .data-table th:first-child { text-align: left; }
+  .data-table td { border-bottom: 1px solid var(--border); padding: var(--sp-2) var(--sp-3); text-align: right; white-space: nowrap; }
+  .data-table td:first-child { text-align: left; color: var(--muted); }
+
+  /* ── Glossary tab ───────────────────────────────────────────────────────── */
+  .gls-search {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    color: #fff; font-size: var(--t-body); padding: var(--sp-2) var(--sp-3); width: 100%; max-width: 320px;
+  }
+  .gls-search::placeholder { color: var(--muted); }
+  .gls-entry {
+    background: var(--surface); border-radius: 6px; padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-3);
+  }
+  .gls-entry-key { color: #7AA5C8; font-weight: 600; font-size: var(--t-body); }
+  .gls-entry-label { color: #fff; font-weight: 600; font-size: var(--t-body); margin-left: var(--sp-2); }
+  .gls-entry-meta { font-size: var(--t-label); color: var(--muted); margin-top: var(--sp-1); }
+  .gls-entry-read { font-size: var(--t-label); color: #7AA5C8; margin-top: var(--sp-1); }
+  .gls-entry-dir  { font-size: var(--t-label); font-weight: 600; margin-top: var(--sp-1); }
+  .gls-methodology { padding: var(--sp-4); }
+  .gls-methodology h3 { color: #7AA5C8; font-size: var(--t-body); font-weight: 700; margin: var(--sp-4) 0 var(--sp-2); text-transform: uppercase; letter-spacing: .06em; }
+  .gls-methodology p, .gls-methodology li { color: var(--muted); font-size: var(--t-label); line-height: 1.6; }
+  .gls-methodology ul { padding-left: 1.2em; margin: var(--sp-2) 0; }
 </style>
 
 <!-- ── Top nav: Bots | Market ── -->
@@ -895,11 +942,50 @@
   <!-- ════ STUBS ════ -->
 
   <div id="tab-timemachine" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Time Machine</div>
-      <p>Pick a past moment + horizon → bias as-it-stood vs what price actually did.</p>
-      <p style="margin-top:.5rem;font-size:11px">Coming once snapshot history accumulates.</p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; A replay is a single historical instance</strong> — an anecdote, not proof. The Signals tab is the statistical view. Don't generalize from one replay, and remember past reads carried the same low confidence.
     </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Time Machine</div>
+      <div class="lev-section-sub">Pick a past moment — see what the read was, then reveal what price actually did next</div>
+    </div>
+
+    <!-- Time picker -->
+    <div style="padding:0 var(--sp-4) var(--sp-3)">
+      <div style="display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-2)">
+        <input type="range" id="tm-slider" min="0" max="100" value="100" style="flex:1;min-width:200px;accent-color:var(--accent)">
+        <span id="tm-ts-label" style="color:var(--accent);font-size:var(--t-body);font-weight:600;white-space:nowrap">—</span>
+      </div>
+      <div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">
+        <button class="tf" id="tm-j-24h">−24h</button>
+        <button class="tf" id="tm-j-7d">−7d</button>
+        <button class="tf" id="tm-j-latest">Latest</button>
+      </div>
+    </div>
+
+    <!-- The reconstructed moment -->
+    <div style="padding:0 var(--sp-4)">
+      <div id="tm-tally" style="font-size:var(--t-body);color:var(--muted);margin-bottom:var(--sp-3)">—</div>
+      <div id="tm-key-metrics" style="display:flex;gap:var(--sp-4);flex-wrap:wrap;margin-bottom:var(--sp-4)"></div>
+    </div>
+
+    <!-- Mini price chart -->
+    <div class="lev-chart-card">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Price around selected moment</span>
+        <span class="chart-card-meta" id="tm-chart-meta"></span>
+      </div>
+      <div id="tm-chart" style="height:200px"></div>
+    </div>
+
+    <!-- Forward returns — "what happened next" -->
+    <div class="lev-section-head">
+      <div class="lev-section-title">What happened next</div>
+    </div>
+    <div id="tm-returns" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:var(--sp-3);padding:0 var(--sp-4) var(--sp-4)"></div>
+
   </div>
 
   <div id="tab-orderflow" class="tab-panel" style="display:none">
@@ -1395,22 +1481,81 @@
   </div>
 
   <div id="tab-data" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Data</div>
-      <p>
-        Recent snapshots table ·
-        <a href="/api/market/snapshots" style="color:var(--accent)">snapshots.csv</a> ·
-        <a href="/api/market/scorecard"  style="color:var(--accent)">scorecard.csv</a>
-      </p>
+
+    <div class="lev-caveat">
+      <strong>&#9888; HYPE only</strong> · execution is testnet but market data is read from mainnet · hourly snapshots. Per-metric caveats (what's gameable, what's a separate pool, what undercounts) live in the Glossary.
     </div>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Data</div>
+      <div class="lev-section-sub">Raw snapshot history — show your work</div>
+    </div>
+
+    <div class="data-controls" id="data-controls">
+      <label style="color:var(--muted);font-size:var(--t-label);font-weight:600">Range:</label>
+      <button class="active" data-dr="1D">1D</button>
+      <button data-dr="1W">1W</button>
+      <button data-dr="1M">1M</button>
+      <button data-dr="All">All</button>
+      <a class="btn" href="/api/market/snapshots" download style="margin-left:auto;color:var(--accent)">&#11015; snapshots.csv</a>
+      <a class="btn" href="/api/market/scorecard" download style="color:var(--accent)">&#11015; scorecard.csv</a>
+    </div>
+
+    <div class="data-table-wrap">
+      <table class="data-table" id="data-table">
+        <thead id="data-thead"><tr><th>Loading&#8230;</th></tr></thead>
+        <tbody id="data-tbody"></tbody>
+      </table>
+    </div>
+
+    <div id="data-pager" style="display:flex;justify-content:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4)"></div>
+
   </div>
 
   <div id="tab-glossary" class="tab-panel" style="display:none">
-    <div class="tab-stub">
-      <div class="tab-stub-title">Glossary</div>
-      <p>Concepts + per-metric plain English from the manifest.</p>
-      <p style="margin-top:.5rem;font-size:11px">Coming soon.</p>
+
+    <div class="lev-section-head">
+      <div class="lev-section-title">Glossary</div>
+      <div class="lev-section-sub">Every metric defined — plain English, source, directional reading, and methodology</div>
     </div>
+
+    <div style="padding:0 var(--sp-4) var(--sp-3);display:flex;gap:var(--sp-3);flex-wrap:wrap;align-items:center">
+      <input class="gls-search" id="gls-search" type="text" placeholder="Search metrics&#8230;">
+      <select id="gls-filter" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:var(--t-label);font-weight:600;padding:3px 8px">
+        <option value="all">All tabs</option>
+        <option value="leverage">Leverage</option>
+        <option value="orderflow">Order Flow</option>
+        <option value="microstructure">Microstructure</option>
+        <option value="onchain">On-chain</option>
+        <option value="supply">Supply</option>
+        <option value="liquidations">Liquidations</option>
+      </select>
+    </div>
+
+    <div id="gls-entries" style="padding:0 var(--sp-4)"></div>
+
+    <div class="gls-methodology" id="gls-methodology">
+      <h3>Reading the data</h3>
+
+      <h3>The bias</h3>
+      <p>The bias is an IC-weighted vote of the signals for a chosen horizon, shown with a confidence flag that stays <strong>LOW until signals are IC-proven</strong> (|IC| &#8805; 0.10 over enough hourly pairs). Weak IC means the signal doesn't predict price here — that's a finding, not a bug.</p>
+
+      <h3>The contrarian convention</h3>
+      <p>Crowd/retail positioning and exchange-deposit signals read <em>contrarian</em> (high = bearish, fade). Order flow, smart-money positioning, accumulation, and withdrawals read <em>with</em> the move (high = bullish).</p>
+
+      <h3>Cross-cutting data caveats</h3>
+      <ul>
+        <li>CEX OI and HL OI are <strong>separate pools</strong> — never summed.</li>
+        <li>CEX and HL liquidations are <strong>separate pools</strong> — never summed; magnitudes undercount.</li>
+        <li>L/S ratios count heads, not capital — laggy and gameable.</li>
+        <li>Order-book depth/imbalance is gameable (spoofable walls).</li>
+        <li>CVD is taker (aggressor) flow only; the maker side is invisible.</li>
+        <li>Holder concentration excludes flagged system wallets (overstated if that list is incomplete).</li>
+        <li>TWAP / AF / unstake-pipeline metrics are warming until the native indexer lands.</li>
+        <li>Execution is testnet; all market data is read from mainnet. On-chain layer is HYPE-only.</li>
+      </ul>
+    </div>
+
   </div>
 
 </div><!-- /container -->
@@ -3977,6 +4122,370 @@
     if (sigInited) return;
     sigInited = true;
     fetchData();
+  });
+
+})();
+</script>
+
+<!-- ── Time Machine tab ──────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmtPct(v) { return (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%'; }
+  function fmtTs(ms) { return new Date(ms).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false }); }
+
+  function fmtMetric(key, v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    if (key === 'perp_mark_px') return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (key === 'funding_rate') return (v >= 0 ? '+' : '') + (v * 100).toFixed(4) + '%';
+    if (key === 'book_imbalance') return (v >= 0 ? '+' : '') + v.toFixed(3);
+    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + Math.round(abs / 1e3) + 'K';
+    return sign + Math.round(abs).toString();
+  }
+
+  var METRIC_LABELS = {
+    perp_mark_px: 'Price', funding_rate: 'Funding', open_interest: 'OI',
+    cvd_perp_24h: 'CVD 24h', cex_net_flow_hype: 'CEX Flow', total_staked_hype: 'Staked',
+    book_imbalance: 'Imbalance',
+  };
+
+  var slider   = document.getElementById('tm-slider');
+  var tsLabel  = document.getElementById('tm-ts-label');
+  var range    = null; // { oldest, newest }
+  var tmChart  = null;
+  var tmLine   = null;
+  var tmMarkers = [];
+  var debounceTimer = null;
+
+  function sliderToTs() {
+    if (!range) return Date.now();
+    var pct = parseInt(slider.value, 10) / 100;
+    return Math.round(range.oldest + pct * (range.newest - range.oldest));
+  }
+
+  function tsToSlider(ts) {
+    if (!range || range.newest === range.oldest) return 100;
+    return Math.round(((ts - range.oldest) / (range.newest - range.oldest)) * 100);
+  }
+
+  function loadReplay(ts) {
+    tsLabel.textContent = fmtTs(ts);
+    fetch('/api/market/replay?ts=' + ts)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        if (d.error) { tsLabel.textContent = d.error; return; }
+        if (d.range) range = d.range;
+        renderTally(d.tally);
+        renderKeyMetrics(d.keyMetrics);
+        renderChart(d.chartWindow, d.snapshotTs, d.priceAtTs);
+        renderReturns(d.forwardReturns, d.tally);
+        tsLabel.textContent = fmtTs(d.snapshotTs);
+        slider.value = tsToSlider(d.snapshotTs);
+      })
+      .catch(function () { tsLabel.textContent = 'error'; });
+  }
+
+  function renderTally(t) {
+    document.getElementById('tm-tally').innerHTML =
+      '<span style="color:var(--up);font-weight:600">▲ ' + t.bull + ' bull</span>'
+      + ' · <span style="color:var(--down);font-weight:600">▼ ' + t.bear + ' bear</span>'
+      + ' · <span style="color:var(--muted)">' + t.neutral + ' neutral</span>';
+  }
+
+  function renderKeyMetrics(km) {
+    var el = document.getElementById('tm-key-metrics');
+    var html = '';
+    Object.keys(METRIC_LABELS).forEach(function (k) {
+      html += '<div style="background:var(--surface);border-radius:6px;padding:var(--sp-2) var(--sp-3);min-width:100px">'
+        + '<div style="font-size:var(--t-label);color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em">' + esc(METRIC_LABELS[k]) + '</div>'
+        + '<div style="font-size:var(--t-value-sm);color:#fff;font-weight:600;margin-top:2px">' + esc(fmtMetric(k, km[k])) + '</div>'
+        + '</div>';
+    });
+    el.innerHTML = html;
+  }
+
+  function renderChart(points, snapTs, snapPx) {
+    var LC = window.LightweightCharts;
+    if (!LC) return;
+    var container = document.getElementById('tm-chart');
+    if (!tmChart) {
+      tmChart = LC.createChart(container, {
+        autoSize: true, height: 200,
+        layout: { background: { type: 'solid', color: '#0D1520' }, textColor: '#3D5A78', attributionLogo: false },
+        grid: { vertLines: { color: 'rgba(56,189,248,0.05)', style: 1 }, horzLines: { color: 'rgba(56,189,248,0.05)', style: 1 } },
+        crosshair: { mode: 0, vertLine: { color: '#38BDF8', width: 1, style: 1 }, horzLine: { color: '#38BDF8', width: 1, style: 1 } },
+        rightPriceScale: { borderColor: 'rgba(56,189,248,0.09)' },
+        timeScale: { borderColor: 'rgba(56,189,248,0.09)', timeVisible: true },
+      });
+      tmLine = tmChart.addLineSeries({ color: '#38BDF8', lineWidth: 1, priceFormat: { type: 'price', precision: 2 } });
+    }
+    var data = points.filter(function (p) { return p.px !== null; })
+      .map(function (p) { return { time: Math.floor(p.ts / 1000), value: p.px }; });
+    if (data.length) {
+      tmLine.setData(data);
+      if (snapPx !== null) {
+        tmLine.setMarkers([{
+          time: Math.floor(snapTs / 1000), position: 'aboveBar', shape: 'circle',
+          color: '#F59E0B', text: 'NOW',
+        }]);
+      }
+      tmChart.timeScale().fitContent();
+    }
+    document.getElementById('tm-chart-meta').textContent = data.length ? fmtTs(snapTs) : 'no data';
+  }
+
+  function renderReturns(fr, tally) {
+    var el = document.getElementById('tm-returns');
+    var lean = tally.bull > tally.bear ? 'bullish' : tally.bear > tally.bull ? 'bearish' : 'neutral';
+    var HORIZONS = ['4h', '24h', '72h', '168h'];
+    var html = '';
+    HORIZONS.forEach(function (h) {
+      var ret = fr[h];
+      var retStr, verdictStr, verdictCls;
+      if (ret === null) {
+        retStr = '—'; verdictStr = 'in progress'; verdictCls = 'color:var(--muted)';
+      } else {
+        retStr = fmtPct(ret);
+        var retDir = ret > 0.005 ? 'bullish' : ret < -0.005 ? 'bearish' : 'flat';
+        if (lean === 'neutral' || retDir === 'flat') {
+          verdictStr = 'inconclusive (small move or neutral lean)'; verdictCls = 'color:var(--muted)';
+        } else if (lean === retDir) {
+          verdictStr = 'consistent with this instance'; verdictCls = 'color:var(--up)';
+        } else {
+          verdictStr = 'inconsistent with this instance'; verdictCls = 'color:var(--down)';
+        }
+      }
+      var retCls = ret === null ? '' : ret > 0 ? 'color:var(--up)' : ret < 0 ? 'color:var(--down)' : '';
+      html += '<div style="background:var(--surface);border-radius:6px;padding:var(--sp-3)">'
+        + '<div style="font-size:var(--t-label);color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em">' + esc(h) + ' forward</div>'
+        + '<div style="font-size:var(--t-value-sm);font-weight:600;margin:var(--sp-1) 0;' + retCls + '">' + esc(retStr) + '</div>'
+        + '<div style="font-size:var(--t-label);' + verdictCls + '">'
+        + (lean !== 'neutral' ? 'leaned ' + lean + ' · ' : '')
+        + esc(verdictStr)
+        + '</div></div>';
+    });
+    el.innerHTML = html;
+  }
+
+  // ── Controls ──────────────────────────────────────────────────────────────
+  slider.addEventListener('input', function () {
+    clearTimeout(debounceTimer);
+    var ts = sliderToTs();
+    tsLabel.textContent = fmtTs(ts) + ' …';
+    debounceTimer = setTimeout(function () { loadReplay(ts); }, 250);
+  });
+
+  document.getElementById('tm-j-24h').addEventListener('click', function () {
+    loadReplay(Date.now() - 24 * 3600000);
+  });
+  document.getElementById('tm-j-7d').addEventListener('click', function () {
+    loadReplay(Date.now() - 7 * 24 * 3600000);
+  });
+  document.getElementById('tm-j-latest').addEventListener('click', function () {
+    loadReplay(Date.now());
+  });
+
+  // ── Tab activation ────────────────────────────────────────────────────────
+  var tmInited = false;
+  document.querySelector('.market-tab[data-tab="timemachine"]').addEventListener('click', function () {
+    if (tmInited) return;
+    tmInited = true;
+    loadReplay(Date.now());
+  });
+
+})();
+</script>
+
+<!-- ── Data tab ───────────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  var DEFAULT_COLS = [
+    'perp_mark_px','funding_rate','open_interest','cvd_perp_24h','cvd_spot_24h',
+    'cex_net_flow_hype','total_staked_hype','book_imbalance','book_spread_bps',
+    'cex_liq_long_24h','cex_liq_short_24h','cex_liq_net_24h',
+  ];
+  var PAGE_SIZE = 50;
+  var dataRange = '1D';
+  var dataPage  = 0;
+  var allRows   = [];
+  var cols      = DEFAULT_COLS.slice();
+
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function fmtTs(ms) {
+    return new Date(ms).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false });
+  }
+
+  function fmtVal(v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    var abs = Math.abs(v);
+    if (abs >= 1e9) return (v < 0 ? '-' : '') + (abs / 1e9).toFixed(2) + 'B';
+    if (abs >= 1e6) return (v < 0 ? '-' : '') + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return (v < 0 ? '-' : '') + Math.round(abs / 1e3) + 'K';
+    if (abs < 0.01 && abs > 0) return v.toFixed(6);
+    if (abs < 1) return v.toFixed(4);
+    return v.toFixed(2);
+  }
+
+  function fetchData() {
+    var fields = cols.join(',');
+    fetch('/api/market/history?fields=' + fields + '&range=' + dataRange)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        allRows = (d.rows || []).slice().reverse(); // newest first
+        dataPage = 0;
+        renderTable();
+      })
+      .catch(function () {
+        document.getElementById('data-tbody').innerHTML = '<tr><td colspan="' + (cols.length + 1) + '" style="color:var(--muted)">Error loading data.</td></tr>';
+      });
+  }
+
+  function renderTable() {
+    // Header
+    var hdr = '<tr><th>Time</th>';
+    cols.forEach(function (c) { hdr += '<th>' + esc(c) + '</th>'; });
+    hdr += '</tr>';
+    document.getElementById('data-thead').innerHTML = hdr;
+
+    // Body (paged)
+    var start = dataPage * PAGE_SIZE;
+    var page  = allRows.slice(start, start + PAGE_SIZE);
+    var body  = '';
+    page.forEach(function (row) {
+      body += '<tr><td>' + fmtTs(row.ts) + '</td>';
+      cols.forEach(function (c) { body += '<td>' + esc(fmtVal(row[c])) + '</td>'; });
+      body += '</tr>';
+    });
+    if (!body) body = '<tr><td colspan="' + (cols.length + 1) + '" style="color:var(--muted)">No data for this range.</td></tr>';
+    document.getElementById('data-tbody').innerHTML = body;
+
+    // Pager
+    var totalPages = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE));
+    var pagerHtml = '';
+    if (totalPages > 1) {
+      pagerHtml += '<button class="tf' + (dataPage === 0 ? '" disabled' : '"') + ' id="data-prev">&laquo; Prev</button>';
+      pagerHtml += '<span style="color:var(--muted);font-size:var(--t-label)">' + (dataPage + 1) + ' / ' + totalPages + '</span>';
+      pagerHtml += '<button class="tf' + (dataPage >= totalPages - 1 ? '" disabled' : '"') + ' id="data-next">Next &raquo;</button>';
+    }
+    document.getElementById('data-pager').innerHTML = pagerHtml;
+  }
+
+  // ── Controls ──────────────────────────────────────────────────────────────
+  document.getElementById('data-controls').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-dr]');
+    if (!btn) return;
+    dataRange = btn.getAttribute('data-dr');
+    document.querySelectorAll('#data-controls [data-dr]').forEach(function (b) { b.classList.toggle('active', b === btn); });
+    fetchData();
+  });
+
+  document.getElementById('data-pager').addEventListener('click', function (e) {
+    if (e.target.id === 'data-prev' && dataPage > 0) { dataPage--; renderTable(); }
+    if (e.target.id === 'data-next') { dataPage++; renderTable(); }
+  });
+
+  // ── Tab activation ────────────────────────────────────────────────────────
+  var dataInited = false;
+  document.querySelector('.market-tab[data-tab="data"]').addEventListener('click', function () {
+    if (dataInited) return;
+    dataInited = true;
+    fetchData();
+  });
+
+})();
+</script>
+
+<!-- ── Glossary tab ──────────────────────────────────────────────────────── -->
+<script>
+(function () {
+  'use strict';
+
+  function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  var allMetrics = [];
+  var searchTerm = '';
+  var filterTab  = 'all';
+
+  function dirReadLabel(dirStr) {
+    if (!dirStr) return '<span style="color:var(--muted)">neutral level</span>';
+    if (/BearPos/i.test(dirStr)) return '<span style="color:var(--down)">high = bearish (contrarian/sell-pressure)</span>';
+    if (/BullPos/i.test(dirStr)) return '<span style="color:var(--up)">high = bullish (follow/accumulation)</span>';
+    var m = dirStr.match(/Bear.*?High.*?\|?([\d.]+)/i);
+    if (m) return '<span style="color:var(--down)">above ' + m[1] + ' = bearish (contrarian)</span>';
+    m = dirStr.match(/Bull.*?High.*?\|?([\d.]+)/i);
+    if (m) return '<span style="color:var(--up)">above ' + m[1] + ' = bullish (follow)</span>';
+    return '<span style="color:var(--muted)">directional (see read)</span>';
+  }
+
+  function fetchManifest() {
+    fetch('/api/market/manifest')
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) {
+        allMetrics = d.metrics || [];
+        render();
+      })
+      .catch(function () {
+        document.getElementById('gls-entries').innerHTML = '<p style="color:var(--muted);padding:var(--sp-3)">Could not load manifest.</p>';
+      });
+  }
+
+  function render() {
+    var filtered = allMetrics.filter(function (m) {
+      if (filterTab !== 'all' && m.subtab !== filterTab) return false;
+      if (searchTerm) {
+        var q = searchTerm.toLowerCase();
+        return (m.key + ' ' + m.label + ' ' + (m.beginnerLabel || '') + ' ' + (m.read || '')).toLowerCase().indexOf(q) !== -1;
+      }
+      return true;
+    });
+
+    var html = '';
+    filtered.forEach(function (m) {
+      html += '<div class="gls-entry">';
+      html += '<span class="gls-entry-key">' + esc(m.key) + '</span>';
+      html += '<span class="gls-entry-label">' + esc(m.label) + '</span>';
+      if (m.beginnerLabel) html += '<div style="font-size:var(--t-label);color:var(--muted);margin-top:2px">' + esc(m.beginnerLabel) + '</div>';
+      html += '<div class="gls-entry-meta">';
+      html += '<span style="margin-right:var(--sp-3)">source: ' + esc(m.source) + '</span>';
+      html += '<span style="margin-right:var(--sp-3)">kind: ' + esc(m.kind) + '</span>';
+      html += '<span style="margin-right:var(--sp-3)">tab: ' + esc(m.subtab) + '</span>';
+      if (m.signalForScoring) html += '<span style="color:var(--accent)">scored</span>';
+      html += '</div>';
+      if (m.read) html += '<div class="gls-entry-read">' + esc(m.read) + '</div>';
+      html += '<div class="gls-entry-dir">' + dirReadLabel(m.dir) + '</div>';
+      html += '</div>';
+    });
+
+    if (!html) html = '<p style="color:var(--muted);padding:var(--sp-3)">No metrics match.</p>';
+    document.getElementById('gls-entries').innerHTML = html;
+  }
+
+  document.getElementById('gls-search').addEventListener('input', function (e) {
+    searchTerm = e.target.value;
+    render();
+  });
+
+  document.getElementById('gls-filter').addEventListener('change', function (e) {
+    filterTab = e.target.value;
+    render();
+  });
+
+  // ── Tab activation ────────────────────────────────────────────────────────
+  var glsInited = false;
+  document.querySelector('.market-tab[data-tab="glossary"]').addEventListener('click', function () {
+    if (glsInited) return;
+    glsInited = true;
+    fetchManifest();
   });
 
 })();

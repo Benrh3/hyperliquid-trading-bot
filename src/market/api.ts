@@ -245,5 +245,132 @@ export function createMarketRouter(store: MarketStore): Router {
     res.json({ symbol, range: rangeKey, fields, rows });
   });
 
+  // ── GET /api/market/manifest ──────────────────────────────────────────────
+  // Returns all metric definitions from the manifest for the Glossary + Data column picker.
+  router.get("/api/market/manifest", (_req, res) => {
+    const manifest = loadManifest();
+    const metrics = manifest.metrics.map((m) => ({
+      key:            m.key,
+      label:          m.label,
+      beginnerLabel:  m.beginnerLabel ?? null,
+      source:         m.source,
+      kind:           m.kind,
+      subtab:         m.subtab,
+      derived:        m.derived,
+      signalForScoring: m.signalForScoring,
+      read:           m.read ?? null,
+      dir:            m.dir ?? null,
+    }));
+    res.json({ asset: manifest.asset, metrics });
+  });
+
+  // ── GET /api/market/replay?ts=<ms> ─────────────────────────────────────
+  // Returns the snapshot at-or-just-before ts, directional tally, and forward returns.
+  const REPLAY_HORIZONS = [4, 24, 72, 168];
+  const REPLAY_KEY_METRICS = [
+    "perp_mark_px", "funding_rate", "open_interest", "cvd_perp_24h",
+    "cex_net_flow_hype", "total_staked_hype", "book_imbalance",
+  ];
+
+  router.get("/api/market/replay", (req, res) => {
+    const symbol = typeof req.query.symbol === "string" ? req.query.symbol.toUpperCase() : "HYPE";
+    const tsRaw  = typeof req.query.ts     === "string" ? parseInt(req.query.ts)          : NaN;
+    if (!Number.isFinite(tsRaw)) { res.status(400).json({ error: "ts param required (ms)" }); return; }
+
+    const manifest  = loadManifest();
+    const snapshots = store.getRecentSnapshots(symbol, 5000);
+    if (!snapshots.length) { res.json({ error: "no snapshots" }); return; }
+
+    // Find snapshot at-or-just-before ts (snapshots are newest-first)
+    let snap = snapshots[snapshots.length - 1]; // oldest as fallback
+    for (const s of snapshots) {
+      if (s.capturedAt <= tsRaw) { snap = s; break; }
+    }
+
+    // Price at snap time
+    const priceSeries = store.getMetricTimeSeries(symbol, "perp_mark_px");
+    const priceAtTs   = lookupNearestPrice(priceSeries, snap.capturedAt);
+
+    // Forward returns
+    const forwardReturns: Record<string, number | null> = {};
+    for (const h of REPLAY_HORIZONS) {
+      const futureMs = snap.capturedAt + h * 3_600_000;
+      if (futureMs > Date.now()) { forwardReturns[`${h}h`] = null; continue; }
+      const futurePrice = lookupNearestPrice(priceSeries, futureMs);
+      forwardReturns[`${h}h`] = priceAtTs && futurePrice ? (futurePrice - priceAtTs) / priceAtTs : null;
+    }
+
+    // Directional tally: apply each scored signal's dir to its value at ts
+    const scored = manifest.metrics.filter((m) => m.signalForScoring);
+    let bullCount = 0, bearCount = 0, neutralCount = 0;
+    const reads: Array<{ key: string; value: number | null; dir: string | null; read: string | null }> = [];
+
+    for (const sig of scored) {
+      const val = snap.metrics[sig.key]?.value ?? null;
+      const dir = sig.dir ?? null;
+      let read: string | null = null;
+
+      if (val !== null && Number.isFinite(val) && dir) {
+        // Derive direction from dir string
+        const isBear = /Bear/i.test(dir);
+        const isBull = /Bull/i.test(dir);
+        // Zero-centered: positive value on a bear-mapped = bearish, on bull-mapped = bullish
+        if (isBear && val > 0) { read = "bearish"; bearCount++; }
+        else if (isBear && val < 0) { read = "bullish"; bullCount++; }
+        else if (isBull && val > 0) { read = "bullish"; bullCount++; }
+        else if (isBull && val < 0) { read = "bearish"; bearCount++; }
+        else { read = "neutral"; neutralCount++; }
+      } else {
+        neutralCount++;
+      }
+
+      reads.push({ key: sig.key, value: val, dir, read });
+    }
+
+    // Key metrics for compact display
+    const keyMetrics: Record<string, number | null> = {};
+    for (const k of REPLAY_KEY_METRICS) {
+      keyMetrics[k] = snap.metrics[k]?.value ?? null;
+    }
+
+    // Snapshot range for the slider
+    const oldest = snapshots[snapshots.length - 1].capturedAt;
+    const newest = snapshots[0].capturedAt;
+
+    // Price window for mini chart: ±48h around snap
+    const chartWindow = priceSeries
+      .filter((p) => p.capturedAt >= snap.capturedAt - 48 * 3_600_000 && p.capturedAt <= snap.capturedAt + 48 * 3_600_000 && p.value !== null)
+      .map((p) => ({ ts: p.capturedAt, px: p.value }));
+
+    res.json({
+      symbol,
+      snapshotTs:    snap.capturedAt,
+      priceAtTs,
+      tally:         { bull: bullCount, bear: bearCount, neutral: neutralCount },
+      forwardReturns,
+      keyMetrics,
+      reads,
+      range:         { oldest, newest },
+      chartWindow,
+    });
+  });
+
   return router;
+}
+
+function lookupNearestPrice(series: ReadonlyArray<{ capturedAt: number; value: number | null }>, targetMs: number): number | null {
+  if (!series.length) return null;
+  let lo = 0, hi = series.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (series[mid].capturedAt < targetMs) lo = mid + 1;
+    else hi = mid;
+  }
+  // lo is first >= targetMs; check lo and lo-1 for closest
+  const candidates = [lo, lo - 1].filter((i) => i >= 0 && i < series.length);
+  let best = candidates[0];
+  for (const i of candidates) {
+    if (Math.abs(series[i].capturedAt - targetMs) < Math.abs(series[best].capturedAt - targetMs)) best = i;
+  }
+  return series[best].value;
 }
