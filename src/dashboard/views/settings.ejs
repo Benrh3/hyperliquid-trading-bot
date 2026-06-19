@@ -4,83 +4,102 @@
   .settings-page {
     max-width: 780px;
     margin: 0 auto;
-    padding: 2rem 1.5rem 4rem;
+    padding: var(--sp-6) var(--sp-6) var(--sp-6);
   }
-  .settings-hdr { margin-bottom: 2rem; }
-  .settings-hdr h1 { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.25rem; }
-  .settings-hdr p  { color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .settings-hdr { margin-bottom: var(--sp-6); }
+  .settings-hdr h1 { font-size: var(--t-value-sm); font-weight: 600; margin-bottom: var(--sp-1); letter-spacing: -0.01em; }
+  .settings-hdr p  { color: var(--muted); font-size: var(--t-body); line-height: 1.6; }
+  .settings-hdr a  { color: var(--accent); }
 
   .settings-section {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--sp-5);
     overflow: hidden;
   }
   .section-header {
-    padding: 0.875rem 1.25rem;
+    padding: var(--sp-3) var(--sp-5);
     border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 0.75rem;
+    display: flex; align-items: center; gap: var(--sp-3);
   }
   .section-header h2 {
-    font-size: 13px; font-weight: 600; margin: 0; flex: 1;
+    font-size: var(--t-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0; flex: 1;
   }
-  .section-body { padding: 1rem 1.25rem; }
+  .section-body { padding: var(--sp-4) var(--sp-5); }
 
   .setting-row {
-    display: flex; align-items: center; gap: 1rem;
-    padding: 0.6rem 0;
+    display: flex; align-items: center; gap: var(--sp-4);
+    padding: var(--sp-3) 0;
     border-bottom: 1px solid var(--border);
-    font-size: 13px;
+    font-size: var(--t-body);
   }
   .setting-row:last-child { border-bottom: none; }
   .setting-lbl { flex: 1; color: var(--text); }
-  .setting-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
-  .setting-val { color: var(--muted); font-size: 13px; font-family: monospace; }
+  .setting-sub { font-size: var(--t-label); color: var(--muted); margin-top: 1px; }
+  .setting-val { color: var(--muted); font-size: var(--t-body); font-family: 'SFMono-Regular', Consolas, monospace; }
 
   /* Network badge */
   .net-badge {
-    font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
-    padding: 0.2rem 0.6rem; border-radius: 99px; text-transform: uppercase;
+    font-size: var(--t-label); font-weight: 700; letter-spacing: 0.05em;
+    padding: var(--sp-1) var(--sp-3); border-radius: 99px; text-transform: uppercase;
   }
   .net-testnet { background: rgba(88,166,255,0.15); color: var(--blue); }
   .net-mainnet { background: rgba(63,185,80,0.15);  color: var(--green); }
 
   /* Safety gates */
-  .safety-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.75rem; }
+  .safety-list { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
   .safety-item {
-    display: flex; align-items: flex-start; gap: 0.75rem;
-    padding: 0.5rem 0.75rem; border-radius: 5px; font-size: 12px;
+    display: flex; align-items: flex-start; gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-3); border-radius: 5px; font-size: var(--t-label);
   }
-  .safety-item.pass    { background: rgba(63,185,80,0.07);  border: 1px solid rgba(63,185,80,0.2); }
-  .safety-item.fail    { background: rgba(248,81,73,0.07);   border: 1px solid rgba(248,81,73,0.2); }
-  .safety-item.warn    { background: rgba(210,153,34,0.07);  border: 1px solid rgba(210,153,34,0.2); }
+  .safety-item.pass { background: rgba(63,185,80,0.07);  border: 1px solid rgba(63,185,80,0.2); }
+  .safety-item.fail { background: rgba(248,81,73,0.07);  border: 1px solid rgba(248,81,73,0.2); }
+  .safety-item.warn { background: rgba(210,153,34,0.07); border: 1px solid rgba(210,153,34,0.2); }
   .safety-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
-  .safety-name { font-weight: 500; margin-bottom: 2px; }
-  .safety-detail { color: var(--muted); font-size: 11px; }
-  .safety-loading { color: var(--muted); font-size: 12px; font-style: italic; padding: 0.5rem 0; }
+  .safety-name { font-weight: 600; margin-bottom: 2px; }
+  .safety-detail { color: var(--muted); font-size: var(--t-label); }
+  .safety-loading { color: var(--muted); font-size: var(--t-label); font-style: italic; padding: var(--sp-2) 0; }
 
   /* Wallet key display */
-  .key-row { display: flex; align-items: center; gap: 0.75rem; }
-  .key-mono { font-family: monospace; font-size: 12px; color: var(--text); }
+  .key-row { display: flex; align-items: center; gap: var(--sp-3); }
+  .key-mono { font-family: 'SFMono-Regular', Consolas, monospace; font-size: var(--t-label); color: var(--text); }
   .key-badge {
-    font-size: 10px; font-weight: 600; padding: 0.1rem 0.5rem;
+    font-size: 10px; font-weight: 600; padding: 2px var(--sp-2);
     border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em;
   }
   .key-set    { background: rgba(63,185,80,0.15);  color: var(--green); }
-  .key-notset { background: rgba(139,148,158,0.15); color: var(--muted); }
+  .key-notset { background: rgba(129,140,248,0.12); color: var(--muted); }
 
   /* Mainnet button */
   .btn-mainnet {
     background: none; border: 1px solid var(--border); color: var(--muted);
-    border-radius: 4px; padding: 0.3rem 0.85rem; font-size: 12px; cursor: pointer;
-    transition: all 0.15s;
+    border-radius: 4px; padding: var(--sp-1) var(--sp-3); font-size: var(--t-label);
+    font-family: inherit; font-weight: 600; cursor: pointer; transition: all 0.15s;
   }
   .btn-mainnet:hover:not(:disabled) { border-color: var(--green); color: var(--green); }
   .btn-mainnet:disabled { opacity: 0.4; cursor: not-allowed; }
 
+  /* Sizing formula callout */
+  .settings-formula {
+    margin-top: var(--sp-2);
+    padding: var(--sp-3);
+    background: var(--bg);
+    border-radius: 5px;
+    font-size: var(--t-label);
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .settings-formula strong { color: var(--text); }
+
   @media (max-width: 600px) {
-    .settings-page { padding: 1.25rem 0.75rem 3rem; }
+    .settings-page { padding: var(--sp-4) var(--sp-3); }
+    .setting-row { flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
   }
 </style>
 
@@ -90,7 +109,7 @@
 
   <div class="settings-hdr">
     <h1>Settings</h1>
-    <p>Global configuration. Bot management is on the <a href="/bots" style="color:var(--blue)">Bots page</a>.</p>
+    <p>Global configuration. Bot management is on the <a href="/bots">Bots page</a>.</p>
   </div>
 
   <!-- ── Network ── -->
@@ -120,8 +139,8 @@
       <% } %>
 
       <!-- Safety gates (loaded async) -->
-      <div style="margin-top:0.5rem">
-        <p style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:0.5rem">
+      <div style="margin-top:var(--sp-2)">
+        <p style="font-size:var(--t-label);font-weight:600;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);margin-bottom:var(--sp-2)">
           Mainnet Safety Gates
         </p>
         <div id="safety-list">
@@ -173,7 +192,7 @@
         </div>
         <span class="setting-val"><%= risk.maxDailyLossPercent ?? 5 %>%</span>
       </div>
-      <div style="margin-top:0.5rem;padding:0.6rem 0.75rem;background:var(--bg);border-radius:5px;font-size:11px;color:var(--muted);line-height:1.6">
+      <div class="settings-formula">
         <strong style="color:var(--text)">Sizing formula:</strong>
         dollarRisk = equity × riskPerTrade% ·
         size = dollarRisk ÷ (price × stopLoss%) ·
