@@ -788,21 +788,7 @@
   .gls-methodology ul { padding-left: 1.2em; margin: var(--sp-2) 0; }
 </style>
 
-<!-- ── Top nav: Bots | Market ── -->
-<nav class="nav">
-  <a href="/" class="nav-brand">HL Bot</a>
-  <button class="hamburger" id="nav-hamburger" aria-label="Menu">&#9776;</button>
-  <div class="nav-links" id="nav-links">
-    <a href="/" class="nav-link">Bots</a>
-    <a href="/market" class="nav-link active">Market</a>
-  </div>
-  <div class="nav-right">
-    <span class="dot-accent"></span>
-    <span class="badge badge-net"><%= network %></span>
-    <% if (isAdmin) { %><a href="/logout" class="nav-link">Logout</a><% } else if (authConfigured) { %><a href="/login" class="nav-link">Login</a><% } %>
-    <button class="theme-btn" id="theme-toggle" title="Toggle theme">&#9790;</button>
-  </div>
-</nav>
+<%- include('_nav') %>
 
 <!-- ── Sub-tab strip ── -->
 <div class="market-tabs-bar">
@@ -1860,9 +1846,11 @@
   // ── Bias fetch + render ────────────────────────────────────────────────────
   async function fetchBias(h) {
     try {
-      var r = await fetch('/api/market/bias?horizon=' + h);
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      renderBias(await r.json());
+      var results = await Promise.all([
+        fetch('/api/market/bias?horizon=' + h).then(function (r) { return r.ok ? r.json() : Promise.reject(); }),
+        fetch('/api/market/signals').then(function (r) { return r.ok ? r.json() : Promise.reject(); }),
+      ]);
+      renderBias(results[0], results[1].signals || []);
     } catch (_) {
       var el = document.getElementById('bias-label');
       if (el) { el.textContent = 'Error'; el.className = 'bias-label neutral'; }

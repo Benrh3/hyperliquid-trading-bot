@@ -242,6 +242,14 @@ export function createRouter(
 ): Router {
   const router = Router();
 
+  // ── Shared locals for _nav.ejs ──────────────────────────────────────────
+  router.use((req, res, next) => {
+    res.locals.currentPath = req.path;
+    res.locals.pillar = req.path.startsWith("/market") ? "market" : "bot";
+    res.locals.network = res.locals.network ?? config.exchange.network;
+    next();
+  });
+
   // ── Page routes ─────────────────────────────────────────────────────────
 
   router.get("/", (_req, res) => {

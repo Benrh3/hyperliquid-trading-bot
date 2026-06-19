@@ -141,6 +141,13 @@
     }
     .nav-links.open { display: flex; }
 
+    /* ── Two-tier nav ── */
+    .nav-sub {
+      height: 40px;
+      border-top: none;
+    }
+    .nav-sub .nav-link { height: 40px; font-size: 12px; }
+
     /* ── Layout ── */
     .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
 
@@ -258,6 +265,8 @@
         padding: 0.5rem 0;
       }
       .nav-links.open { display: flex; }
+      .nav-sub { overflow-x: auto; -webkit-overflow-scrolling: touch; height: auto; padding: 0 0.5rem; }
+      .nav-sub .nav-links { display: flex; position: static; flex-direction: row; border-bottom: none; padding: 0; background: none; }
       .nav-link {
         height: auto;
         padding: 0.6rem 1.25rem;
