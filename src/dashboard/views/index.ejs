@@ -113,12 +113,47 @@
   /* Hide TradingView attribution */
   .tv-lightweight-charts > table > tbody > tr:last-child { display: none !important; }
 
+  /* ── Stat tiles (reskinned to match Market KEY METRICS) ── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+  }
+  .stat-tile {
+    background: var(--surface);
+    border-radius: 6px;
+    padding: var(--sp-4) var(--sp-5);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .stat-tile-label {
+    font-size: var(--t-label);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: var(--sp-1);
+  }
+  .stat-tile-value {
+    font-size: var(--t-value-sm);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    line-height: 1;
+    margin-bottom: var(--sp-1);
+  }
+  .stat-tile-sub {
+    font-size: var(--t-label);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
   /* ── Funding rate card ── */
   .card-funding { grid-column: span 2; }
-  .funding-row { display: flex; gap: 1.5rem; margin-top: 0.35rem; flex-wrap: wrap; }
+  .funding-row { display: flex; gap: var(--sp-5); margin-top: var(--sp-1); flex-wrap: wrap; }
   .funding-item { display: flex; flex-direction: column; }
-  .funding-item .fi-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-  .funding-item .fi-value { font-size: 13px; font-family: 'SFMono-Regular', Consolas, monospace; font-variant-numeric: tabular-nums; margin-top: 1px; }
+  .funding-item .fi-label { font-size: var(--t-label); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .funding-item .fi-value { font-size: var(--t-body); font-family: 'SFMono-Regular', Consolas, monospace; font-variant-numeric: tabular-nums; margin-top: 1px; }
 
   /* ── Equity chart panel ── */
   #chart-equity { height: 100px; border-top: 1px solid var(--border); }
@@ -183,31 +218,32 @@
   /* ── Funding matrix heatmap ── */
   .fm-panel {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     overflow: hidden;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--sp-5);
   }
   .fm-toolbar {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.875rem;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-5);
     border-bottom: 1px solid var(--border);
     flex-wrap: wrap;
   }
   .fm-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text);
+    font-size: var(--t-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
     white-space: nowrap;
   }
   .fm-meta {
-    font-size: 11px;
+    font-size: var(--t-label);
     color: var(--muted);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--sp-2);
     flex-wrap: wrap;
   }
   .fm-stale-badge {
@@ -216,7 +252,7 @@
     font-weight: 600;
     color: var(--yellow);
     background: rgba(210,153,34,0.12);
-    padding: 1px 6px;
+    padding: 1px var(--sp-2);
     border-radius: 3px;
     letter-spacing: .03em;
   }
@@ -225,8 +261,8 @@
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 11px;
+    gap: var(--sp-2);
+    font-size: var(--t-label);
     color: var(--muted);
     white-space: nowrap;
   }
@@ -245,8 +281,8 @@
 
   /* Header row */
   .fm-hdr {
-    padding: 0.45rem 0.875rem;
-    font-size: 10px;
+    padding: var(--sp-2) var(--sp-3);
+    font-size: var(--t-label);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -255,7 +291,7 @@
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--sp-1);
     white-space: nowrap;
     position: sticky;
     top: 0;
@@ -367,8 +403,8 @@
   }
 
   /* Widest-spread row accent */
-  .fm-row-top-spread .fm-coin { border-left: 2px solid var(--blue); }
-  .fm-spread-cell-top { background: rgba(88,166,255,0.06) !important; }
+  .fm-row-top-spread .fm-coin { border-left: 2px solid var(--accent); }
+  .fm-spread-cell-top { background: var(--accent-dim) !important; }
 
   /* Skeleton animation */
   @keyframes fm-shimmer {
@@ -567,37 +603,37 @@
 
 <div class="container">
 
-  <!-- ── Compact session strip (replaces old stat cards) ── -->
-  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:1rem">
+  <!-- ── Stat tiles ── -->
+  <div class="stat-grid">
     <% for (const c of coins) { %>
     <% const cp = state.lastPrices[c] || { mid: 0, bid: 0, ask: 0 }; %>
-    <div class="card" id="card-<%= c %>" style="padding:.75rem 1rem">
-      <div class="card-label" style="margin-bottom:.2rem"><%= c %></div>
-      <div class="card-value mono" id="stat-price-<%= c %>" style="font-size:1.15rem">
-        <% if (cp.mid > 0) { %>$<%= cp.mid.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %><% } else { %><span class="text-muted">—</span><% } %>
+    <div class="stat-tile" id="card-<%= c %>">
+      <div class="stat-tile-label"><%= c %></div>
+      <div class="stat-tile-value" id="stat-price-<%= c %>">
+        <% if (cp.mid > 0) { %>$<%= cp.mid.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %><% } else { %><span style="color:var(--muted)">—</span><% } %>
       </div>
-      <div class="card-sub" id="stat-bidask-<%= c %>"><% if (cp.bid > 0) { %><span style="color:var(--green)">B</span> $<%= cp.bid.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %> <span style="color:var(--red)">A</span> $<%= cp.ask.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %><% } else { %>awaiting…<% } %></div>
+      <div class="stat-tile-sub" id="stat-bidask-<%= c %>"><% if (cp.bid > 0) { %><span style="color:var(--green)">B</span> $<%= cp.bid.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %> <span style="color:var(--red)">A</span> $<%= cp.ask.toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1}) %><% } else { %>awaiting…<% } %></div>
     </div>
     <% } %>
-    <div class="card" style="padding:.75rem 1rem">
-      <div class="card-label" style="margin-bottom:.2rem">Signals</div>
-      <div class="card-value" id="stat-signals"><%= state.signalCount %></div>
-      <div class="card-sub">this session</div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">Signals</div>
+      <div class="stat-tile-value" id="stat-signals"><%= state.signalCount %></div>
+      <div class="stat-tile-sub">this session</div>
     </div>
-    <div class="card" style="padding:.75rem 1rem">
-      <div class="card-label" style="margin-bottom:.2rem">Trades</div>
-      <div class="card-value" id="stat-trades"><%= tradeCount %></div>
-      <div class="card-sub">recorded</div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">Trades</div>
+      <div class="stat-tile-value" id="stat-trades"><%= tradeCount %></div>
+      <div class="stat-tile-sub">recorded</div>
     </div>
-    <div class="card" style="padding:.75rem 1rem">
-      <div class="card-label" style="margin-bottom:.2rem">Uptime</div>
-      <div class="card-value mono" style="font-size:1.1rem" id="stat-uptime"><%= uptime %></div>
-      <div class="card-sub" id="stat-lastupdate"><% if (state.lastUpdate) { %>tick <%= state.lastUpdate.toLocaleTimeString() %><% } else { %>no ticks<% } %></div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">Uptime</div>
+      <div class="stat-tile-value" id="stat-uptime"><%= uptime %></div>
+      <div class="stat-tile-sub" id="stat-lastupdate"><% if (state.lastUpdate) { %>tick <%= state.lastUpdate.toLocaleTimeString() %><% } else { %>no ticks<% } %></div>
     </div>
-    <div class="card" style="padding:.75rem 1rem">
-      <div class="card-label" style="margin-bottom:.2rem">P&amp;L</div>
-      <div class="card-value mono" style="font-size:1.1rem" id="stat-upnl"><span class="text-muted">—</span></div>
-      <div class="card-sub mono" id="stat-rpnl"><span class="text-muted">Realised: —</span></div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">P&amp;L</div>
+      <div class="stat-tile-value" id="stat-upnl"><span style="color:var(--muted)">—</span></div>
+      <div class="stat-tile-sub" id="stat-rpnl" style="font-family:'SFMono-Regular',Consolas,monospace"><span style="color:var(--muted)">Realised: —</span></div>
     </div>
   </div>
 
@@ -609,7 +645,7 @@
       <div class="fm-meta">
         <span id="fm-updated">—</span>
         <span class="fm-stale-badge" id="fm-stale">STALE</span>
-        <span id="fm-data-source" style="font-size:10px;color:var(--muted);padding:1px 6px;border:1px solid var(--border);border-radius:3px;display:none"></span>
+        <span id="fm-data-source" style="font-size:var(--t-label);color:var(--muted);padding:1px var(--sp-2);border:1px solid var(--border);border-radius:3px;display:none"></span>
       </div>
       <div class="fm-refresh">
         refreshes in <span class="fm-countdown" id="fm-countdown">45</span>s
