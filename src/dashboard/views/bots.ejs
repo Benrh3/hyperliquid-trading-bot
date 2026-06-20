@@ -156,6 +156,24 @@
     text-align: center; color: var(--muted); font-size: var(--t-body);
   }
 
+  /* ── Compact / expand ── */
+  .bc-compact {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    flex-wrap: wrap;
+  }
+  .bc-compact-pnl { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 600; font-size: var(--t-body); }
+  .bc-detail { display: none; border-top: 1px solid var(--border); }
+  .bot-card.expanded .bc-detail { display: block; }
+  .bc-expand {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 2px var(--sp-1);
+    margin-left: auto; transition: transform .15s, color .15s;
+    flex-shrink: 0;
+  }
+  .bc-expand:hover { color: var(--text); }
+  .bot-card.expanded .bc-expand { transform: rotate(180deg); }
+
   /* ── Modal ── */
   .modal-backdrop {
     position: fixed; inset: 0;
@@ -437,9 +455,16 @@
 
   // ── Card body helpers ─────────────────────────────────────────────────────
 
-  function renderStandardBody(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml) {
+  function renderStandardCompact(b, posBadge) {
+    return `<div class="bc-compact">
+      ${posBadge}
+      <span class="bc-compact-pnl ${pnlCls(b.sessionPnl)}">${fmtPnl(b.sessionPnl)}</span>
+      <button class="bc-expand" aria-label="Expand details">&#9660;</button>
+    </div>`;
+  }
+
+  function renderStandardDetail(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml) {
     return `
-      <div class="bc-row"><span class="bc-lbl">Position</span><span class="bc-val">${posBadge}</span></div>
       ${entryHtml}
       <div class="bc-row"><span class="bc-lbl">Current price</span><span class="bc-val">${fmtPrice(b.lastPrice)}</span></div>
       <div class="bc-row"><span class="bc-lbl">Unrealised P&amp;L</span><span class="bc-val">${upnlHtml}</span></div>
@@ -449,9 +474,9 @@
       <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.tradeCount}</span></div>
       <div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">${fmtRate(b.fundingRate)}</span></div>
       ${isFunding && b.fundingDirection ? `
-      <div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:12px">${esc(b.fundingDirection)}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:var(--t-label)">${esc(b.fundingDirection)}</span></div>
       <div class="bc-row"><span class="bc-lbl">Direction flips</span><span class="bc-val">${b.fundingFlips ?? 0}</span></div>
-      <div class="bc-row" style="margin-top:0.25rem">
+      <div class="bc-row" style="margin-top:var(--sp-1)">
         <span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">
           Paper sim only — short-spot leg is not executable on Hyperliquid alone.
         </span>
@@ -459,80 +484,72 @@
       <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>`;
   }
 
-  function renderCrossVenueBody(b) {
-    const legs    = b.crossVenueLegs ?? [];
-    const spread  = b.currentSpread ?? 0;
-    const spreadPct = (spread * 100).toFixed(4);
-    const spreadClr = spread >= 0 ? 'text-green' : 'text-red';
-    const grossFunding = b.capturedFunding ?? 0;
-    const netPnl       = b.sessionPnl ?? 0;
-    const feePaid      = grossFunding - netPnl;
-    const mode     = b.executionMode ?? 'paper';
-    const isLive   = mode === 'live';
-
-    const legsHtml = legs.length === 2
-      ? legs.map(l =>
-          `<span class="pos-badge ${l.side === 'short' ? 'pos-short' : 'pos-long'}" style="font-size:10px;margin-right:3px">${l.venue.toUpperCase()} ${l.side.toUpperCase()}</span>`
-        ).join('')
+  function cvHelpers(b) {
+    var legs    = b.crossVenueLegs || [];
+    var mode    = b.executionMode || 'paper';
+    var isLive  = mode === 'live';
+    var legsHtml = legs.length === 2
+      ? legs.map(function (l) {
+          return '<span class="pos-badge ' + (l.side === 'short' ? 'pos-short' : 'pos-long') + '" style="font-size:10px;margin-right:3px">' + l.venue.toUpperCase() + ' ' + l.side.toUpperCase() + '</span>';
+        }).join('')
       : '<span class="pos-badge pos-flat">WAITING</span>';
+    var modeBadge = isLive
+      ? '<span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:99px;background:rgba(240,136,62,.15);color:#f0883e;border:1px solid rgba(240,136,62,.35)">LIVE</span>'
+      : '<span style="font-size:10px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:99px;background:rgba(129,140,248,.12);color:var(--muted)">PAPER</span>';
+    return { legsHtml: legsHtml, modeBadge: modeBadge, mode: mode, isLive: isLive };
+  }
 
-    const modeBadge = isLive
-      ? `<span style="font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 7px;border-radius:99px;background:rgba(240,136,62,.15);color:#f0883e;border:1px solid rgba(240,136,62,.35)">LIVE</span>`
-      : `<span style="font-size:10px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:99px;background:rgba(139,148,158,.15);color:var(--muted)">PAPER</span>`;
+  function renderCrossVenueCompact(b) {
+    var cv     = cvHelpers(b);
+    var netPnl = b.sessionPnl || 0;
+    return '<div class="bc-compact">'
+      + cv.modeBadge
+      + '<span class="bc-compact-pnl ' + pnlCls(netPnl) + '">' + fmtPnl(netPnl) + '</span>'
+      + '<button class="bc-expand" aria-label="Expand details">&#9660;</button>'
+      + '</div>';
+  }
 
-    const toggleBtn = IS_ADMIN ? `<button class="bc-btn cv-mode-toggle" data-id="${b.id}" data-current="${mode}" style="font-size:11px;padding:2px 8px">
-      ${isLive ? 'Switch to PAPER' : 'Switch to LIVE'}
-    </button>` : '';
+  function renderCrossVenueDetail(b) {
+    var cv     = cvHelpers(b);
+    var spread = b.currentSpread || 0;
+    var spreadPct = (spread * 100).toFixed(4);
+    var spreadClr = spread >= 0 ? 'text-green' : 'text-red';
+    var grossFunding = b.capturedFunding || 0;
+    var netPnl       = b.sessionPnl || 0;
+    var feePaid      = grossFunding - netPnl;
+    var toggleBtn = IS_ADMIN ? '<button class="bc-btn cv-mode-toggle" data-id="' + b.id + '" data-current="' + cv.mode + '" style="font-size:var(--t-label);padding:2px var(--sp-2)">'
+      + (cv.isLive ? 'Switch to PAPER' : 'Switch to LIVE')
+      + '</button>' : '';
 
-    return `
-      <div class="bc-row" style="align-items:center">
-        <span class="bc-lbl">Mode</span>
-        <span class="bc-val" style="display:flex;align-items:center;gap:6px">${modeBadge}${toggleBtn}</span>
-      </div>
-      <div class="bc-row"><span class="bc-lbl">Legs</span><span class="bc-val" style="display:flex;gap:3px;flex-wrap:wrap">${legsHtml}</span></div>
-      <div class="bc-row">
-        <span class="bc-lbl">Spread<span style="font-size:9px;color:var(--muted);margin-left:3px">/hr</span></span>
-        <span class="bc-val ${spreadClr}">${spread >= 0 ? '+' : ''}${spreadPct}%</span>
-      </div>
-      <div class="bc-row">
-        <span class="bc-lbl">Spread (ann.)</span>
-        <span class="bc-val ${spreadClr}">${spread >= 0 ? '+' : ''}${(spread * 8760 * 100).toFixed(1)}%</span>
-      </div>
-      <div class="bc-divider"></div>
-      <div class="bc-row"><span class="bc-lbl">Net P&amp;L</span><span class="bc-val ${pnlCls(netPnl)}">${fmtPnl(netPnl)}</span></div>
-      <div class="bc-row"><span class="bc-lbl">Gross funding</span><span class="bc-val ${pnlCls(grossFunding)}">${fmtPnl(grossFunding)}</span></div>
-      <div class="bc-row"><span class="bc-lbl">Fees paid</span><span class="bc-val text-muted">${fmtPnl(-feePaid)}</span></div>
-      <div class="bc-row"><span class="bc-lbl">Periods</span><span class="bc-val">${b.tradeCount}</span></div>
-      <div class="bc-row"><span class="bc-lbl">Leg flips</span><span class="bc-val">${b.fundingFlips ?? 0}</span></div>
-      <div class="bc-divider"></div>
-      <div class="bc-row">
-        <span class="bc-lbl">Avg flip freq</span>
-        <span class="bc-val">${b.avgFlipFrequencyHours != null ? b.avgFlipFrequencyHours.toFixed(1) + 'h' : '—'}</span>
-      </div>
-      <div class="bc-row">
-        <span class="bc-lbl">Avg hold / dir</span>
-        <span class="bc-val">${b.avgHeldDurationHours != null ? b.avgHeldDurationHours.toFixed(1) + 'h' : '—'}</span>
-      </div>
-      <div class="bc-row">
-        <span class="bc-lbl">7d capture</span>
-        <span class="bc-val ${b.rolling7dCapturePct != null ? pnlCls(b.rolling7dCapturePct) : ''}">
-          ${b.rolling7dCapturePct != null ? (b.rolling7dCapturePct >= 0 ? '+' : '') + b.rolling7dCapturePct.toFixed(3) + '%' : '—'}
-        </span>
-      </div>
-      ${b.crossVenuePausedReason ? `
-      <div class="bc-row" style="margin-top:0.3rem">
-        <span style="font-size:11px;color:var(--amber, #d29922);line-height:1.4;font-weight:500">
-          ⚠ ${esc(b.crossVenuePausedReason)}
-        </span>
-      </div>` : ''}
-      <div class="bc-row" style="margin-top:0.25rem">
-        <span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">
-          ${isLive
-            ? 'LIVE — real orders on HL &amp; dYdX testnet. Flip: +30%, max 1/hr.'
-            : 'PAPER — no real orders. Min spread: 0.005%/hr. Flip: +30%, max 1/hr.'}
-        </span>
-      </div>
-      <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>`;
+    return ''
+      + '<div class="bc-row" style="align-items:center">'
+      +   '<span class="bc-lbl">Mode</span>'
+      +   '<span class="bc-val" style="display:flex;align-items:center;gap:6px">' + cv.modeBadge + toggleBtn + '</span>'
+      + '</div>'
+      + '<div class="bc-row"><span class="bc-lbl">Legs</span><span class="bc-val" style="display:flex;gap:3px;flex-wrap:wrap">' + cv.legsHtml + '</span></div>'
+      + '<div class="bc-row">'
+      +   '<span class="bc-lbl">Spread<span style="font-size:9px;color:var(--muted);margin-left:3px">/hr</span></span>'
+      +   '<span class="bc-val ' + spreadClr + '">' + (spread >= 0 ? '+' : '') + spreadPct + '%</span>'
+      + '</div>'
+      + '<div class="bc-row">'
+      +   '<span class="bc-lbl">Spread (ann.)</span>'
+      +   '<span class="bc-val ' + spreadClr + '">' + (spread >= 0 ? '+' : '') + (spread * 8760 * 100).toFixed(1) + '%</span>'
+      + '</div>'
+      + '<div class="bc-divider"></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Net P&amp;L</span><span class="bc-val ' + pnlCls(netPnl) + '">' + fmtPnl(netPnl) + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Gross funding</span><span class="bc-val ' + pnlCls(grossFunding) + '">' + fmtPnl(grossFunding) + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Fees paid</span><span class="bc-val text-muted">' + fmtPnl(-feePaid) + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Periods</span><span class="bc-val">' + b.tradeCount + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Leg flips</span><span class="bc-val">' + (b.fundingFlips || 0) + '</span></div>'
+      + '<div class="bc-divider"></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Avg flip freq</span><span class="bc-val">' + (b.avgFlipFrequencyHours != null ? b.avgFlipFrequencyHours.toFixed(1) + 'h' : '—') + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Avg hold / dir</span><span class="bc-val">' + (b.avgHeldDurationHours != null ? b.avgHeldDurationHours.toFixed(1) + 'h' : '—') + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">7d capture</span><span class="bc-val ' + (b.rolling7dCapturePct != null ? pnlCls(b.rolling7dCapturePct) : '') + '">' + (b.rolling7dCapturePct != null ? (b.rolling7dCapturePct >= 0 ? '+' : '') + b.rolling7dCapturePct.toFixed(3) + '%' : '—') + '</span></div>'
+      + (b.crossVenuePausedReason ? '<div class="bc-row" style="margin-top:var(--sp-1)"><span style="font-size:var(--t-label);color:var(--amber, #d29922);line-height:1.4;font-weight:500">&#9888; ' + esc(b.crossVenuePausedReason) + '</span></div>' : '')
+      + '<div class="bc-row" style="margin-top:var(--sp-1)"><span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">'
+      + (cv.isLive ? 'LIVE — real orders on HL &amp; dYdX testnet. Flip: +30%, max 1/hr.' : 'PAPER — no real orders. Min spread: 0.005%/hr. Flip: +30%, max 1/hr.')
+      + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">' + timeAgo(b.startedAt) + '</span></div>';
   }
 
   // ── Render cards ──────────────────────────────────────────────────────────
@@ -586,6 +603,13 @@
       ? `<div class="bc-reconcile-warn">⚠ <span><strong>State reconciled</strong> — ${esc(b.lastReconcileEvent)}</span></div>`
       : '';
 
+    var compactHtml = isCrossVenue
+      ? renderCrossVenueCompact(b)
+      : renderStandardCompact(b, posBadge);
+    var detailHtml = isCrossVenue
+      ? renderCrossVenueDetail(b)
+      : renderStandardDetail(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml);
+
     return `<div class="bot-card${b.status === 'paused' ? ' paused' : ''}" data-id="${b.id}">
       <div class="bc-header">
         <span class="bc-name">${b.displayName}</span>
@@ -594,10 +618,11 @@
         <span class="bc-status ${statusCls}">${statusLabel}</span>
       </div>
       ${errorBanner}${reconcileBanner}
-      <div class="bc-body">
-        ${isCrossVenue ? renderCrossVenueBody(b) : renderStandardBody(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml)}
+      ${compactHtml}
+      <div class="bc-detail">
+        <div class="bc-body">${detailHtml}</div>
+        <div class="bc-footer">${pauseBtn}${deleteBtn}</div>
       </div>
-      <div class="bc-footer">${pauseBtn}${deleteBtn}</div>
     </div>`;
   }
 
@@ -651,6 +676,14 @@
           if (!resp.ok) { alert('Error: ' + (data.error || resp.statusText)); }
         } catch (e) { console.error(e); }
         await load();
+      });
+    });
+
+    // Expand/collapse toggle
+    grid.querySelectorAll('.bc-expand').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var card = btn.closest('.bot-card');
+        if (card) card.classList.toggle('expanded');
       });
     });
   }
