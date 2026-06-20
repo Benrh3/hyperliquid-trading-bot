@@ -6,46 +6,48 @@
   .fund-page {
     max-width: 980px;
     margin: 0 auto;
-    padding: 1.5rem 1.5rem 4rem;
+    padding: var(--sp-6) var(--sp-6) var(--sp-6);
   }
 
   /* ── Notional calculator ── */
   .calc-panel {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 1rem 1.25rem 0.75rem;
-    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    padding: var(--sp-4) var(--sp-5) var(--sp-3);
+    margin-bottom: var(--sp-5);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 1.25rem;
+    gap: var(--sp-5);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
-  .calc-inputs { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; }
-  .calc-field  { display: flex; flex-direction: column; gap: 0.25rem; }
-  .calc-field label { font-size: 11px; color: var(--muted); }
+  .calc-inputs { display: flex; gap: var(--sp-3); flex-wrap: wrap; align-items: flex-end; }
+  .calc-field  { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .calc-field label { font-size: var(--t-label); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .calc-sel {
     appearance: none;
     background: var(--bg);
     border: 1px solid var(--border);
     color: var(--text);
-    font-size: 13px;
-    padding: 0.35rem 1.8rem 0.35rem 0.65rem;
+    font-size: var(--t-body);
+    font-family: inherit;
+    padding: var(--sp-1) var(--sp-5) var(--sp-1) var(--sp-3);
     border-radius: 4px;
     cursor: pointer;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%233D5A78'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 6px center;
     min-width: 88px;
   }
+  .calc-sel:focus { outline: none; border-color: var(--accent); }
   .calc-input-wrap { display: flex; }
   .calc-pfx {
-    background: var(--surface);
+    background: var(--surface2);
     border: 1px solid var(--border);
     border-right: none;
     border-radius: 4px 0 0 4px;
-    padding: 0.35rem 0.5rem;
-    font-size: 13px;
+    padding: var(--sp-1) var(--sp-2);
+    font-size: var(--t-body);
     color: var(--muted);
     line-height: 1.4;
   }
@@ -55,45 +57,52 @@
     border-left: none;
     border-radius: 0 4px 4px 0;
     color: var(--text);
-    font-size: 13px;
-    padding: 0.35rem 0.6rem;
+    font-size: var(--t-body);
+    font-family: inherit;
+    padding: var(--sp-1) var(--sp-2);
     width: 100px;
   }
-  .calc-num:focus { outline: none; border-color: var(--blue); }
+  .calc-num:focus { outline: none; border-color: var(--accent); }
   .calc-divider {
     width: 1px; background: var(--border);
     align-self: stretch; flex-shrink: 0;
   }
-  .calc-results { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
-  .calc-stat    { display: flex; flex-direction: column; gap: 0.2rem; }
-  .calc-stat-lbl { font-size: 11px; color: var(--muted); }
-  .calc-val { font-size: 15px; font-weight: 600; font-family: monospace; }
+  .calc-results { display: flex; gap: var(--sp-5); flex-wrap: wrap; align-items: center; }
+  .calc-stat    { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .calc-stat-lbl { font-size: var(--t-label); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .calc-val { font-size: var(--t-value-sm); font-weight: 600; font-family: 'SFMono-Regular', Consolas, monospace; }
   .calc-footer {
-    width: 100%; font-size: 11px; color: var(--muted);
-    padding-top: 0.25rem; border-top: 1px solid var(--border);
-    margin-top: 0.25rem;
+    width: 100%; font-size: var(--t-label); color: var(--muted);
+    padding-top: var(--sp-1); border-top: 1px solid var(--border);
+    margin-top: var(--sp-1);
   }
 
   /* ── Table controls ── */
   .tbl-hdr {
     display: flex; align-items: baseline;
     justify-content: space-between;
-    margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;
+    margin-bottom: var(--sp-3); flex-wrap: wrap; gap: var(--sp-2);
   }
 
   /* ── Funding table ── */
-  .fund-wrap { overflow-x: auto; }
+  .fund-wrap {
+    overflow-x: auto;
+    background: var(--surface);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
   .fund-tbl {
     min-width: 820px; border-collapse: collapse; width: 100%;
   }
   .fund-tbl th {
-    font-size: 11px; font-weight: 500; color: var(--muted);
-    text-align: left; padding: 0.6rem 0.75rem;
+    font-size: var(--t-label); font-weight: 600; color: var(--muted);
+    text-align: left; padding: var(--sp-3) var(--sp-3);
     border-bottom: 1px solid var(--border);
     background: var(--surface); white-space: nowrap;
+    text-transform: uppercase; letter-spacing: .04em;
   }
   .fund-tbl td {
-    padding: 0.55rem 0.75rem; font-size: 13px;
+    padding: var(--sp-2) var(--sp-3); font-size: var(--t-body);
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
   }
@@ -102,7 +111,7 @@
   /* Sort headers */
   th.sort-th { cursor: pointer; user-select: none; }
   th.sort-th:hover { color: var(--text); }
-  th.sort-active { color: var(--blue); }
+  th.sort-active { color: var(--accent); }
   .th-inner { display: inline-flex; align-items: center; gap: 3px; }
   .sort-ind { font-size: 10px; min-width: 0.6em; }
   th.sort-desc .sort-ind::after { content: '↓'; }
@@ -123,30 +132,30 @@
   #tip-box {
     position: fixed; pointer-events: none; display: none;
     background: var(--surface); border: 1px solid var(--border);
-    color: var(--text); font-size: 11px; line-height: 1.5;
-    padding: 0.4rem 0.65rem; border-radius: 5px;
+    color: var(--text); font-size: var(--t-label); line-height: 1.5;
+    padding: var(--sp-2) var(--sp-3); border-radius: 5px;
     max-width: 230px; white-space: normal; z-index: 9999;
     box-shadow: 0 3px 12px rgba(0,0,0,0.3);
   }
 
   /* Rows */
   .fund-row { cursor: pointer; }
-  .fund-row:hover { background: rgba(139,148,158,0.08); }
-  .fund-row.row-sel { background: rgba(88,166,255,0.07); }
+  .fund-row:hover { background: rgba(129,140,248,0.05); }
+  .fund-row.row-sel { background: var(--accent-dim); }
 
   /* Sticky coin column */
   .coin-td {
     position: sticky; left: 0; z-index: 1;
-    background: var(--bg); font-weight: 500;
+    background: var(--bg); font-weight: 600;
   }
   .fund-row:hover  .coin-td { background: color-mix(in srgb, var(--bg) 92%, var(--muted) 8%); }
-  .fund-row.row-sel .coin-td { background: color-mix(in srgb, var(--bg) 88%, var(--blue) 12%); }
+  .fund-row.row-sel .coin-td { background: color-mix(in srgb, var(--bg) 88%, var(--accent) 12%); }
   thead .coin-td { background: var(--surface); z-index: 2; }
 
   /* Attractiveness badges */
   .attr-pill {
-    display: inline-block; padding: 0.15rem 0.55rem;
-    border-radius: 99px; font-size: 11px; font-weight: 500; white-space: nowrap;
+    display: inline-block; padding: 2px var(--sp-2);
+    border-radius: 99px; font-size: var(--t-label); font-weight: 600; white-space: nowrap;
   }
   .attr-green { background: rgba(63,185,80,0.15);  color: var(--green); }
   .attr-amber { background: rgba(210,153,34,0.15); color: var(--amber); }
@@ -157,27 +166,27 @@
 
   /* Radio */
   .coin-radio {
-    cursor: pointer; accent-color: var(--blue);
+    cursor: pointer; accent-color: var(--accent);
     width: 14px; height: 14px; vertical-align: middle;
   }
 
   /* ── Cross-exchange comparison panel ── */
   .cross-panel {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.875rem 1.25rem 0.75rem;
-    margin-bottom: 1.25rem;
+    border-radius: 8px;
+    padding: var(--sp-4) var(--sp-5) var(--sp-3);
+    margin-bottom: var(--sp-5);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
   .cross-hdr {
-    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    font-size: var(--t-label); font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.07em; color: var(--muted);
-    margin-bottom: 0.85rem;
-    display: flex; align-items: center; gap: 0.5rem;
+    margin-bottom: var(--sp-4);
+    display: flex; align-items: center; gap: var(--sp-2);
   }
   .cross-tag {
     font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.04em; padding: 0.1rem 0.45rem;
+    letter-spacing: 0.04em; padding: 2px var(--sp-2);
     border-radius: 3px; color: var(--muted);
     border: 1px solid var(--border);
   }
@@ -185,27 +194,28 @@
     display: flex; align-items: stretch; gap: 0; flex-wrap: wrap;
   }
   .cross-metric {
-    display: flex; flex-direction: column; gap: 0.2rem;
-    padding: 0 1.25rem 0 0;
-    margin-right: 1.25rem;
+    display: flex; flex-direction: column; gap: var(--sp-1);
+    padding: 0 var(--sp-5) 0 0;
+    margin-right: var(--sp-5);
     border-right: 1px solid var(--border);
   }
   .cross-metric:last-child { border-right: none; margin-right: 0; padding-right: 0; }
   .cross-metric.spread { border-left: none; }
-  .cross-lbl { font-size: 11px; color: var(--muted); white-space: nowrap; }
-  .cross-val { font-size: 1.05rem; font-weight: 600; font-family: monospace; }
-  .cross-sub { font-size: 10px; color: var(--muted); }
+  .cross-lbl { font-size: var(--t-label); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
+  .cross-val { font-size: var(--t-value-sm); font-weight: 600; font-family: 'SFMono-Regular', Consolas, monospace; }
+  .cross-sub { font-size: var(--t-label); color: var(--muted); }
   .cross-footer {
-    font-size: 11px; color: var(--muted);
-    margin-top: 0.65rem; padding-top: 0.5rem;
+    font-size: var(--t-label); color: var(--muted);
+    margin-top: var(--sp-3); padding-top: var(--sp-2);
     border-top: 1px solid var(--border);
-    display: flex; gap: 1rem; flex-wrap: wrap; justify-content: space-between;
+    display: flex; gap: var(--sp-4); flex-wrap: wrap; justify-content: space-between;
   }
 
   @media (max-width: 600px) {
+    .fund-page { padding: var(--sp-4) var(--sp-3); }
     .calc-divider { display: none; }
-    .calc-results { gap: 1rem; }
-    .cross-metric { border-right: none; padding-right: 0; margin-right: 0; margin-bottom: 0.6rem; }
+    .calc-results { gap: var(--sp-4); }
+    .cross-metric { border-right: none; padding-right: 0; margin-right: 0; margin-bottom: var(--sp-3); }
   }
 </style>
 
@@ -242,7 +252,7 @@
     <div class="cross-footer">
       <span id="cx-hl-age">HL: —</span>
       <span id="cx-dydx-age">dYdX: —</span>
-      <span style="margin-left:auto;color:var(--muted)">dYdX testnet indexer · read-only · updates every 60s</span>
+      <span style="margin-left:auto">dYdX testnet indexer · read-only · updates every 60s</span>
     </div>
   </div>
 
@@ -284,7 +294,7 @@
   <!-- ── Table header row ── -->
   <div class="tbl-hdr">
     <span class="section-title">Funding Rate Dashboard</span>
-    <span id="refresh-lbl" class="text-muted" style="font-size:12px">Loading…</span>
+    <span id="refresh-lbl" style="font-size:var(--t-label);color:var(--muted)">Loading…</span>
   </div>
 
   <!-- ── Table ── -->
