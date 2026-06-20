@@ -14,7 +14,7 @@
     font-variant-numeric: tabular-nums;
     transition: border-color .1s;
   }
-  .coin-search:focus { outline: none; border-color: var(--blue); }
+  .coin-search:focus { outline: none; border-color: var(--accent); }
   .coin-search::placeholder { text-transform: none; color: var(--muted); }
 
   /* ── Chart / Depth toggle row ── */
@@ -40,43 +40,8 @@
   /* OHLC legend — tabular-nums so values don't jump */
   #ohlc-legend { font-variant-numeric: tabular-nums; }
 
-  /* ── Chart panel ── */
-  .chart-panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-    margin-bottom: 1.5rem;
-  }
-  .chart-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.875rem;
-    border-bottom: 1px solid var(--border);
-  }
-  .chart-toolbar-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text);
-    margin-right: 0.25rem;
-  }
-  .tf-group { display: flex; gap: 3px; }
-  .tf {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    font-size: 11px;
-    font-family: inherit;
-    padding: 2px 7px;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: color .1s, border-color .1s;
-  }
-  .tf:hover:not(.active):not(:disabled) { color: var(--text); border-color: #8b949e; }
-  .tf.active { background: rgba(88,166,255,0.12); border-color: var(--blue); color: var(--blue); }
+  /* ── Chart overrides (coin label, chart-row labels) ── */
   .tf:disabled { opacity: 0.4; cursor: default; }
-  .chart-updated { margin-left: auto; font-size: 11px; color: var(--muted); }
 
   /* ── Chart rows ── */
   .chart-row { position: relative; }
@@ -171,49 +136,50 @@
   .ob-panel {
     display: grid;
     grid-template-columns: 1fr 280px;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-5);
   }
   @media (max-width: 768px) {
     .ob-panel { grid-template-columns: 1fr; }
   }
   .depth-card, .ob-card {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 8px;
     overflow: hidden;
   }
   .ob-header {
-    padding: 0.4rem 0.875rem;
+    padding: var(--sp-3) var(--sp-4);
     border-bottom: 1px solid var(--border);
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text);
+    font-size: var(--t-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--sp-2);
   }
   #depth-canvas { display: block; width: 100%; height: 180px; }
   #ob-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: var(--t-label);
     font-family: 'SFMono-Regular', Consolas, monospace;
   }
   #ob-table th {
-    padding: 3px 8px;
-    font-size: 10px;
+    padding: var(--sp-1) var(--sp-2);
+    font-size: var(--t-label);
     color: var(--muted);
-    font-weight: 500;
+    font-weight: 600;
     text-align: right;
     border-bottom: 1px solid var(--border);
   }
   #ob-table th:first-child { text-align: left; }
-  #ob-table td { padding: 2px 8px; text-align: right; }
+  #ob-table td { padding: var(--sp-1) var(--sp-2); text-align: right; }
   #ob-table td:first-child { text-align: left; }
-  .ob-ask { color: #f85149; background: rgba(248,81,73,0.05); }
-  .ob-bid { color: #3fb950; background: rgba(63,185,80,0.05); }
-  .ob-spread { color: var(--muted); text-align: center !important; font-size: 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .ob-ask { color: var(--red); background: rgba(248,81,73,0.05); }
+  .ob-bid { color: var(--green); background: rgba(63,185,80,0.05); }
+  .ob-spread { color: var(--muted); text-align: center !important; font-size: var(--t-label); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 
   /* ── Funding matrix heatmap ── */
   .fm-panel {
@@ -701,8 +667,8 @@
   </div>
 
   <!-- Chart + Depth combined panel -->
-  <div class="chart-panel">
-    <div class="chart-toolbar">
+  <div class="chart-card" style="margin:0 0 var(--sp-5)">
+    <div class="chart-card-toolbar">
       <!-- Chart / Depth tab toggle -->
       <div class="tf-group" style="margin-right:0.5rem">
         <button class="tf active" id="panel-tab-chart" aria-pressed="true">Chart</button>
@@ -774,34 +740,34 @@
   </div>
 
   <!-- ── 1. Equity curve ── -->
-  <div class="chart-panel" id="eq-panel">
-    <div class="chart-toolbar">
-      <span class="chart-toolbar-title">Equity Curve</span>
+  <div class="chart-card" id="eq-panel" style="margin:0 0 var(--sp-5)">
+    <div class="chart-card-toolbar">
+      <span class="chart-card-title">Equity Curve</span>
       <div class="tf-group" id="eq-range-group">
         <button class="tf active" data-eq="24h">24h</button>
         <button class="tf"        data-eq="7d">7d</button>
         <button class="tf"        data-eq="30d">30d</button>
       </div>
-      <span class="chart-updated" id="eq-updated"></span>
+      <span class="chart-card-meta" id="eq-updated"></span>
     </div>
     <div id="eq-chart" style="height:200px;position:relative"></div>
   </div>
 
   <!-- ── 2. Funding-rate history ── -->
-  <div class="chart-panel" id="fh-panel">
-    <div class="chart-toolbar">
-      <span class="chart-toolbar-title">Funding Rate History</span>
+  <div class="chart-card" id="fh-panel" style="margin:0 0 var(--sp-5)">
+    <div class="chart-card-toolbar">
+      <span class="chart-card-title">Funding Rate History</span>
       <select class="an-coin-sel" id="fh-coin-sel"><option value="BTC">BTC</option></select>
       <div class="tf-group" id="fh-range-group">
         <button class="tf active" data-fh="24h">24h</button>
         <button class="tf"        data-fh="7d">7d</button>
       </div>
-      <span style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:0.5rem;margin-left:0.5rem">
+      <span style="font-size:var(--t-label);color:var(--muted);display:flex;align-items:center;gap:var(--sp-2);margin-left:var(--sp-2)">
         <span style="display:inline-block;width:10px;height:2px;background:var(--green);border-radius:1px"></span>HL
-        <span style="display:inline-block;width:10px;height:2px;background:var(--blue);border-radius:1px"></span>dYdX
-        <span style="display:inline-block;width:10px;height:6px;background:rgba(88,166,255,0.18);border-radius:1px"></span>Spread
+        <span style="display:inline-block;width:10px;height:2px;background:var(--accent);border-radius:1px"></span>dYdX
+        <span style="display:inline-block;width:10px;height:6px;background:var(--accent-dim);border-radius:1px"></span>Spread
       </span>
-      <span class="chart-updated" id="fh-updated"></span>
+      <span class="chart-card-meta" id="fh-updated"></span>
     </div>
     <div id="fh-chart" style="height:180px;position:relative"></div>
   </div>
@@ -1778,21 +1744,28 @@
 
   /** Base chart options matching the existing candle chart style. */
   function baseChartOpts(height) {
+    var accent = getCssVar('--accent') || '#818CF8';
+    var border = getCssVar('--border') || 'rgba(129,140,248,0.14)';
     return {
-      width:  0,  // auto via applyOptions after attach
+      width:  0,
       height: height,
       layout: {
-        background: { type: 'solid', color: getCssVar('--surface') || '#161b22' },
-        textColor:  getCssVar('--muted')  || '#8b949e',
+        background: { type: 'solid', color: getCssVar('--surface') || '#0D1520' },
+        textColor:  getCssVar('--muted') || '#3D5A78',
         fontSize:   11,
+        attributionLogo: false,
       },
       grid: {
-        vertLines:  { color: getCssVar('--border') || '#30363d', style: 1 },
-        horzLines:  { color: getCssVar('--border') || '#30363d', style: 1 },
+        vertLines:  { color: border, style: 1 },
+        horzLines:  { color: border, style: 1 },
       },
-      crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: getCssVar('--border') || '#30363d' },
-      timeScale:       { borderColor: getCssVar('--border') || '#30363d', timeVisible: true },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: accent, width: 1, style: 1, labelBackgroundColor: accent },
+        horzLine: { color: accent, width: 1, style: 1, labelBackgroundColor: accent },
+      },
+      rightPriceScale: { borderColor: border },
+      timeScale:       { borderColor: border, timeVisible: true },
       handleScroll: true,
       handleScale:  true,
     };
@@ -1864,9 +1837,9 @@
       chart  = LC.createChart(container, opts);
       chart.applyOptions({ width: container.clientWidth });
       series = chart.addAreaSeries({
-        lineColor:   getCssVar('--blue')  || '#58a6ff',
-        topColor:    'rgba(88,166,255,0.2)',
-        bottomColor: 'rgba(88,166,255,0)',
+        lineColor:   getCssVar('--accent') || '#818CF8',
+        topColor:    'rgba(129,140,248,0.14)',
+        bottomColor: 'rgba(129,140,248,0)',
         lineWidth:   2,
         priceFormat: { type: 'custom', formatter: function (v) { return FMT.usd(v); } },
       });
