@@ -19,3 +19,6 @@ config/cex-wallets.json
 
 # Runtime logs
 logs/
+
+# Private backlog — never committed (public repo)
+BACKLOG.md
