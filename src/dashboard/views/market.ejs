@@ -366,132 +366,12 @@
     flex: 1;
     align-content: start;
   }
-  .signal-card {
-    background: var(--surface);
-    border: none;
-    border-radius: 6px;
-    padding: var(--sp-5);
-    min-height: 120px;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    transition: box-shadow .15s;
-  }
-  .signal-card:hover {
-    box-shadow: 0 4px 16px rgba(56,189,248,0.1);
-  }
-  .sc-header {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-1);
-    margin-bottom: var(--sp-2);
-  }
-  .sc-label {
-    font-size: var(--t-label);
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    color: var(--muted);
-    font-weight: 600;
-  }
-  .sc-info-btn {
-    background: none;
-    border: none;
-    color: var(--muted);
-    font-size: var(--t-label);
-    cursor: pointer;
-    padding: 0;
-    line-height: 1;
-    transition: color .1s;
-    opacity: .65;
-  }
-  .sc-info-btn:hover { color: var(--accent); opacity: 1; }
-  .sc-value {
-    font-size: var(--t-value);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -.02em;
-    line-height: 1;
-    margin-bottom: var(--sp-2);
-  }
-  .sc-value.val-pos { color: var(--up);   }
-  .sc-value.val-neg { color: var(--down); }
-  .sc-subline {
-    font-size: var(--t-body);
-    color: var(--muted);
-    margin-bottom: var(--sp-2);
-  }
-  /* Directional read sub-label (▲ bullish / ▼ bearish) */
-  .sc-dir {
-    font-size: var(--t-label);
-    font-weight: 600;
-    letter-spacing: .02em;
-    line-height: 1;
-    margin-bottom: var(--sp-2);
-  }
-  .sc-dir-pos     { color: var(--up);   }
-  .sc-dir-neg     { color: var(--down); }
-  .sc-dir-neutral { color: var(--muted); }
-  .sc-read {
-    font-size: var(--t-label);
-    color: var(--muted);
-    font-style: italic;
-    margin-bottom: var(--sp-2);
-    line-height: 1.5;
-  }
-  .sc-badges { display: flex; gap: var(--sp-1); flex-wrap: wrap; margin-top: auto; }
-  .sc-badge {
-    display: inline-block;
-    padding: .08rem .35rem;
-    border-radius: 20px;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: .03em;
-  }
-  /* kind badges — color coded per spec */
-  .sc-kind-level      { background: rgba(56,189,248,0.14);  color: #38BDF8; }
-  .sc-kind-window     { background: rgba(245,158,11,0.14);  color: #F59E0B; }
-  .sc-kind-delta-prev { background: rgba(139,92,246,0.14);  color: #A78BFA; }
-  .sc-kind-ratio      { background: rgba(236,72,153,0.14);  color: #F472B6; }
-  .sc-kind-aggregate  { background: rgba(34,211,238,0.14);  color: #22D3EE; }
-  .sc-kind-count      { background: rgba(56,189,248,0.07);  color: var(--muted); }
-  /* source badges — muted uniform pill */
-  .sc-source {
-    background: rgba(56,189,248,0.06);
-    color: var(--muted);
-  }
-
-  /* ── Chart card ──────────────────────────────────────────── */
-  .chart-card {
-    background: var(--surface);
+  /* ── Summary chart card (overrides global .chart-card for the hero chart) ── */
+  .mkt-chart-col .chart-card {
     border: 1px solid var(--border);
     border-radius: 6px;
-    overflow: hidden;
     box-shadow: 0 1px 6px rgba(0,0,0,0.25);
   }
-  .chart-card-toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-4);
-    border-bottom: 1px solid var(--border);
-    font-size: var(--t-label);
-  }
-  .chart-card-title { font-weight: 600; color: var(--text); }
-  .chart-card-meta  { color: var(--muted); margin-left: auto; font-size: var(--t-label); }
-  .tf-group { display: flex; gap: 2px; }
-  .tf {
-    background: none;
-    border: none;
-    color: var(--muted);
-    font-size: 10px;
-    font-family: inherit;
-    padding: 2px 8px;
-    border-radius: 20px;
-    cursor: pointer;
-    transition: color .1s, background .1s;
-  }
-  .tf:hover  { color: var(--text); background: rgba(56,189,248,0.07); }
-  .tf.active { background: rgba(56,189,248,0.15); color: var(--accent); }
 
   /* ── Section label ───────────────────────────────────────── */
   .mkt-section-label {
@@ -576,17 +456,6 @@
   }
 
   /* ── Leverage tab ───────────────────────────────────────────────────────── */
-  .lev-caveat {
-    background: rgba(245,158,11,0.07);
-    border-left: 3px solid rgba(245,158,11,0.5);
-    border-radius: 0 4px 4px 0;
-    color: var(--muted);
-    font-size: var(--t-label);
-    line-height: 1.5;
-    margin: var(--sp-4) var(--sp-4) 0;
-    padding: var(--sp-2) var(--sp-3);
-  }
-  .lev-caveat strong { color: #F59E0B; font-weight: 600; }
   .lev-section-head {
     padding: var(--sp-5) var(--sp-4) var(--sp-2);
   }
@@ -609,45 +478,6 @@
     gap: var(--sp-3);
     padding: 0 var(--sp-4) var(--sp-4);
   }
-  .lev-chart-card {
-    background: var(--surface);
-    border-radius: 8px;
-    margin: 0 var(--sp-4) var(--sp-4);
-    overflow: hidden;
-  }
-  .chart-card-toolbar {
-    align-items: center;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    gap: var(--sp-3);
-    padding: var(--sp-3) var(--sp-4);
-  }
-  .chart-card-title {
-    font-size: var(--t-body);
-    font-weight: 600;
-    color: #7AA5C8;
-    flex: 1;
-  }
-  .chart-card-meta {
-    font-size: var(--t-label);
-    color: var(--muted);
-    opacity: .6;
-  }
-  .tf-group { display: flex; gap: 2px; }
-  .tf {
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: var(--t-label);
-    font-weight: 600;
-    letter-spacing: .04em;
-    padding: 2px 6px;
-    transition: color .15s, background .15s;
-  }
-  .tf:hover  { color: var(--accent); }
-  .tf.active { background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.25); color: var(--accent); }
   .lev-chart-caption {
     border-top: 1px solid var(--border);
     color: var(--muted);
@@ -906,7 +736,7 @@
 
   <div id="tab-timemachine" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; A replay is a single historical instance</strong> — an anecdote, not proof. The Signals tab is the statistical view. Don't generalize from one replay, and remember past reads carried the same low confidence.
     </div>
 
@@ -935,7 +765,7 @@
     </div>
 
     <!-- Mini price chart -->
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Price around selected moment</span>
         <span class="chart-card-meta" id="tm-chart-meta"></span>
@@ -953,10 +783,10 @@
 
   <div id="tab-orderflow" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; CVD</strong> measures <em>taker</em> (aggressor) flow only — the resting maker side is invisible. Read it as pressure, not net positioning.
     </div>
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; TWAP &amp; AF flows</strong> are <em>programmatic</em> (protocol/scheduled), not crowd conviction — and are warming until the native indexer lands.
     </div>
 
@@ -973,7 +803,7 @@
       <div class="lev-section-title">Charts</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">CVD vs Price</span>
         <div class="tf-group" id="of-chart1-tf">
@@ -989,7 +819,7 @@
       <div class="lev-chart-caption">Net taker flow (amber, left axis) vs HYPE price (blue, right axis) — CVD rising with price = confirmation; diverging = exhaustion signal.</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Perp vs Spot CVD 24h</span>
         <div class="tf-group" id="of-chart2-tf">
@@ -1005,7 +835,7 @@
       <div class="lev-chart-caption">Derivatives (perp) vs spot net taker flow — divergence flags who is driving: leverage or real cash.</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Programmatic Flow — Net TWAP &amp; AF</span>
         <div class="tf-group" id="of-chart3-tf">
@@ -1025,10 +855,10 @@
 
   <div id="tab-leverage" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; L/S ratios</strong> count <em>heads, not capital</em> — laggy and gameable; treat as folklore until Signals scorecard proves IC. Retail ratios = contrarian (fade); top-trader position = smart money (follow).
     </div>
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; CEX OI</strong> is a separate pool (~&#8531; of HL perp OI) — never add it to HL OI.
     </div>
 
@@ -1045,7 +875,7 @@
       <div class="lev-section-title">Charts</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Funding Rate &amp; Premium</span>
         <div class="tf-group" id="lev-chart1-tf">
@@ -1061,7 +891,7 @@
       <div class="lev-chart-caption">Bars = funding (red when longs pay = bearish lean). Line = premium. Persistent positive = crowded longs.</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">HL OI vs CEX OI — Separate Pools</span>
         <div class="tf-group" id="lev-chart2-tf">
@@ -1077,7 +907,7 @@
       <div class="lev-chart-caption">HL OI (blue) and CEX OI (amber) — distinct pools, never summed.</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Crowd L/S Ratios</span>
         <div class="tf-group" id="lev-chart3-tf">
@@ -1097,10 +927,10 @@
 
   <div id="tab-supply" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; Staked supply can exceed circulating</strong> — staking includes locked/team allocations, so staked-vs-circulating isn't a simple float ratio.
     </div>
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; Unstake pipeline</strong> (queue + maturing) is warming — it needs the native indexer (same stage-3b gap as TWAP).
     </div>
 
@@ -1117,7 +947,7 @@
       <div class="lev-section-title">Charts</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Staked vs Circulating</span>
         <div class="tf-group" id="su-chart1-tf">
@@ -1133,7 +963,7 @@
       <div class="lev-chart-caption">Locked (staked) vs circulating — more staked = less sell-side float.</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Net Staking Flow</span>
         <div class="tf-group" id="su-chart2-tf">
@@ -1149,7 +979,7 @@
       <div class="lev-chart-caption">Net staking — locking (+, bullish) vs unlocking (−, bearish).</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Unstake Pipeline</span>
         <div class="tf-group" id="su-chart3-tf">
@@ -1169,10 +999,10 @@
 
   <div id="tab-onchain" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; Holder concentration</strong> excludes flagged system/protocol wallets (bridge, assistance fund). If that list is incomplete, top-N share is <strong>overstated</strong> — the full exclusion set is still being populated.
     </div>
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; CEX flows</strong> are address-heuristic from a watched wallet set — coverage is partial; an unlabeled exchange wallet is invisible. The wallet set is still being populated (cards warming).
     </div>
 
@@ -1189,7 +1019,7 @@
       <div class="lev-section-title">Charts</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Holder Concentration</span>
         <div class="tf-group" id="oc-chart1-tf">
@@ -1205,7 +1035,7 @@
       <div class="lev-chart-caption">Whale ownership by tier — rising = fewer hands. Excludes system wallets (overstated if the list is incomplete).</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">CEX Net Flow</span>
         <div class="tf-group" id="oc-chart2-tf">
@@ -1221,7 +1051,7 @@
       <div class="lev-chart-caption">Net HYPE to (+, bearish) / from (−, bullish) exchanges — warming until the wallet set is populated.</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">CEX Balance</span>
         <div class="tf-group" id="oc-chart3-tf">
@@ -1241,10 +1071,10 @@
 
   <div id="tab-microstructure" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; Order-book depth &amp; imbalance</strong> are <em>gameable</em> — resting walls can be spoofed and pulled. Read imbalance as a hint, not conviction.
     </div>
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; Spread &amp; depth</strong> are point-in-time L2 snapshots (one read per poll), not averages — a momentary liquidity picture.
     </div>
 
@@ -1261,7 +1091,7 @@
       <div class="lev-section-title">Charts</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Spread (Perp + Spot)</span>
         <div class="tf-group" id="ms-chart1-tf">
@@ -1277,7 +1107,7 @@
       <div class="lev-chart-caption">Bid-ask gap in bps — tighter = more liquid; spikes = stress/illiquidity.</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Book Imbalance (Perp + Spot)</span>
         <div class="tf-group" id="ms-chart2-tf">
@@ -1293,7 +1123,7 @@
       <div class="lev-chart-caption">Above zero = bid-heavy (buy-side walls); gameable — read as a hint, not conviction.</div>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Book Depth — Bid vs Ask (Perp)</span>
         <div class="tf-group" id="ms-chart3-tf">
@@ -1313,13 +1143,13 @@
 
   <div id="tab-liquidations" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; CEX and HL liquidations are separate pools — never added.</strong> A combined "total" would be meaningless; they are shown in separate blocks for this reason.
     </div>
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; Magnitudes undercount</strong> — Binance &amp; OKX throttle liquidation reporting to ~1/sec; Bybit is more complete; native-HL is a reconstructed lower bound. Read direction and spikes, not absolute notional. Never sum CEX with HL.
     </div>
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; Forced selling reads bearish and forced buying bullish</strong> — but extreme flushes often mark capitulation/reversal. Read big spikes as possible turning points, not just continuation.
     </div>
 
@@ -1333,7 +1163,7 @@
       <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">CEX Forced Flow</span>
         <div class="tf-group" id="lq-chart2-tf">
@@ -1359,7 +1189,7 @@
       <p style="color:var(--muted);font-size:var(--t-body);padding:var(--sp-3)">Loading&#8230;</p>
     </div>
 
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">HL Forced Flow</span>
         <div class="tf-group" id="lq-chart1-tf">
@@ -1376,7 +1206,7 @@
     </div>
 
     <!-- ── Blow-up count comparison (counts OK to compare) ──────────────── -->
-    <div class="lev-chart-card">
+    <div class="chart-card">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Blow-up Events — HL vs CEX</span>
         <div class="tf-group" id="lq-chart3-tf">
@@ -1396,10 +1226,10 @@
 
   <div id="tab-signals" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; IC is warming</strong> — clean hourly pairs only started accumulating recently; treat magnitudes as provisional and nothing as proven until <code>n</code> is large and <code>|IC| &#8805; 0.10</code>.
     </div>
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; Weak or zero IC</strong> means the signal doesn't predict price here — that's a finding, not a bug. Only a <em>strong</em> IC pointing the <strong>opposite</strong> way from a signal's mapping is a red flag.
     </div>
 
@@ -1445,7 +1275,7 @@
 
   <div id="tab-data" class="tab-panel" style="display:none">
 
-    <div class="lev-caveat">
+    <div class="caveat">
       <strong>&#9888; HYPE only</strong> · execution is testnet but market data is read from mainnet · hourly snapshots. Per-metric caveats (what's gameable, what's a separate pool, what undercounts) live in the Glossary.
     </div>
 
@@ -1828,7 +1658,31 @@
     }
   }
 
-  function renderBias(d) {
+  // Format a signal value for the driver chip display
+  function fmtDriverVal(key, v) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    if (key === 'funding_rate' || key === 'perp_premium' || key === 'spot_perp_basis')
+      return (v >= 0 ? '+' : '') + (v * 100).toFixed(4) + '%';
+    if (key.indexOf('lsr_') === 0 || key === 'book_imbalance' || key === 'book_spot_imbalance')
+      return (v >= 0 ? '+' : '') + v.toFixed(3);
+    if (key === 'holder_top10_delta') return (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + 'pp';
+    if (key === 'lsr_agg_long_frac') return (v * 100).toFixed(1) + '%';
+    return fmtSigned(v);
+  }
+
+  // Derive the read from a dir string + value (bear/bull/neutral)
+  function deriveDirRead(dirStr, val) {
+    if (!dirStr || val === null || val === undefined || !isFinite(val)) return null;
+    var isBear = /Bear/i.test(dirStr);
+    var isBull = /Bull/i.test(dirStr);
+    if (val > 0) return isBear ? 'bear' : isBull ? 'bull' : null;
+    if (val < 0) return isBear ? 'bull' : isBull ? 'bear' : null;
+    return null;
+  }
+
+  var HZ_LABELS = { 4: '4h', 24: '1d', 72: '3d', 168: '7d' };
+
+  function renderBias(d, signals) {
     var lc = (d.label || '').toLowerCase();
 
     // Label
@@ -1855,43 +1709,71 @@
     var score = typeof d.score === 'number' ? d.score : 0;
     document.getElementById('bias-score-val').textContent = (score >= 0 ? '+' : '') + score.toFixed(3);
 
-    // Counts
+    // Summary sentence + counts
+    var hzLabel = HZ_LABELS[d.horizon_h] || d.horizon_h + 'h';
+    var caveat = isHigh ? '' : 'none are yet IC-proven — treat as a hypothesis, not a call';
+    var sentence = 'Over a ' + hzLabel + ' hold, signals are split — '
+      + up + ' bullish vs ' + dn + ' bearish'
+      + (caveat ? ' (' + caveat + ')' : '') + '.';
     document.getElementById('bias-counts').innerHTML =
-      '<span class="bc-up">▲ ' + up + ' bullish</span> &middot; <span class="bc-dn">▼ ' + dn + ' bearish</span>';
+      '<div style="font-size:var(--t-label);color:var(--muted);margin-bottom:var(--sp-1)">' + esc(sentence) + '</div>'
+      + '<span class="bc-up">▲ ' + up + ' bullish</span> &middot; <span class="bc-dn">▼ ' + dn + ' bearish</span>';
 
     // Warming note
     var noteEl = document.getElementById('bias-warming-note');
     noteEl.textContent = isHigh ? '' : 'Signals warming — IC not yet proven';
     noteEl.style.display = isHigh ? 'none' : '';
 
-    // Driver panel (right column of bias hero)
-    renderDriverPanel(d.categoryBiases || []);
+    // Driver panel (right column of bias hero) — specific signals, not categories
+    renderDriverPanel(signals || []);
     // Category cards
     renderCatCards(d.categoryBiases || []);
   }
 
-  function renderDriverPanel(biases) {
+  function renderDriverPanel(signals) {
     var panel = document.getElementById('bias-drivers-panel');
     if (!panel) return;
-    var bullCats = biases.filter(function (b) { return b.label === 'Bullish'; });
-    var bearCats = biases.filter(function (b) { return b.label === 'Bearish'; });
-    if (!bullCats.length && !bearCats.length) {
+
+    // Build bull/bear lists from scored signals with a dir and non-null value
+    var bullDrivers = [], bearDrivers = [];
+    for (var i = 0; i < signals.length; i++) {
+      var s = signals[i];
+      if (!s.dir || s.currentValue === null || s.currentValue === undefined || !isFinite(s.currentValue)) continue;
+      var read = deriveDirRead(s.dir, s.currentValue);
+      if (!read) continue;
+      var entry = { key: s.key, label: s.label, value: s.currentValue, absVal: Math.abs(s.currentValue) };
+      if (read === 'bull') bullDrivers.push(entry);
+      else bearDrivers.push(entry);
+    }
+
+    // Sort by distance from neutral (strongest first), cap at 6
+    bullDrivers.sort(function (a, b) { return b.absVal - a.absVal; });
+    bearDrivers.sort(function (a, b) { return b.absVal - a.absVal; });
+    bullDrivers = bullDrivers.slice(0, 6);
+    bearDrivers = bearDrivers.slice(0, 6);
+
+    if (!bullDrivers.length && !bearDrivers.length) {
       panel.innerHTML = '<span class="bias-drivers-empty">Drivers appear as signals prove out</span>';
       return;
     }
+
     var html = '';
-    if (bullCats.length) {
+    if (bullDrivers.length) {
       html += '<div class="bias-driver-group">'
-        + '<div class="bias-driver-group-label bull">▲ Bullish</div>'
+        + '<div class="bias-driver-group-label bull">▲ Bullish drivers</div>'
         + '<div class="bias-driver-chips">'
-        + bullCats.map(function (b) { return '<span class="driver-chip bull">' + esc(CAT_NAMES[b.category] || b.category) + '</span>'; }).join('')
+        + bullDrivers.map(function (d) {
+            return '<span class="driver-chip bull">' + esc(d.label) + ' ' + esc(fmtDriverVal(d.key, d.value)) + '</span>';
+          }).join('')
         + '</div></div>';
     }
-    if (bearCats.length) {
+    if (bearDrivers.length) {
       html += '<div class="bias-driver-group">'
-        + '<div class="bias-driver-group-label bear">▼ Bearish</div>'
+        + '<div class="bias-driver-group-label bear">▼ Bearish drivers</div>'
         + '<div class="bias-driver-chips">'
-        + bearCats.map(function (b) { return '<span class="driver-chip bear">' + esc(CAT_NAMES[b.category] || b.category) + '</span>'; }).join('')
+        + bearDrivers.map(function (d) {
+            return '<span class="driver-chip bear">' + esc(d.label) + ' ' + esc(fmtDriverVal(d.key, d.value)) + '</span>';
+          }).join('')
         + '</div></div>';
     }
     panel.innerHTML = html;

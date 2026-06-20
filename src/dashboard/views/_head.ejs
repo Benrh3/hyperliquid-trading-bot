@@ -309,6 +309,97 @@
       .grid { grid-template-columns: 1fr; }
       .card-funding { grid-column: span 1; }
     }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       Shared primitives — SignalCard, chart-card, badges, caveat
+       Themed per pillar via --accent, --surface, --border, etc.
+    ═══════════════════════════════════════════════════════════════════════ */
+
+    /* ── SignalCard ──────────────────────────────────────────────────────── */
+    .signal-card {
+      background: var(--surface);
+      border: none;
+      border-radius: 6px;
+      padding: var(--sp-5);
+      min-height: 120px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      transition: box-shadow .15s;
+    }
+    .signal-card:hover { box-shadow: 0 4px 16px var(--accent-dim); }
+    .sc-header { display: flex; align-items: center; gap: var(--sp-1); margin-bottom: var(--sp-2); }
+    .sc-label {
+      font-size: var(--t-label); text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted); font-weight: 600;
+    }
+    .sc-info-btn {
+      background: none; border: none; color: var(--muted);
+      font-size: var(--t-label); cursor: pointer; padding: 0;
+      line-height: 1; transition: color .1s; opacity: .65;
+    }
+    .sc-info-btn:hover { color: var(--accent); opacity: 1; }
+    .sc-value {
+      font-size: var(--t-value); font-weight: 600;
+      font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+      line-height: 1; margin-bottom: var(--sp-2);
+    }
+    .sc-value.val-pos { color: var(--up); }
+    .sc-value.val-neg { color: var(--down); }
+    .sc-subline { font-size: var(--t-body); color: var(--muted); margin-bottom: var(--sp-2); }
+    .sc-dir { font-size: var(--t-label); font-weight: 600; letter-spacing: .02em; line-height: 1; margin-bottom: var(--sp-2); }
+    .sc-dir-pos     { color: var(--up); }
+    .sc-dir-neg     { color: var(--down); }
+    .sc-dir-neutral { color: var(--muted); }
+    .sc-read { font-size: var(--t-label); color: var(--muted); font-style: italic; margin-bottom: var(--sp-2); line-height: 1.5; }
+    .sc-badges { display: flex; gap: var(--sp-1); flex-wrap: wrap; margin-top: auto; }
+    .sc-badge {
+      display: inline-block; padding: .08rem .35rem;
+      border-radius: 20px; font-size: 9px; font-weight: 600; letter-spacing: .03em;
+    }
+    .sc-kind-level      { background: var(--accent-dim);            color: var(--accent); }
+    .sc-kind-window     { background: rgba(245,158,11,0.14);        color: #F59E0B; }
+    .sc-kind-delta-prev { background: rgba(139,92,246,0.14);        color: #A78BFA; }
+    .sc-kind-ratio      { background: rgba(236,72,153,0.14);        color: #F472B6; }
+    .sc-kind-aggregate  { background: rgba(34,211,238,0.14);        color: #22D3EE; }
+    .sc-kind-count      { background: var(--accent-dim);            color: var(--muted); }
+    .sc-source          { background: rgba(129,140,248,0.06);       color: var(--muted); }
+
+    /* ── Chart card ─────────────────────────────────────────────────────── */
+    .chart-card {
+      background: var(--surface);
+      border-radius: 8px;
+      margin: 0 var(--sp-4) var(--sp-4);
+      overflow: hidden;
+    }
+    .chart-card-toolbar {
+      align-items: center; border-bottom: 1px solid var(--border);
+      display: flex; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+    }
+    .chart-card-title { font-size: var(--t-body); font-weight: 600; color: var(--muted); flex: 1; }
+    .chart-card-meta  { font-size: var(--t-label); color: var(--muted); opacity: .6; }
+    .tf-group { display: flex; gap: 2px; }
+    .tf {
+      background: transparent; border: 1px solid transparent;
+      border-radius: 4px; color: var(--muted); cursor: pointer;
+      font-size: var(--t-label); font-weight: 600; font-family: inherit;
+      letter-spacing: .04em; padding: 2px 6px;
+      transition: color .15s, background .15s;
+    }
+    .tf:hover  { color: var(--accent); }
+    .tf.active { background: var(--accent-dim); border-color: var(--accent-border); color: var(--accent); }
+
+    /* ── Caveat banner ──────────────────────────────────────────────────── */
+    .caveat {
+      background: rgba(245,158,11,0.07);
+      border-left: 3px solid rgba(245,158,11,0.5);
+      border-radius: 0 4px 4px 0;
+      color: var(--muted); font-size: var(--t-label);
+      line-height: 1.5;
+      margin: var(--sp-4) var(--sp-4) 0;
+      padding: var(--sp-2) var(--sp-3);
+    }
+    .caveat strong { color: #F59E0B; font-weight: 600; }
   </style>
 </head>
 <body>
