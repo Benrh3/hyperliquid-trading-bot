@@ -6,7 +6,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <title><%= title %> — HL Bot</title>
+  <title><%= title %> — Howbrook Quant</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -84,12 +84,26 @@
       position: relative;
     }
     .nav-brand {
-      font-weight: 600;
-      font-size: 15px;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 18px;
+      font-weight: 400;
+      letter-spacing: .02em;
       color: var(--text);
       margin-right: 1.5rem;
       text-decoration: none;
       flex-shrink: 0;
+    }
+    .nav-brand .brand-desc {
+      color: var(--muted);
+    }
+
+    /* ── Page title (serif display, reusable) ── */
+    .page-title {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: var(--t-hero);
+      font-weight: 400;
+      letter-spacing: -.01em;
+      line-height: 1.1;
     }
     .nav-links {
       display: flex;
