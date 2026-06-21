@@ -4,7 +4,7 @@
   :root { --amber: #d29922; }
 
   .bots-page {
-    max-width: 960px;
+    max-width: 1280px;
     margin: 0 auto;
     padding: var(--sp-6) var(--sp-6) var(--sp-6);
   }
@@ -194,11 +194,12 @@
     text-align: center; color: var(--muted); font-size: var(--t-body);
   }
 
-  /* ── Compact / expand ── */
+  /* ── Compact summary ── */
   .bc-compact {
     display: flex; align-items: center; gap: var(--sp-3);
     padding: var(--sp-3) var(--sp-4);
     flex-wrap: wrap;
+    cursor: pointer;
   }
   .bc-compact-pnl {
     font-family: 'SFMono-Regular', Consolas, monospace;
@@ -207,25 +208,57 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: -.02em;
   }
-  .bc-detail {
-    border-top: 1px solid var(--border);
-    max-height: 0;
-    overflow: hidden;
-    opacity: 0;
-    transition: max-height .25s ease, opacity .2s ease;
+  .bc-open-cue {
+    margin-left: auto; color: var(--muted); font-size: 12px;
+    transition: color .15s; flex-shrink: 0;
   }
-  .bot-card.expanded .bc-detail {
-    max-height: 600px;
-    opacity: 1;
+  .bc-compact:hover .bc-open-cue { color: var(--text); }
+
+  /* Hidden inside card; shown when moved into drawer */
+  .bc-detail { display: none; }
+
+  /* ── Detail drawer ── */
+  .drawer-backdrop {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,0);
+    transition: background .25s ease;
+    pointer-events: none;
   }
-  .bc-expand {
-    background: none; border: none; color: var(--muted); cursor: pointer;
-    font-size: 14px; line-height: 1; padding: 2px var(--sp-1);
-    margin-left: auto; transition: transform .2s ease, color .15s;
+  .drawer-backdrop.open {
+    background: rgba(0,0,0,0.45);
+    pointer-events: auto;
+  }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 420px; max-width: 90vw;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 24px rgba(0,0,0,0.4);
+    z-index: 301;
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform .25s ease;
+    overflow-y: auto;
+  }
+  .drawer-backdrop.open .drawer { transform: translateX(0); }
+  .drawer-hdr {
+    padding: var(--sp-4) var(--sp-5);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: var(--sp-3);
     flex-shrink: 0;
   }
-  .bc-expand:hover { color: var(--text); }
-  .bot-card.expanded .bc-expand { transform: rotate(180deg); }
+  .drawer-hdr-name { font-size: var(--t-body); font-weight: 600; flex: 1; }
+  .drawer-x {
+    background: none; border: none; color: var(--muted);
+    font-size: 20px; cursor: pointer; line-height: 1; padding: 2px var(--sp-2);
+    border-radius: 3px;
+  }
+  .drawer-x:hover { color: var(--text); }
+  .drawer-body { flex: 1; }
+  .drawer-body .bc-detail { display: block; }
+  @media (max-width: 480px) {
+    .drawer { width: 100%; max-width: 100%; }
+  }
 
   /* ── Modal ── */
   .modal-backdrop {
@@ -440,6 +473,17 @@
   </div>
 </div>
 
+<!-- ── Detail drawer ── -->
+<div class="drawer-backdrop" id="drawer-backdrop">
+  <div class="drawer" id="drawer">
+    <div class="drawer-hdr">
+      <span class="drawer-hdr-name" id="drawer-name">—</span>
+      <button class="drawer-x" id="drawer-x" aria-label="Close">&#215;</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </div>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -515,7 +559,7 @@
     return `<div class="bc-compact">
       ${posBadge}
       <span class="bc-compact-pnl ${pnlCls(b.sessionPnl)}">${fmtPnl(b.sessionPnl)}</span>
-      <button class="bc-expand" aria-label="Expand details">&#9660;</button>
+      <span class="bc-open-cue">&#8250;</span>
     </div>`;
   }
 
@@ -561,7 +605,7 @@
     return '<div class="bc-compact">'
       + cv.modeBadge
       + '<span class="bc-compact-pnl ' + pnlCls(netPnl) + '">' + fmtPnl(netPnl) + '</span>'
-      + '<button class="bc-expand" aria-label="Expand details">&#9660;</button>'
+      + '<span class="bc-open-cue">&#8250;</span>'
       + '</div>';
   }
 
@@ -704,6 +748,7 @@
 
   function render(bots) {
     updateHero(bots);
+    closeDrawer();
 
     if (!bots.length) {
       grid.innerHTML = '<div class="bots-empty">No bots yet — click <strong>+ Add Bot</strong> to create one.</div>';
@@ -757,14 +802,50 @@
       });
     });
 
-    // Expand/collapse toggle
-    grid.querySelectorAll('.bc-expand').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var card = btn.closest('.bot-card');
-        if (card) card.classList.toggle('expanded');
+    // Card click → open drawer
+    grid.querySelectorAll('.bc-compact').forEach(function (zone) {
+      zone.addEventListener('click', function () {
+        var card = zone.closest('.bot-card');
+        if (card) openDrawer(card);
       });
     });
   }
+
+  // ── Drawer ────────────────────────────────────────────────────────────────
+  var drawerBackdrop = document.getElementById('drawer-backdrop');
+  var drawerBody     = document.getElementById('drawer-body');
+  var drawerName     = document.getElementById('drawer-name');
+  var drawerX        = document.getElementById('drawer-x');
+  var openCardEl     = null;   // the card whose .bc-detail is currently in the drawer
+
+  function openDrawer(card) {
+    if (openCardEl) closeDrawer();
+    var detail = card.querySelector('.bc-detail');
+    if (!detail) return;
+    var name = card.querySelector('.bc-name');
+    var status = card.querySelector('.bc-status');
+    drawerName.innerHTML = (name ? name.textContent : '—')
+      + (status ? ' <span style="margin-left:var(--sp-2)">' + status.outerHTML + '</span>' : '');
+    drawerBody.appendChild(detail);
+    openCardEl = card;
+    drawerBackdrop.classList.add('open');
+  }
+
+  function closeDrawer() {
+    if (!openCardEl) return;
+    var detail = drawerBody.querySelector('.bc-detail');
+    if (detail) openCardEl.appendChild(detail);
+    openCardEl = null;
+    drawerBackdrop.classList.remove('open');
+  }
+
+  drawerX.addEventListener('click', closeDrawer);
+  drawerBackdrop.addEventListener('click', function (e) {
+    if (e.target === drawerBackdrop) closeDrawer();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && drawerBackdrop.classList.contains('open')) closeDrawer();
+  });
 
   // ── Data fetch ────────────────────────────────────────────────────────────
   const riskIndicator = document.getElementById('risk-indicator');
