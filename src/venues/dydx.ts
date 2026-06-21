@@ -7,18 +7,19 @@
 import type { CompositeClient, SubaccountInfo } from "@dydxprotocol/v4-client-js";
 import type { Venue, VenuePosition, OrderReceipt } from "../venue.js";
 
-const INDEXER_BASE  = "https://indexer.v4testnet.dydx.exchange/v4";
-const FETCH_TIMEOUT = 10_000;
-const SLIPPAGE      = 0.02;
-const BECH32_PREFIX = "dydx";
+const INDEXER_MAINNET = "https://indexer.dydx.trade/v4";
+const INDEXER_TESTNET = "https://indexer.v4testnet.dydx.exchange/v4";
+const FETCH_TIMEOUT   = 10_000;
+const SLIPPAGE        = 0.02;
+const BECH32_PREFIX   = "dydx";
 
 function toDydxTicker(coin: string): string {
   const upper = coin.toUpperCase();
   return upper.includes("-") ? upper : `${upper}-USD`;
 }
 
-async function indexerGet<T>(path: string): Promise<T> {
-  const resp = await fetch(`${INDEXER_BASE}${path}`, {
+async function indexerGet<T>(path: string, base = INDEXER_MAINNET): Promise<T> {
+  const resp = await fetch(`${base}${path}`, {
     headers: { Accept: "application/json" },
     signal:  AbortSignal.timeout(FETCH_TIMEOUT),
   });
@@ -287,7 +288,7 @@ export class DydxVenue implements Venue {
 
   private async logStartupBalance(): Promise<void> {
     try {
-      const url  = `${INDEXER_BASE}/subaccounts/${encodeURIComponent(this.address)}/0`;
+      const url  = `${INDEXER_TESTNET}/subaccounts/${encodeURIComponent(this.address)}/0`;
       const resp = await fetch(url, {
         headers: { Accept: "application/json" },
         signal:  AbortSignal.timeout(8_000),
