@@ -1,75 +1,139 @@
 <%- include('_head', { title: 'Trades' }) %>
 
+<style>
+  .trades-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: var(--sp-6);
+  }
+  .trades-page-hdr {
+    margin-bottom: var(--sp-5);
+  }
+  .trades-card {
+    background: var(--surface);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .trades-card-hdr {
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-5);
+    border-bottom: 1px solid var(--border);
+  }
+  .trades-card-title {
+    font-size: var(--t-label); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  }
+  .trades-card-meta {
+    font-size: var(--t-label); color: var(--muted); margin-left: auto;
+  }
+  .trades-scroll { overflow-x: auto; }
+  .trades-tbl { width: 100%; border-collapse: collapse; min-width: 700px; }
+  .trades-tbl th {
+    font-size: var(--t-label); font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em;
+    text-align: left; padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface); white-space: nowrap;
+  }
+  .trades-tbl td {
+    padding: var(--sp-2) var(--sp-3); font-size: var(--t-body);
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  .trades-tbl tbody tr:last-child td { border-bottom: none; }
+  .trades-tbl tbody tr:hover td { background: rgba(129,140,248,0.04); }
+  .trades-empty {
+    padding: var(--sp-6); text-align: center; color: var(--muted); font-size: var(--t-body);
+  }
+  .trades-load-more {
+    padding: var(--sp-4) var(--sp-5);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: var(--sp-3);
+  }
+  .btn-load {
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+    font-size: var(--t-label); font-weight: 600; font-family: inherit;
+    padding: var(--sp-1) var(--sp-4); border-radius: 4px; cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .btn-load:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-load:disabled { opacity: 0.4; cursor: default; }
+</style>
+
 <%- include('_nav') %>
 
-<div class="container">
+<div class="trades-page">
 
-  <div style="display:flex;align-items:baseline;gap:1rem;margin-bottom:0.5rem">
-    <p class="section-title" style="margin-bottom:0">Trade History</p>
-    <span class="text-muted" style="font-size:12px" id="trade-count-label">
-      Showing <span id="showing-count"><%= trades.length %></span> of <span id="total-count"><%= total %></span>
-    </span>
+  <div class="trades-page-hdr">
+    <h1 class="page-title">Trades</h1>
   </div>
 
-  <div class="table-wrap">
+  <div class="trades-card">
+    <div class="trades-card-hdr">
+      <span class="trades-card-title">Trade History</span>
+      <span class="trades-card-meta" id="trade-count-label">
+        Showing <span id="showing-count"><%= trades.length %></span> of <span id="total-count"><%= total %></span>
+      </span>
+    </div>
+
     <% if (total === 0) { %>
-      <p class="empty" id="empty-msg">No trades recorded yet.</p>
+      <p class="trades-empty" id="empty-msg">No trades recorded yet.</p>
     <% } else { %>
-      <table id="trades-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Time</th>
-            <th>Side</th>
-            <th>Coin</th>
-            <th>Size</th>
-            <th>Price</th>
-            <th>PnL</th>
-            <th>Strategy</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="trades-body">
-          <% for (const t of trades) { %>
+      <div class="trades-scroll">
+        <table class="trades-tbl" id="trades-table">
+          <thead>
             <tr>
-              <td class="text-muted"><%= t.id %></td>
-              <td class="mono text-muted" style="white-space:nowrap"><%= t.created_at %></td>
-              <td><span class="badge badge-<%= t.side %>"><%= t.side %></span></td>
-              <td class="mono"><%= t.coin %></td>
-              <td class="mono"><%= t.size %></td>
-              <td class="mono">$<%= t.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></td>
-              <td class="mono">
-                <% if (t.pnl !== null) { %>
-                  <span class="<%= t.pnl >= 0 ? 'text-green' : 'text-red' %>">
-                    <%= t.pnl >= 0 ? '+' : '' %><%= t.pnl.toFixed(2) %>
-                  </span>
-                <% } else { %>
-                  <span class="text-muted">—</span>
-                <% } %>
-              </td>
-              <td><%= t.strategy %></td>
-              <td>
-                <% if (t.success) { %>
-                  <span class="badge badge-info">ok</span>
-                <% } else { %>
-                  <span class="badge badge-error" title="<%= t.error || '' %>">failed</span>
-                <% } %>
-              </td>
+              <th>#</th>
+              <th>Time</th>
+              <th>Side</th>
+              <th>Coin</th>
+              <th>Size</th>
+              <th>Price</th>
+              <th>PnL</th>
+              <th>Strategy</th>
+              <th>Status</th>
             </tr>
-          <% } %>
-        </tbody>
-      </table>
+          </thead>
+          <tbody id="trades-body">
+            <% for (const t of trades) { %>
+              <tr>
+                <td style="color:var(--muted)"><%= t.id %></td>
+                <td style="color:var(--muted);white-space:nowrap;font-family:'SFMono-Regular',Consolas,monospace"><%= t.created_at %></td>
+                <td><span class="badge badge-<%= t.side %>"><%= t.side %></span></td>
+                <td style="font-family:'SFMono-Regular',Consolas,monospace"><%= t.coin %></td>
+                <td style="font-family:'SFMono-Regular',Consolas,monospace"><%= t.size %></td>
+                <td style="font-family:'SFMono-Regular',Consolas,monospace">$<%= t.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></td>
+                <td style="font-family:'SFMono-Regular',Consolas,monospace">
+                  <% if (t.pnl !== null) { %>
+                    <span class="<%= t.pnl >= 0 ? 'text-green' : 'text-red' %>">
+                      <%= t.pnl >= 0 ? '+' : '' %><%= t.pnl.toFixed(2) %>
+                    </span>
+                  <% } else { %>
+                    <span style="color:var(--muted)">—</span>
+                  <% } %>
+                </td>
+                <td><%= t.strategy %></td>
+                <td>
+                  <% if (t.success) { %>
+                    <span class="badge badge-info">ok</span>
+                  <% } else { %>
+                    <span class="badge badge-error" title="<%= t.error || '' %>">failed</span>
+                  <% } %>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
     <% } %>
-  </div>
 
-  <div id="load-more-wrap" style="margin-top:1rem;display:<%= trades.length < total ? 'block' : 'none' %>">
-    <button id="btn-load-more" style="
-      background:var(--surface);border:1px solid var(--border);color:var(--text);
-      font-size:13px;padding:0.45rem 1.1rem;border-radius:5px;cursor:pointer;
-    ">Load 100 more</button>
-    <span id="load-msg" style="font-size:12px;color:var(--muted);margin-left:0.75rem;display:none"></span>
-  </div>
+    <div class="trades-load-more" id="load-more-wrap" style="display:<%= trades.length < total ? 'flex' : 'none' %>">
+      <button class="btn-load" id="btn-load-more">Load 100 more</button>
+      <span id="load-msg" style="font-size:var(--t-label);color:var(--muted);display:none"></span>
+    </div>
 
+  </div>
 </div>
 
 <script>
