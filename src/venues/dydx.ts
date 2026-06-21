@@ -7,7 +7,9 @@
 import type { CompositeClient, SubaccountInfo } from "@dydxprotocol/v4-client-js";
 import type { Venue, VenuePosition, OrderReceipt } from "../venue.js";
 
+/** Mainnet indexer — for market/reference reads (funding, oracle, markets). */
 const INDEXER_MAINNET = "https://indexer.dydx.trade/v4";
+/** Testnet indexer — for account/execution state (wallet balance, subaccount queries). */
 const INDEXER_TESTNET = "https://indexer.v4testnet.dydx.exchange/v4";
 const FETCH_TIMEOUT   = 10_000;
 const SLIPPAGE        = 0.02;
@@ -18,7 +20,8 @@ function toDydxTicker(coin: string): string {
   return upper.includes("-") ? upper : `${upper}-USD`;
 }
 
-async function indexerGet<T>(path: string, base = INDEXER_MAINNET): Promise<T> {
+/** Fetch from a dYdX indexer. Network must be explicit — no default to prevent silent drift. */
+async function indexerGet<T>(path: string, base: typeof INDEXER_MAINNET | typeof INDEXER_TESTNET): Promise<T> {
   const resp = await fetch(`${base}${path}`, {
     headers: { Accept: "application/json" },
     signal:  AbortSignal.timeout(FETCH_TIMEOUT),
@@ -71,7 +74,7 @@ export class DydxVenue implements Venue {
     const ticker = toDydxTicker(coin);
     type Market  = { nextFundingRate?: string };
     type Resp    = { markets?: Record<string, Market> };
-    const data   = await indexerGet<Resp>(`/perpetualMarkets?ticker=${encodeURIComponent(ticker)}`);
+    const data   = await indexerGet<Resp>(`/perpetualMarkets?ticker=${encodeURIComponent(ticker)}`, INDEXER_MAINNET);
     const market = data.markets?.[ticker];
     if (!market) return null;
 
@@ -83,7 +86,7 @@ export class DydxVenue implements Venue {
     type HistEntry = { rate?: string };
     type HistResp  = { historicalFunding?: HistEntry[] };
     const hist     = await indexerGet<HistResp>(
-      `/historicalFunding/${encodeURIComponent(ticker)}?limit=1`,
+      `/historicalFunding/${encodeURIComponent(ticker)}?limit=1`, INDEXER_MAINNET,
     );
     const entry = hist.historicalFunding?.[0];
     if (!entry?.rate) return null;
@@ -95,7 +98,7 @@ export class DydxVenue implements Venue {
     const ticker = toDydxTicker(coin);
     type Market  = { oraclePrice?: string; indexPrice?: string };
     type Resp    = { markets?: Record<string, Market> };
-    const data   = await indexerGet<Resp>(`/perpetualMarkets?ticker=${encodeURIComponent(ticker)}`);
+    const data   = await indexerGet<Resp>(`/perpetualMarkets?ticker=${encodeURIComponent(ticker)}`, INDEXER_MAINNET);
     const market = data.markets?.[ticker];
     if (!market) return null;
     const priceStr = market.oraclePrice ?? market.indexPrice;
