@@ -5,12 +5,14 @@
   .bt-wrap {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 1.5rem 1.5rem 4rem;
+    padding: var(--sp-6);
   }
+  .bt-hdr { margin-bottom: var(--sp-5); }
+  .bt-hdr p { font-size: var(--t-body); color: var(--muted); }
   .bt-layout {
     display: grid;
     grid-template-columns: 268px 1fr;
-    gap: 1.5rem;
+    gap: var(--sp-5);
     align-items: start;
   }
   @media (max-width: 900px) {
@@ -18,8 +20,7 @@
     .bt-sidebar { position: static; }
   }
   .bt-sidebar {
-    position: sticky;
-    top: 1rem;
+    position: sticky; top: var(--sp-4);
     max-height: calc(100vh - 4rem);
     overflow-y: auto;
   }
@@ -27,50 +28,50 @@
   /* ── Control panel ── */
   .ctrl-panel {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
+    border-radius: 8px; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
   .ctrl-section {
-    padding: 0.875rem 1rem;
+    padding: var(--sp-3) var(--sp-4);
     border-bottom: 1px solid var(--border);
   }
   .ctrl-section:last-child { border-bottom: none; }
   .ctrl-section-title {
-    font-size: 10px; font-weight: 700;
+    font-size: var(--t-label); font-weight: 700;
     color: var(--muted); text-transform: uppercase;
-    letter-spacing: .06em; margin-bottom: 0.75rem;
+    letter-spacing: .06em; margin-bottom: var(--sp-3);
   }
-  .ctrl-field { margin-bottom: 0.6rem; }
+  .ctrl-field { margin-bottom: var(--sp-2); }
   .ctrl-field:last-child { margin-bottom: 0; }
   .ctrl-label {
-    display: block; font-size: 11px;
-    color: var(--muted); margin-bottom: 0.22rem;
+    display: block; font-size: var(--t-label); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); margin-bottom: 2px;
   }
   .ctrl-sel, .ctrl-inp {
     width: 100%; box-sizing: border-box;
     background: var(--bg); border: 1px solid var(--border);
-    color: var(--text); font-size: 12px;
-    padding: 0.38rem 0.65rem; border-radius: 4px;
+    color: var(--text); font-size: var(--t-label); font-family: inherit;
+    padding: var(--sp-1) var(--sp-2); border-radius: 4px;
     transition: border-color 0.1s;
   }
   .ctrl-sel {
     appearance: none; cursor: pointer;
-    padding-right: 1.6rem;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+    padding-right: var(--sp-6);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%233D5A78'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 7px center;
   }
-  .ctrl-sel:focus, .ctrl-inp:focus { outline: none; border-color: var(--blue); }
+  .ctrl-sel:focus, .ctrl-inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
 
   .btn-run-bt {
-    width: 100%; background: var(--blue); color: #fff;
-    border: none; border-radius: 5px;
-    padding: 0.55rem; font-size: 13px; font-weight: 600;
+    width: 100%; background: var(--accent); color: #fff;
+    border: none; border-radius: 4px;
+    padding: var(--sp-2); font-size: var(--t-body); font-weight: 600; font-family: inherit;
     cursor: pointer; transition: opacity .15s;
   }
-  .btn-run-bt:disabled { opacity: 0.5; cursor: default; }
+  .btn-run-bt:disabled { opacity: 0.4; cursor: default; }
   .btn-run-bt:hover:not(:disabled) { opacity: 0.85; }
-  .bt-status { display: block; font-size: 11px; color: var(--muted); margin-top: 0.5rem; text-align: center; min-height: 1em; }
+  .bt-status { display: block; font-size: var(--t-label); color: var(--muted); margin-top: var(--sp-2); text-align: center; min-height: 1em; }
 
   /* ── Results area ── */
   .bt-results { min-width: 0; }
@@ -78,39 +79,39 @@
   /* ── Run config block ── */
   .run-cfg {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1.25rem;
+    border-radius: 8px;
+    padding: var(--sp-3) var(--sp-4);
+    margin-bottom: var(--sp-5);
     display: flex; flex-wrap: wrap;
-    align-items: baseline; gap: 0.25rem 0;
+    align-items: baseline; gap: var(--sp-1) 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
   .run-cfg-title {
-    font-size: 10px; font-weight: 700;
+    font-size: var(--t-label); font-weight: 700;
     text-transform: uppercase; letter-spacing: .06em;
-    color: var(--muted); width: 100%; margin-bottom: 0.5rem;
+    color: var(--muted); width: 100%; margin-bottom: var(--sp-2);
   }
   .run-cfg-grid {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 0.2rem 0.75rem;
-    font-size: 12px;
+    gap: 2px var(--sp-3);
+    font-size: var(--t-label);
   }
   .rc-key { color: var(--muted); white-space: nowrap; }
-  .rc-val { font-family: monospace; font-size: 12px; }
+  .rc-val { font-family: 'SFMono-Regular', Consolas, monospace; font-size: var(--t-label); }
 
   /* ── Stats table ── */
   .compare-table {
-    width: 100%; border-collapse: collapse; font-size: 13px;
+    width: 100%; border-collapse: collapse; font-size: var(--t-body);
   }
   .compare-table th {
-    padding: 7px 12px; text-align: right;
-    font-size: 11px; font-weight: 600; color: var(--muted);
+    padding: var(--sp-2) var(--sp-3); text-align: right;
+    font-size: var(--t-label); font-weight: 600; color: var(--muted);
     border-bottom: 1px solid var(--border); white-space: nowrap;
   }
   .compare-table th:first-child { text-align: left; }
   .compare-table td {
-    padding: 9px 12px; text-align: right;
+    padding: var(--sp-2) var(--sp-3); text-align: right;
     font-family: 'SFMono-Regular', Consolas, monospace;
     font-variant-numeric: tabular-nums;
     border-bottom: 1px solid var(--border); white-space: nowrap;
@@ -126,20 +127,10 @@
     border-radius: 50%; margin-right: 6px; vertical-align: middle;
   }
 
-  /* ── Chart ── */
-  .chart-panel {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; overflow: hidden; margin-bottom: 1.5rem;
-  }
-  .chart-toolbar {
-    padding: 0.5rem 0.875rem; border-bottom: 1px solid var(--border);
-    font-size: 12px; font-weight: 600; color: var(--muted);
-    display: flex; align-items: center; justify-content: space-between;
-  }
+  /* ── Chart (uses global .chart-card) ── */
   #bt-equity-chart { height: 250px; }
-
-  .chart-legend { display: flex; gap: 1rem; font-size: 11px; color: var(--muted); }
-  .chart-legend-item { display: flex; align-items: center; gap: 5px; }
+  .chart-legend { display: flex; gap: var(--sp-4); font-size: var(--t-label); color: var(--muted); }
+  .chart-legend-item { display: flex; align-items: center; gap: var(--sp-1); }
   .legend-line { display: inline-block; width: 16px; height: 2px; border-radius: 1px; }
   .legend-line-dashed { border-top: 2px dashed; height: 0; border-radius: 0; }
 
@@ -149,75 +140,77 @@
 
   /* ── Mode toggle ── */
   .mode-toggle {
-    display: flex; gap: 0; margin-bottom: 0; overflow: hidden;
-    border: 1px solid var(--border); border-radius: 5px; width: fit-content;
+    display: flex; gap: 0; overflow: hidden;
+    border: 1px solid var(--border); border-radius: 4px; width: fit-content;
   }
   .mode-toggle label {
-    padding: 0.38rem 1rem; font-size: 12px; font-weight: 500; cursor: pointer;
+    padding: var(--sp-1) var(--sp-4); font-size: var(--t-label); font-weight: 600; cursor: pointer;
     color: var(--muted); transition: background .1s, color .1s;
   }
   .mode-toggle input[type="radio"] { display: none; }
-  .mode-toggle input:checked + span { background: var(--blue); color: #fff; }
+  .mode-toggle input:checked + span { background: var(--accent); color: #fff; }
   .mode-toggle label:first-child { border-right: 1px solid var(--border); }
 
   /* ── Walk-forward results ── */
   .wf-headline {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 1.25rem;
-    display: flex; gap: 2rem; flex-wrap: wrap; align-items: center;
+    background: var(--surface);
+    border-radius: 8px; padding: var(--sp-4) var(--sp-5); margin-bottom: var(--sp-5);
+    display: flex; gap: var(--sp-6); flex-wrap: wrap; align-items: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
-  .wf-stat { display: flex; flex-direction: column; gap: 0.15rem; }
-  .wf-stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-  .wf-stat-val { font-size: 1.3rem; font-weight: 600; font-family: monospace; }
+  .wf-stat { display: flex; flex-direction: column; gap: 2px; }
+  .wf-stat-lbl { font-size: var(--t-label); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  .wf-stat-val { font-size: var(--t-value-sm); font-weight: 600; font-family: 'SFMono-Regular', Consolas, monospace; }
   .wf-curve-warn {
     background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.3);
-    border-radius: 5px; padding: 0.5rem 0.875rem; font-size: 12px;
-    color: var(--red); flex-basis: 100%; margin-top: 0.25rem;
+    border-radius: 4px; padding: var(--sp-2) var(--sp-3); font-size: var(--t-label);
+    color: var(--red); flex-basis: 100%; margin-top: var(--sp-1);
   }
-  .wf-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .wf-table { width: 100%; border-collapse: collapse; font-size: var(--t-label); }
   .wf-table th {
-    padding: 6px 10px; text-align: right; font-size: 11px; font-weight: 600;
+    padding: var(--sp-2) var(--sp-3); text-align: right; font-size: var(--t-label); font-weight: 600;
     color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
   }
   .wf-table th:first-child { text-align: left; }
   .wf-table td {
-    padding: 7px 10px; text-align: right;
+    padding: var(--sp-2) var(--sp-3); text-align: right;
     font-family: 'SFMono-Regular', Consolas, monospace;
-    border-bottom: 1px solid var(--border); white-space: nowrap; font-size: 11px;
+    border-bottom: 1px solid var(--border); white-space: nowrap; font-size: var(--t-label);
   }
   .wf-table td:first-child { text-align: left; font-family: inherit; }
   .wf-table tbody tr:last-child td { border-bottom: none; }
   .wf-table tr.wf-beats { background: rgba(63,185,80,0.06); }
   .wf-table tr.wf-lags  { background: rgba(248,81,73,0.06); }
   .param-pill {
-    display: inline-block; font-size: 10px; background: rgba(88,166,255,0.1);
-    color: var(--blue); border-radius: 3px; padding: 1px 5px; margin: 1px;
+    display: inline-block; font-size: 10px; background: var(--accent-dim);
+    color: var(--accent); border-radius: 3px; padding: 1px var(--sp-2); margin: 1px;
   }
 
-  /* ── Funding basis card (unchanged) ── */
+  /* ── Funding basis card ── */
   .funding-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; overflow: hidden; margin-bottom: 1.5rem;
+    background: var(--surface);
+    border-radius: 8px; overflow: hidden; margin-bottom: var(--sp-5);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
   .funding-card-header {
-    padding: 0.5rem 1rem; border-bottom: 1px solid var(--border);
-    font-size: 12px; font-weight: 600; color: var(--text);
-    display: flex; align-items: center; gap: 0.5rem;
+    padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border);
+    font-size: var(--t-body); font-weight: 600; color: var(--text);
+    display: flex; align-items: center; gap: var(--sp-2);
   }
   .funding-card-header .tag {
-    font-size: 10px; font-weight: 500; color: var(--muted);
-    background: rgba(139,148,158,0.1); border: 1px solid var(--border);
-    border-radius: 3px; padding: 1px 6px;
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px var(--sp-2);
     text-transform: uppercase; letter-spacing: .04em;
   }
   .funding-stats { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
   .funding-stat {
-    padding: 0.75rem 1.25rem; border-right: 1px solid var(--border);
+    padding: var(--sp-3) var(--sp-4); border-right: 1px solid var(--border);
     min-width: 140px; flex: 1;
   }
   .funding-stat:last-child { border-right: none; }
   .funding-caveat {
-    padding: 0.6rem 1rem; font-size: 11px;
+    padding: var(--sp-2) var(--sp-4); font-size: var(--t-label);
     color: var(--muted); line-height: 1.5;
   }
   .funding-caveat::before { content: '⚠ '; }
@@ -225,17 +218,23 @@
   /* ── Placeholder ── */
   .bt-placeholder {
     display: flex; flex-direction: column; align-items: center;
-    justify-content: center; padding: 4rem 1rem;
-    color: var(--muted); font-size: 13px; text-align: center;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; gap: 0.5rem;
+    justify-content: center; padding: var(--sp-6) var(--sp-4);
+    color: var(--muted); font-size: var(--t-body); text-align: center;
+    background: var(--surface);
+    border-radius: 8px; gap: var(--sp-2);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
   .bt-placeholder svg { opacity: 0.3; }
+
+  @media (max-width: 600px) {
+    .bt-wrap { padding: var(--sp-4) var(--sp-3); }
+  }
 </style>
 
 <%- include('_nav') %>
 
 <div class="bt-wrap">
+<div class="bt-hdr"><h1 class="page-title">Backtest</h1></div>
 <div class="bt-layout">
 
   <!-- ── Sidebar controls ── -->
@@ -372,10 +371,10 @@
           <tbody id="wf-tbody"></tbody>
         </table>
       </div>
-      <div class="chart-panel" id="wf-chart-panel">
-        <div class="chart-toolbar">
-          <span>Walk-Forward Equity Track Record</span>
-          <span style="font-size:11px;color:var(--muted)">OOS windows stitched end-to-end</span>
+      <div class="chart-card" id="wf-chart-panel" style="margin:0 0 var(--sp-5)">
+        <div class="chart-card-toolbar">
+          <span class="chart-card-title">Walk-Forward Equity Track Record</span>
+          <span class="chart-card-meta">OOS windows stitched end-to-end</span>
         </div>
         <div id="wf-equity-chart" style="height:200px"></div>
       </div>
@@ -405,12 +404,12 @@
     </div>
 
     <!-- Equity chart (hidden until run) -->
-    <div class="chart-panel" id="bt-chart-panel" style="display:none">
-      <div class="chart-toolbar">
-        <span>Equity Curve</span>
+    <div class="chart-card" id="bt-chart-panel" style="display:none;margin:0 0 var(--sp-5)">
+      <div class="chart-card-toolbar">
+        <span class="chart-card-title">Equity Curve</span>
         <div class="chart-legend">
           <div class="chart-legend-item">
-            <span class="legend-line" style="background:#58a6ff"></span>
+            <span class="legend-line" style="background:var(--accent)"></span>
             <span id="bt-legend-strat">Strategy</span>
           </div>
           <div class="chart-legend-item">
@@ -535,9 +534,9 @@
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
     stratSeries = equityChart.addAreaSeries({
-      lineColor:   '#58a6ff',
-      topColor:    'rgba(88,166,255,0.18)',
-      bottomColor: 'rgba(88,166,255,0)',
+      lineColor:   getCssVar('--accent') || '#818CF8',
+      topColor:    'rgba(129,140,248,0.14)',
+      bottomColor: 'rgba(129,140,248,0)',
       lineWidth:   1,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
@@ -592,7 +591,7 @@
         </tr></thead>
         <tbody>
           <tr class="${beats ? 'row-beats' : 'row-lags'}">
-            <td><span class="strat-dot" style="background:#58a6ff"></span>${result.runConfig.strategyName}</td>
+            <td><span class="strat-dot" style="background:var(--accent)"></span>${result.runConfig.strategyName}</td>
             <td><span class="${retCls}">${retSign}${retPct.toFixed(2)}%</span></td>
             <td><span class="pnl-neg">${result.maxDrawdownPct.toFixed(2)}%</span></td>
             <td>${result.sharpeRatio.toFixed(2)}</td>
@@ -777,8 +776,8 @@
       timeScale: { borderColor: border, timeVisible: true }, height: 200,
     });
     wfSeries = wfChart.addAreaSeries({
-      lineColor: '#58a6ff', topColor: 'rgba(88,166,255,0.18)',
-      bottomColor: 'rgba(88,166,255,0)', lineWidth: 1.5,
+      lineColor: getCssVar('--accent') || '#818CF8', topColor: 'rgba(129,140,248,0.14)',
+      bottomColor: 'rgba(129,140,248,0)', lineWidth: 1.5,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
     if (typeof ResizeObserver !== 'undefined') {
