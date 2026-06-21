@@ -4,18 +4,52 @@
   :root { --amber: #d29922; }
 
   .bots-page {
-    max-width: 1100px;
+    max-width: 960px;
     margin: 0 auto;
     padding: var(--sp-6) var(--sp-6) var(--sp-6);
   }
+
+  /* ── Account hero ── */
+  .acct-hero {
+    text-align: center;
+    padding: var(--sp-6) var(--sp-4) var(--sp-5);
+  }
+  .acct-hero-pnl {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: var(--t-hero);
+    font-weight: 400;
+    letter-spacing: -.01em;
+    line-height: 1.1;
+  }
+  .acct-hero-label {
+    font-size: var(--t-label);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: var(--sp-1);
+  }
+  .acct-hero-stats {
+    display: flex;
+    justify-content: center;
+    gap: var(--sp-5);
+    margin-top: var(--sp-4);
+    flex-wrap: wrap;
+  }
+  .acct-hero-stat {
+    font-size: var(--t-label);
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .acct-hero-stat .ahs-val { color: var(--text); margin-left: var(--sp-1); }
 
   /* ── Page header ── */
   .bots-page-hdr {
     display: flex; align-items: center;
     justify-content: space-between;
-    margin-bottom: var(--sp-5); flex-wrap: wrap; gap: var(--sp-3);
+    margin-bottom: var(--sp-4); flex-wrap: wrap; gap: var(--sp-3);
   }
-  .bots-page-hdr h1 { font-size: var(--t-value-sm); font-weight: 600; letter-spacing: -.01em; }
+  .bots-page-hdr h1 { font-size: var(--t-label); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
   .hdr-right { display: flex; align-items: center; gap: var(--sp-4); }
   #refresh-badge { font-size: var(--t-label); color: var(--muted); }
 
@@ -30,11 +64,14 @@
   /* ── Bot card ── */
   .bot-card {
     background: var(--surface);
+    border: 1px solid transparent;
     border-radius: 8px;
     overflow: hidden;
     display: flex; flex-direction: column;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    transition: border-color .15s, box-shadow .15s;
   }
+  .bot-card:hover { border-color: var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
   .bot-card.paused { opacity: 0.65; }
 
   .bc-header {
@@ -163,13 +200,28 @@
     padding: var(--sp-3) var(--sp-4);
     flex-wrap: wrap;
   }
-  .bc-compact-pnl { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 600; font-size: var(--t-body); }
-  .bc-detail { display: none; border-top: 1px solid var(--border); }
-  .bot-card.expanded .bc-detail { display: block; }
+  .bc-compact-pnl {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-weight: 700;
+    font-size: var(--t-value-sm);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+  }
+  .bc-detail {
+    border-top: 1px solid var(--border);
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height .25s ease, opacity .2s ease;
+  }
+  .bot-card.expanded .bc-detail {
+    max-height: 600px;
+    opacity: 1;
+  }
   .bc-expand {
     background: none; border: none; color: var(--muted); cursor: pointer;
     font-size: 14px; line-height: 1; padding: 2px var(--sp-1);
-    margin-left: auto; transition: transform .15s, color .15s;
+    margin-left: auto; transition: transform .2s ease, color .15s;
     flex-shrink: 0;
   }
   .bc-expand:hover { color: var(--text); }
@@ -361,15 +413,18 @@
 
 <!-- ── Page ── -->
 <div class="bots-page">
+
+  <!-- Account hero (populated by JS from allBots) -->
+  <div class="acct-hero" id="acct-hero">
+    <div class="acct-hero-label">Session P&amp;L</div>
+    <div class="acct-hero-pnl" id="acct-pnl">—</div>
+    <div class="acct-hero-stats" id="acct-stats"></div>
+  </div>
+
   <div class="bots-page-hdr">
-    <h1 class="page-title">Bots</h1>
+    <h1>Bots</h1>
     <div class="hdr-right">
-      <span id="risk-indicator" style="
-        font-size:12px;color:var(--muted);
-        padding:0.25rem 0.6rem;border-radius:4px;
-        border:1px solid var(--border);background:var(--surface);
-        display:none;
-      ">Open risk: —</span>
+      <span id="risk-indicator" style="font-size:var(--t-label);color:var(--muted);display:none">Open risk: —</span>
       <span id="refresh-badge">Loading…</span>
       <% if (isAdmin) { %><button class="bc-btn primary" id="btn-add-bot">+ Add Bot</button><% } %>
     </div>
@@ -627,7 +682,29 @@
     </div>`;
   }
 
+  function updateHero(bots) {
+    var pnlEl   = document.getElementById('acct-pnl');
+    var statsEl = document.getElementById('acct-stats');
+    if (!pnlEl) return;
+
+    var totalPnl = 0;
+    var liveCount = 0;
+    for (var i = 0; i < bots.length; i++) {
+      totalPnl += (bots[i].sessionPnl || 0);
+      if (bots[i].status === 'running') liveCount++;
+    }
+
+    pnlEl.textContent = fmtPnl(totalPnl);
+    pnlEl.className   = 'acct-hero-pnl ' + pnlCls(totalPnl);
+
+    var statsHtml = '<span class="acct-hero-stat">Bots live<span class="ahs-val">' + liveCount + '</span></span>';
+    statsHtml += '<span class="acct-hero-stat">Total<span class="ahs-val">' + bots.length + '</span></span>';
+    statsEl.innerHTML = statsHtml;
+  }
+
   function render(bots) {
+    updateHero(bots);
+
     if (!bots.length) {
       grid.innerHTML = '<div class="bots-empty">No bots yet — click <strong>+ Add Bot</strong> to create one.</div>';
       return;
