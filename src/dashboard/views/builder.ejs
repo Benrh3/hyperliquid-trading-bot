@@ -4,8 +4,6 @@
   .builder-wrap {
     max-width: 860px; margin: 0 auto; padding: var(--sp-6);
   }
-  .builder-hdr { margin-bottom: var(--sp-6); }
-  .builder-hdr p { font-size: var(--t-body); color: var(--muted); }
 
   /* Section cards */
   .bld-card {
@@ -115,16 +113,16 @@
 
 <% if (!isAdmin) { %>
 <div class="builder-wrap">
-  <div class="builder-hdr">
+  <div class="page-header">
     <h1 class="page-title">Strategy Builder</h1>
-    <p>Log in as admin to create and save custom strategies.</p>
+    <p class="page-subtitle">Log in as admin to create and save custom strategies.</p>
   </div>
 </div>
 <% } else { %>
 <div class="builder-wrap">
-  <div class="builder-hdr">
+  <div class="page-header">
     <h1 class="page-title">Strategy Builder</h1>
-    <p>Compose a strategy from indicator conditions. Saved strategies appear immediately in the Bot Manager, Backtest, and Learn tabs — no restart needed.</p>
+    <p class="page-subtitle">Compose indicator conditions into a strategy — appears in Bots, Backtest, and Learn immediately.</p>
   </div>
 
   <!-- Identity -->

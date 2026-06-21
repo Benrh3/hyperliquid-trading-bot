@@ -6,10 +6,7 @@
     margin: 0 auto;
     padding: var(--sp-6) var(--sp-6) var(--sp-6);
   }
-  .settings-hdr { margin-bottom: var(--sp-6); }
-  .settings-hdr h1 { font-size: var(--t-value-sm); font-weight: 600; margin-bottom: var(--sp-1); letter-spacing: -0.01em; }
-  .settings-hdr p  { color: var(--muted); font-size: var(--t-body); line-height: 1.6; }
-  .settings-hdr a  { color: var(--accent); }
+  .page-header a { color: var(--accent); }
 
   .settings-section {
     background: var(--surface);
@@ -107,9 +104,9 @@
 
 <div class="settings-page">
 
-  <div class="settings-hdr">
+  <div class="page-header">
     <h1 class="page-title">Settings</h1>
-    <p>Global configuration. Bot management is on the <a href="/bots">Bots page</a>.</p>
+    <p class="page-subtitle">Global configuration. Bot management is on the <a href="/bots">Bots page</a>.</p>
   </div>
 
   <!-- ── Network ── -->

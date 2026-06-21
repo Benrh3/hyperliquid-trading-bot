@@ -7,8 +7,6 @@
     margin: 0 auto;
     padding: var(--sp-6);
   }
-  .bt-hdr { margin-bottom: var(--sp-5); }
-  .bt-hdr p { font-size: var(--t-body); color: var(--muted); }
   .bt-layout {
     display: grid;
     grid-template-columns: 268px 1fr;
@@ -234,7 +232,10 @@
 <%- include('_nav') %>
 
 <div class="bt-wrap">
-<div class="bt-hdr"><h1 class="page-title">Backtest</h1></div>
+<div class="page-header">
+  <h1 class="page-title">Backtest</h1>
+  <p class="page-subtitle">Test a strategy against historical candles.</p>
+</div>
 <div class="bt-layout">
 
   <!-- ── Sidebar controls ── -->

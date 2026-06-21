@@ -97,13 +97,20 @@
       color: var(--muted);
     }
 
-    /* ── Page title (serif display, reusable) ── */
+    /* ── Page header (serif title + subtitle) ── */
+    .page-header { margin-bottom: var(--sp-6); }
     .page-title {
       font-family: Georgia, 'Times New Roman', serif;
       font-size: var(--t-hero);
       font-weight: 400;
       letter-spacing: -.01em;
       line-height: 1.1;
+    }
+    .page-subtitle {
+      font-size: var(--t-body);
+      color: var(--muted);
+      margin-top: var(--sp-1);
+      line-height: 1.5;
     }
     .nav-links {
       display: flex;
