@@ -112,6 +112,7 @@ export interface TradesAggregatorLike {
   stop(): Promise<void>;
   getPerpWindows(): CoinWindows;
   getSpotWindows(): CoinWindows | null;
+  persistTrackers?(): void;
 }
 
 /**
@@ -230,7 +231,7 @@ export class SnapshotPoller {
     if (!this.aggregatorsInjected) {
       for (const symbol of this.symbols) {
         if (this.aggregators.has(symbol)) continue;
-        this.aggregators.set(symbol, new TradesAggregator(symbol, this.spotCoinBySymbol.get(symbol) ?? null));
+        this.aggregators.set(symbol, new TradesAggregator(symbol, this.spotCoinBySymbol.get(symbol) ?? null, undefined, this.store));
       }
     }
     await Promise.all([...this.aggregators.values()].map((a) => a.start()));
@@ -376,6 +377,10 @@ export class SnapshotPoller {
 
       this.applySpotPriceGuard(symbol, metrics);
       this.store.writeSnapshot(symbol, this.dataNetwork, capturedAt, metrics);
+
+      // Persist CVD tracker state so it survives restarts
+      const agg = this.aggregators.get(symbol);
+      if (agg?.persistTrackers && !this.aggregatorsInjected) agg.persistTrackers();
     }
 
     this.store.runRetentionPolicy(this.retentionRawDays);

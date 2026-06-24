@@ -36,18 +36,38 @@ export interface CoinWindows {
   filled24h:  number;
 }
 
+export interface CvdTrackerSnapshot {
+  bootTime: number;
+  buckets:  Bucket[];
+}
+
 /**
  * Per-minute ring buffer of signed taker volume + trade counts, covering the
  * last WINDOW_24H_BUCKETS (24h) minutes. Individual trades are never retained.
  */
 export class CvdTracker {
   private buckets: Bucket[] = [];
-  private readonly bootTime: number;
+  private bootTime: number;
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
     this.now = now;
     this.bootTime = now();
+  }
+
+  /** Rehydrate from a persisted snapshot. Restores buckets and bootTime. */
+  rehydrate(snapshot: CvdTrackerSnapshot): void {
+    this.bootTime = snapshot.bootTime;
+    this.buckets  = snapshot.buckets.slice();
+    // Evict stale buckets
+    const nowMs = this.now();
+    const cutoff = nowMs - WINDOW_24H_BUCKETS * BUCKET_MS;
+    while (this.buckets.length > 0 && this.buckets[0].bucketStart < cutoff) this.buckets.shift();
+  }
+
+  /** Serialize current state for persistence. */
+  snapshot(): CvdTrackerSnapshot {
+    return { bootTime: this.bootTime, buckets: this.buckets.slice() };
   }
 
   /** Record one trade. `side`: "B" = aggressor buy (+size), "A" = aggressor sell (-size). */
@@ -120,11 +140,18 @@ export interface TradesSubscriptionClient {
  * coin. Maintains a CvdTracker per side. Auto-reconnects with exponential
  * backoff on subscribe failure; never throws into the caller.
  */
+/** Minimal interface for CVD persistence — avoids circular import with MarketStore. */
+export interface CvdPersistence {
+  saveCvdTracker(trackerId: string, bootTime: number, bucketsJson: string): void;
+  loadCvdTracker(trackerId: string): { bootTime: number; bucketsJson: string } | null;
+}
+
 export class TradesAggregator {
   private readonly perpCoin: string;
   private readonly spotCoin: string | null;
   private readonly perpTracker = new CvdTracker();
   private readonly spotTracker = new CvdTracker();
+  private readonly persistence: CvdPersistence | null;
 
   private client: TradesSubscriptionClient | null;
   private readonly ownsClient: boolean;
@@ -134,11 +161,18 @@ export class TradesAggregator {
   private reconnectDelayMs = 1000;
   private stopped = false;
 
-  constructor(perpCoin: string, spotCoin: string | null, client?: TradesSubscriptionClient) {
+  constructor(perpCoin: string, spotCoin: string | null, client?: TradesSubscriptionClient, persistence?: CvdPersistence) {
     this.perpCoin = perpCoin;
     this.spotCoin = spotCoin;
     this.client = client ?? null;
     this.ownsClient = !client;
+    this.persistence = persistence ?? null;
+
+    // Rehydrate from SQLite if persisted state exists
+    this.rehydrateTracker(this.perpTracker, `cvd-perp-${perpCoin}`);
+    if (spotCoin) {
+      this.rehydrateTracker(this.spotTracker, `cvd-spot-${spotCoin}`);
+    }
   }
 
   async start(): Promise<void> {
@@ -216,6 +250,44 @@ export class TradesAggregator {
       }
     } catch (e) {
       console.warn(`[trades-aggregator] Failed to process trade batch: ${(e as Error).message}`);
+    }
+  }
+
+  // ── Persistence ──────────────────────────────────────────────────────────────
+
+  private rehydrateTracker(tracker: CvdTracker, trackerId: string): void {
+    if (!this.persistence) return;
+    try {
+      const saved = this.persistence.loadCvdTracker(trackerId);
+      if (saved) {
+        const snapshot: CvdTrackerSnapshot = {
+          bootTime: saved.bootTime,
+          buckets:  JSON.parse(saved.bucketsJson),
+        };
+        tracker.rehydrate(snapshot);
+        console.log(`[trades-aggregator] Rehydrated ${trackerId} (${snapshot.buckets.length} buckets)`);
+      }
+    } catch (e) {
+      console.warn(`[trades-aggregator] Failed to rehydrate ${trackerId}: ${(e as Error).message}`);
+    }
+  }
+
+  /** Persist current tracker state to SQLite. Call from the poller after each snapshot. */
+  persistTrackers(): void {
+    if (!this.persistence) return;
+    try {
+      const perpSnap = this.perpTracker.snapshot();
+      this.persistence.saveCvdTracker(
+        `cvd-perp-${this.perpCoin}`, perpSnap.bootTime, JSON.stringify(perpSnap.buckets),
+      );
+      if (this.spotCoin) {
+        const spotSnap = this.spotTracker.snapshot();
+        this.persistence.saveCvdTracker(
+          `cvd-spot-${this.spotCoin}`, spotSnap.bootTime, JSON.stringify(spotSnap.buckets),
+        );
+      }
+    } catch (e) {
+      console.warn(`[trades-aggregator] Failed to persist trackers: ${(e as Error).message}`);
     }
   }
 }

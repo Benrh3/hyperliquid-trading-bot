@@ -46,7 +46,7 @@ export class MarketStore {
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
 
-    for (const name of ["003_market_snapshots.sql", "004_fix_imposter_spot_pair.sql"]) {
+    for (const name of ["003_market_snapshots.sql", "004_fix_imposter_spot_pair.sql", "007_cvd_buckets.sql"]) {
       const migration = join(process.cwd(), "migrations", name);
       if (existsSync(migration)) this.db.exec(readFileSync(migration, "utf-8"));
     }
@@ -201,6 +201,22 @@ export class MarketStore {
     const out: Record<string, number | null> = {};
     for (const r of rows) out[r.metric_key] = r.value;
     return out;
+  }
+
+  // ── CVD tracker persistence ─────────────────────────────────────────────────
+
+  saveCvdTracker(trackerId: string, bootTime: number, bucketsJson: string): void {
+    this.db.prepare(
+      "INSERT OR REPLACE INTO cvd_tracker_state (tracker_id, boot_time, buckets_json, updated_at) VALUES (?, ?, ?, ?)",
+    ).run(trackerId, bootTime, bucketsJson, Date.now());
+  }
+
+  loadCvdTracker(trackerId: string): { bootTime: number; bucketsJson: string } | null {
+    const row = this.db.prepare(
+      "SELECT boot_time, buckets_json FROM cvd_tracker_state WHERE tracker_id = ?",
+    ).get(trackerId) as { boot_time: number; buckets_json: string } | undefined;
+    if (!row) return null;
+    return { bootTime: row.boot_time, bucketsJson: row.buckets_json };
   }
 
   close(): void {
