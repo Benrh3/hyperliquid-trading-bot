@@ -393,7 +393,7 @@
 
   <!-- Account hero (populated by JS from allBots) -->
   <div class="acct-hero" id="acct-hero">
-    <div class="acct-hero-label">Session P&amp;L</div>
+    <div class="acct-hero-label">Realised P&amp;L</div>
     <div class="acct-hero-pnl" id="acct-pnl">—</div>
     <div class="acct-hero-stats" id="acct-stats"></div>
   </div>
@@ -499,8 +499,8 @@
       <div class="bc-row"><span class="bc-lbl">Unrealised P&amp;L</span><span class="bc-val">${upnlHtml}</span></div>
       ${timePosHtml}
       <div class="bc-divider"></div>
-      <div class="bc-row"><span class="bc-lbl">Session P&amp;L</span><span class="bc-val ${pnlCls(b.sessionPnl)}">${fmtPnl(b.sessionPnl)}</span></div>
-      <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.tradeCount}</span></div>
+      <div class="bc-row"><span class="bc-lbl">Realised P&amp;L</span><span class="bc-val ${pnlCls(b.realisedPnl || 0)}">${fmtPnl(b.realisedPnl || 0)}</span></div>
+      <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.realisedTrades || 0}</span></div>
       <div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">${fmtRate(b.fundingRate)}</span></div>
       ${isFunding && b.fundingDirection ? `
       <div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:var(--t-label)">${esc(b.fundingDirection)}</span></div>
@@ -624,7 +624,7 @@
       ? `<div class="bc-reconcile-warn">⚠ <span><strong>State reconciled</strong> — ${esc(b.lastReconcileEvent)}</span></div>`
       : '';
 
-    var pnl = isCrossVenue ? (b.sessionPnl || 0) : (b.sessionPnl || 0);
+    var pnl = isCrossVenue ? (b.sessionPnl || 0) : (b.realisedPnl || 0);
     var bodyHtml = isCrossVenue
       ? renderCrossVenueDetail(b)
       : renderStandardDetail(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml);
@@ -651,7 +651,7 @@
     var totalPnl = 0;
     var liveCount = 0;
     for (var i = 0; i < bots.length; i++) {
-      totalPnl += (bots[i].sessionPnl || 0);
+      totalPnl += (bots[i].realisedPnl || bots[i].sessionPnl || 0);
       if (bots[i].status === 'running') liveCount++;
     }
 

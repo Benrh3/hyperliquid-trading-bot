@@ -167,6 +167,19 @@ export class Logger {
     return row.total;
   }
 
+  /**
+   * Reconstruct realised trade count and P&L for a bot from the durable trade log.
+   * Keyed by strategy+coin (the fields currently stored on each trade row).
+   * NOTE: two bots with the same strategy+coin would collide — if that's ever
+   * needed, add a bot_id column to the trades table.
+   */
+  getBotRealisedStats(strategy: string, coin: string): { tradeCount: number; realisedPnl: number } {
+    const row = this.db.prepare(
+      "SELECT COUNT(*) as cnt, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE strategy = ? AND coin = ? AND success = 1",
+    ).get(strategy, coin) as { cnt: number; pnl: number };
+    return { tradeCount: row.cnt, realisedPnl: row.pnl };
+  }
+
   getDailyPnl(): DailyPnlRow[] {
     return this.db
       .prepare("SELECT * FROM daily_pnl ORDER BY date DESC")

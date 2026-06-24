@@ -270,6 +270,8 @@ export class CrossVenueFundingBasis {
       position:      null,
       sessionPnl:    this.capturedFunding - this.totalFees + partialAccrual,
       tradeCount:    this.periods,
+      realisedPnl:   this.capturedFunding - this.totalFees,
+      realisedTrades: this.periods,
       startedAt:     this.startedAt,
       error:         this.lastError ?? undefined,
       fundingDirection: this.nakedLeg

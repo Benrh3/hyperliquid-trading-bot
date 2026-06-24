@@ -75,6 +75,10 @@ export interface BotState {
   } | null;
   sessionPnl:       number;
   tradeCount:       number;
+  /** Durable realised P&L from the trades table — survives restarts. */
+  realisedPnl:      number;
+  /** Durable trade count from the trades table — survives restarts. */
+  realisedTrades:   number;
   startedAt:        number;
   error?:           string;
   /** Funding-basis only: human-readable description of current legs. */
@@ -140,6 +144,10 @@ interface BotRuntime {
   equity:        number;
   sessionPnl:    number;
   tradeCount:    number;
+  /** Durable realised P&L from the trades table — survives restarts. */
+  realisedPnl:   number;
+  /** Durable trade count from the trades table — survives restarts. */
+  realisedTrades: number;
   position: {
     side:          "long" | "short";
     entryPrice:    number;
@@ -251,6 +259,12 @@ export class BotManager {
     this.bots.clear();
     for (const bc of file.bots) {
       const old = oldBots.get(bc.id);
+      // Seed durable stats from the trades table (strategy+coin key).
+      // NOTE: two bots with the same strategy+coin would collide; if that's
+      // ever needed, add a bot_id column to the trades table.
+      const durableStats = this.logger?.getBotRealisedStats(bc.strategyId, bc.coin);
+      const realisedPnl    = old?.realisedPnl    ?? durableStats?.realisedPnl    ?? 0;
+      const realisedTrades = old?.realisedTrades  ?? durableStats?.tradeCount     ?? 0;
 
       // ── Cross-venue bots ─────────────────────────────────────────────────
       if (bc.strategyId === "cross-venue-funding-basis") {
@@ -272,6 +286,8 @@ export class BotManager {
           equity:        old?.equity ?? notional,
           sessionPnl:    old?.sessionPnl ?? 0,
           tradeCount:    old?.tradeCount ?? 0,
+          realisedPnl,
+          realisedTrades,
           position:      null,
           unrealisedPnl: 0,
           startedAt:     old?.startedAt ?? Date.now(),
@@ -291,6 +307,8 @@ export class BotManager {
         equity:        old?.equity        ?? (bc.startingEquity ?? INITIAL_EQUITY),
         sessionPnl:    old?.sessionPnl    ?? 0,
         tradeCount:    old?.tradeCount    ?? 0,
+        realisedPnl,
+        realisedTrades,
         position:      old?.position      ?? null,
         unrealisedPnl: old?.unrealisedPnl ?? 0,
         startedAt:     old?.startedAt     ?? Date.now(),
@@ -355,6 +373,8 @@ export class BotManager {
         position,
         sessionPnl:    bot.sessionPnl,
         tradeCount:    bot.tradeCount,
+        realisedPnl:   bot.realisedPnl,
+        realisedTrades: bot.realisedTrades,
         startedAt:     bot.startedAt,
         error:         bot.error,
         hadRecentMismatch:  bot.hadRecentMismatch,
@@ -855,11 +875,13 @@ export class BotManager {
       pos.side === "long"
         ? (exitPx - pos.entryPrice) * pos.size
         : (pos.entryPrice - exitPx) * pos.size;
-    bot.equity        += pnl;
-    bot.sessionPnl    += pnl;
+    bot.equity          += pnl;
+    bot.sessionPnl      += pnl;
     bot.tradeCount++;
-    bot.position       = null;
-    bot.unrealisedPnl  = 0;
+    bot.realisedPnl     += pnl;
+    bot.realisedTrades++;
+    bot.position         = null;
+    bot.unrealisedPnl    = 0;
     console.log(
       `[bot-manager] ${bot.config.id}/${bot.config.coin}/${bot.config.timeframe}` +
       ` PAPER CLOSE @ ${exitPx.toFixed(2)} PnL ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} (${reason})`,
@@ -974,10 +996,12 @@ export class BotManager {
         pos.side === "long"
           ? (receipt.fillPrice - pos.entryPrice) * pos.size
           : (pos.entryPrice - receipt.fillPrice) * pos.size;
-      bot.equity        += pnl;
-      bot.sessionPnl    += pnl;
+      bot.equity          += pnl;
+      bot.sessionPnl      += pnl;
       bot.tradeCount++;
-      bot.position       = null;
+      bot.realisedPnl     += pnl;
+      bot.realisedTrades++;
+      bot.position         = null;
       bot.unrealisedPnl  = 0;
       console.log(
         `[bot-manager] ${tag} LIVE CLOSE` +
@@ -1054,7 +1078,7 @@ export class BotManager {
         config: bc, displayName: "Cross-Venue Funding Basis",
         categoryLabel: `HL ↔ dYdX · ${coin}`,
         strategy: null, crossVenue: cv,
-        history: [], equity: notional, sessionPnl: 0, tradeCount: 0,
+        history: [], equity: notional, sessionPnl: 0, tradeCount: 0, realisedPnl: 0, realisedTrades: 0,
         position: null, unrealisedPnl: 0, startedAt: Date.now(),
       };
       this.bots.set(id, runtime);
@@ -1094,7 +1118,7 @@ export class BotManager {
     const runtime: BotRuntime = {
       config: bc, displayName: entry.displayName, categoryLabel: entry.categoryLabel,
       strategy: entry.factory(), history: [], equity,
-      sessionPnl: 0, tradeCount: 0, position: null, unrealisedPnl: 0, startedAt: Date.now(),
+      sessionPnl: 0, tradeCount: 0, realisedPnl: 0, realisedTrades: 0, position: null, unrealisedPnl: 0, startedAt: Date.now(),
     };
     this.bots.set(id, runtime);
 
