@@ -38,7 +38,8 @@ export interface TradeResult {
   timestamp: number;
   success:   boolean;
   error?:    string;
-  pnl?:      number;    // realised PnL — only set on close trades
+  pnl?:      number;    // realised PnL (net of fees) — only set on close trades
+  fees?:     number;    // round-trip taker fees deducted (open + close legs)
   reason?:   string;    // e.g. "Stop-loss 2.10%" or signal reason
   strategy?: string;    // strategy id — callers that know it should set this
   botId?:    string;    // originating bot id — for per-bot P&L attribution

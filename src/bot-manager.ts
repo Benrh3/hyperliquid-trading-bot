@@ -24,6 +24,7 @@ import type { CvStateStore } from "./cv-state-store.js";
 const BOTS_PATH      = resolve(process.cwd(), "config", "bots.json");
 const INITIAL_EQUITY = 1000;
 const SLIPPAGE       = 0.0005;
+const TAKER_FEE_PER_SIDE = 0.0005; // 0.05% per fill (matches cross-venue bot)
 const MAX_HISTORY    = 600;
 
 const TF_MS: Record<string, number> = {
@@ -874,10 +875,16 @@ export class BotManager {
   private paperClosePosition(bot: BotRuntime, exitPx: number, reason: string): void {
     const pos = bot.position;
     if (!pos) return;
-    const pnl =
+    const grossPnl =
       pos.side === "long"
         ? (exitPx - pos.entryPrice) * pos.size
         : (pos.entryPrice - exitPx) * pos.size;
+    // Taker fees on both legs: open notional + close notional, each × fee rate.
+    // Separate from the 5bps slippage already baked into the fill prices.
+    const openNotional  = pos.entryPrice * pos.size;
+    const closeNotional = exitPx * pos.size;
+    const fees = (openNotional + closeNotional) * TAKER_FEE_PER_SIDE;
+    const pnl  = grossPnl - fees;
     bot.equity          += pnl;
     bot.sessionPnl      += pnl;
     bot.tradeCount++;
@@ -887,7 +894,7 @@ export class BotManager {
     bot.unrealisedPnl    = 0;
     console.log(
       `[bot-manager] ${bot.config.id}/${bot.config.coin}/${bot.config.timeframe}` +
-      ` PAPER CLOSE @ ${exitPx.toFixed(2)} PnL ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} (${reason})`,
+      ` PAPER CLOSE @ ${exitPx.toFixed(2)} gross=${grossPnl >= 0 ? "+" : ""}${grossPnl.toFixed(2)} fees=${fees.toFixed(2)} net=${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} (${reason})`,
     );
   }
 
@@ -996,10 +1003,14 @@ export class BotManager {
     const tag  = `${bot.config.id}/${coin}/${bot.config.timeframe}`;
     try {
       const receipt = await this.venue!.closePosition(coin);
-      const pnl =
+      const grossPnl =
         pos.side === "long"
           ? (receipt.fillPrice - pos.entryPrice) * pos.size
           : (pos.entryPrice - receipt.fillPrice) * pos.size;
+      const openNotional  = pos.entryPrice * pos.size;
+      const closeNotional = receipt.fillPrice * receipt.fillSize;
+      const fees = (openNotional + closeNotional) * TAKER_FEE_PER_SIDE;
+      const pnl  = grossPnl - fees;
       bot.equity          += pnl;
       bot.sessionPnl      += pnl;
       bot.tradeCount++;
@@ -1010,7 +1021,7 @@ export class BotManager {
       console.log(
         `[bot-manager] ${tag} LIVE CLOSE` +
         ` oid=${receipt.orderId} fillPx=${receipt.fillPrice.toFixed(4)}` +
-        ` PnL=${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} (${reason})`,
+        ` gross=${grossPnl >= 0 ? "+" : ""}${grossPnl.toFixed(4)} fees=${fees.toFixed(4)} net=${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} (${reason})`,
       );
       bus.emit("trade", {
         orderId:   receipt.orderId,
@@ -1021,6 +1032,7 @@ export class BotManager {
         timestamp: Date.now(),
         success:   true,
         pnl,
+        fees,
         reason,
         strategy:  bot.config.strategyId,
         botId:     bot.config.id,

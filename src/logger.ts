@@ -60,7 +60,7 @@ export class Logger {
     this.db.pragma("journal_mode = WAL");
 
     // Load all migrations in order
-    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql"]) {
+    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql", "009_trades_fees.sql"]) {
       const p = join(process.cwd(), "migrations", file);
       if (existsSync(p)) {
         try { this.db.exec(readFileSync(p, "utf-8")); }
@@ -72,8 +72,8 @@ export class Logger {
     }
 
     this.stmtInsertTrade = this.db.prepare(`
-      INSERT INTO trades (order_id, coin, side, size, price, pnl, strategy, success, error, bot_id)
-      VALUES (@orderId, @coin, @side, @size, @price, @pnl, @strategy, @success, @error, @botId)
+      INSERT INTO trades (order_id, coin, side, size, price, pnl, fees, strategy, success, error, bot_id)
+      VALUES (@orderId, @coin, @side, @size, @price, @pnl, @fees, @strategy, @success, @error, @botId)
     `);
 
     this.stmtInsertEvent = this.db.prepare(`
@@ -104,6 +104,7 @@ export class Logger {
         size: result.size,
         price: result.price,
         pnl: result.pnl ?? null,
+        fees: result.fees ?? null,
         strategy: result.strategy ?? config.strategy.type,
         success: result.success ? 1 : 0,
         error: result.error ?? null,
