@@ -1,6 +1,7 @@
 import type { Venue } from "./venue.js";
 import type { BotState } from "./bot-manager.js";
 import type { Logger } from "./logger.js";
+import type { CvStateStore, CvPersistedState } from "./cv-state-store.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -53,7 +54,9 @@ export class CrossVenueFundingBasis {
   readonly coin:    string;
   readonly notional: number;
   private readonly logger:   Logger | undefined;
-  private readonly startedAt = Date.now();
+  private readonly stateStore: CvStateStore | undefined;
+  readonly botId:   string;
+  private startedAt = Date.now();
 
   // ── Execution mode ──────────────────────────────────────────────────────
   private executionMode: ExecutionMode = "paper";
@@ -107,6 +110,8 @@ export class CrossVenueFundingBasis {
     coin:       string,
     notionalUsd = 1_000,
     logger?:    Logger,
+    stateStore?: CvStateStore,
+    botId?:      string,
   ) {
     this.venueA           = venueA;
     this.venueB           = venueB;
@@ -115,7 +120,46 @@ export class CrossVenueFundingBasis {
     this.equity           = notionalUsd;
     this.dailyStartEquity = notionalUsd;
     this.logger           = logger;
+    this.stateStore       = stateStore;
+    this.botId            = botId ?? `cv-${Date.now().toString(36)}`;
     this.rates            = { [venueA.name]: null, [venueB.name]: null };
+
+    // Rehydrate from SQLite if prior state exists
+    if (stateStore) {
+      const saved = stateStore.load(this.botId);
+      if (saved) {
+        this.capturedFunding = saved.capturedFunding;
+        this.totalFees       = saved.totalFees;
+        this.equity          = saved.equity;
+        this.periods         = saved.periods;
+        this.flipCount       = saved.flipCount;
+        this.startedAt       = saved.startedAt;
+        this.totalLegHoldMs  = saved.totalLegHoldMs;
+        this.lastBucket      = saved.lastBucket;
+        this.lastFlipAt      = saved.lastFlipAt;
+        this.positioned      = saved.positioned;
+        this.shortVenue      = saved.shortVenue;
+        this.longVenue       = saved.longVenue;
+        this.dailyStartEquity = saved.dailyStartEq;
+        this.hourlyAccruals  = saved.hourlyAccruals;
+        if (this.positioned && this.shortVenue && this.longVenue) {
+          this.legs = [
+            { venueId: this.shortVenue, side: "short", entryRate: 0, openTime: this.startedAt },
+            { venueId: this.longVenue,  side: "long",  entryRate: 0, openTime: this.startedAt },
+          ];
+        }
+        console.log(
+          `[cross-venue] Rehydrated ${this.botId} — equity=$${this.equity.toFixed(2)}` +
+          ` periods=${this.periods} flips=${this.flipCount}` +
+          ` positioned=${this.positioned} since ${new Date(this.startedAt).toISOString().slice(0,10)}`,
+        );
+      } else {
+        console.log(
+          `[cross-venue] No saved state for ${this.botId} — starting fresh`,
+        );
+      }
+    }
+
     console.log(
       `[cross-venue] Constructed — ${venueA.name} ↔ ${venueB.name}` +
       ` coin=${coin} notional=$${notionalUsd} mode=paper`,
@@ -280,6 +324,7 @@ export class CrossVenueFundingBasis {
         this.equity          += earned;
         this.periods         += n;
         this.recordHourlyAccrual(bucket, earned, n);
+        this.persistState();
         console.log(
           `[cross-venue] Accrual ×${n}` +
           ` short=${this.shortVenue}(${(sRate * 100).toFixed(4)}%)` +
@@ -394,6 +439,8 @@ export class CrossVenueFundingBasis {
       { shortId, longId, spread, rateA, rateB, fee, executionMode: this.executionMode,
         notional: this.notional },
     );
+    this.persistState();
+    this.persistFlipEvent("", "", shortId, longId, spread, fee);
     console.log(
       `[cross-venue] OPENED short ${shortId}(${(shortRate * 100).toFixed(4)}%)` +
       ` long ${longId}(${(longRate * 100).toFixed(4)}%)` +
@@ -444,6 +491,8 @@ export class CrossVenueFundingBasis {
         executionMode: this.executionMode,
       },
     );
+    this.persistState();
+    this.persistFlipEvent(prevShort, prevLong, newShortId, newLongId, newSpread, fee);
     console.log(
       `[cross-venue] FLIPPED to short ${newShortId} long ${newLongId}` +
       ` spread=${(newSpread * 100).toFixed(4)}%/hr held=${Math.round(holdMs / 60_000)}m` +
@@ -661,6 +710,46 @@ export class CrossVenueFundingBasis {
       `${longVenueId} mark=$${longMark.toFixed(2)} notional=$${this.notional}`,
     );
     return null;
+  }
+
+  // ── Persistence ────────────────────────────────────────────────────────────
+
+  private persistState(): void {
+    if (!this.stateStore) return;
+    this.stateStore.save({
+      botId:           this.botId,
+      capturedFunding: this.capturedFunding,
+      totalFees:       this.totalFees,
+      equity:          this.equity,
+      periods:         this.periods,
+      flipCount:       this.flipCount,
+      startedAt:       this.startedAt,
+      totalLegHoldMs:  this.totalLegHoldMs,
+      lastBucket:      this.lastBucket,
+      lastFlipAt:      this.lastFlipAt,
+      positioned:      this.positioned,
+      shortVenue:      this.shortVenue,
+      longVenue:       this.longVenue,
+      executionMode:   this.executionMode,
+      notional:        this.notional,
+      dailyStartEq:    this.dailyStartEquity,
+      hourlyAccruals:  this.hourlyAccruals,
+    });
+  }
+
+  private persistFlipEvent(
+    fromShort: string, fromLong: string,
+    toShort: string, toLong: string,
+    spread: number, fee: number,
+  ): void {
+    if (!this.stateStore) return;
+    this.stateStore.recordFlip({
+      botId:       this.botId,
+      ts:          Date.now(),
+      fromShort, fromLong, toShort, toLong,
+      spread, fee,
+      equityAfter: this.equity,
+    });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

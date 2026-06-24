@@ -19,6 +19,7 @@ import type { Strategy } from "./strategy/base.js";
 import type { Candle, Signal } from "./events.js";
 import type { Venue } from "./venue.js";
 import type { Logger } from "./logger.js";
+import type { CvStateStore } from "./cv-state-store.js";
 
 const BOTS_PATH      = resolve(process.cwd(), "config", "bots.json");
 const INITIAL_EQUITY = 1000;
@@ -185,15 +186,18 @@ export class BotManager {
   private readonly dydxVenue: Venue | undefined;
   /** Logger used for cross-venue flip event persistence. */
   private readonly logger:    Logger | undefined;
+  /** SQLite persistence for cross-venue bot state. */
+  private readonly cvStateStore: CvStateStore | undefined;
   /** Orphaned positions on the exchange that no live bot claims. key=coin */
   private orphans = new Map<string, OrphanedPosition>();
   /** Reconcile loop timer handle. */
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(venue?: Venue, dydxVenue?: Venue, logger?: Logger) {
-    this.venue     = venue;
-    this.dydxVenue = dydxVenue;
-    this.logger    = logger;
+  constructor(venue?: Venue, dydxVenue?: Venue, logger?: Logger, cvStateStore?: CvStateStore) {
+    this.venue        = venue;
+    this.dydxVenue    = dydxVenue;
+    this.logger       = logger;
+    this.cvStateStore = cvStateStore;
     const isTestnet = config.exchange.network === "testnet";
     this.info        = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
     this.botsFile    = this.loadFile();
@@ -251,9 +255,10 @@ export class BotManager {
       // ── Cross-venue bots ─────────────────────────────────────────────────
       if (bc.strategyId === "cross-venue-funding-basis") {
         const notional = bc.notional ?? INITIAL_EQUITY;
-        // Reuse existing CrossVenueFundingBasis instance to preserve accumulated state
+        // Reuse existing instance to preserve accumulated state; otherwise rehydrate from SQLite
         const cv = old?.crossVenue ?? new CrossVenueFundingBasis(
           this.venue!, this.dydxVenue!, bc.coin, notional, this.logger,
+          this.cvStateStore, bc.id,
         );
         // Sync mode from config
         cv.setExecutionMode(bc.live ? "live" : "paper");
@@ -1043,7 +1048,7 @@ export class BotManager {
       this.botsFile.bots.push(bc);
       this.saveFile();
 
-      const cv = new CrossVenueFundingBasis(this.venue, this.dydxVenue, coin, notional, this.logger);
+      const cv = new CrossVenueFundingBasis(this.venue, this.dydxVenue, coin, notional, this.logger, this.cvStateStore, id);
       cv.setExecutionMode(live ? "live" : "paper");
       const runtime: BotRuntime = {
         config: bc, displayName: "Cross-Venue Funding Basis",

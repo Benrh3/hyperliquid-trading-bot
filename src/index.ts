@@ -28,6 +28,8 @@ import { MarketStore } from "./market/store.js";
 import { loadCustomDefs, customDefToRegistryEntry } from "./strategy/custom-strategy.js";
 import { STRATEGY_REGISTRY } from "./strategy/registry.js";
 import { RiskManager } from "./risk.js";
+import Database from "better-sqlite3";
+import { CvStateStore } from "./cv-state-store.js";
 import { initNotifications } from "./notifications.js";
 import type { Signal } from "./events.js";
 import type { Strategy } from "./strategy/base.js";
@@ -90,7 +92,10 @@ console.log(`[init] Custom strategies loaded: ${STRATEGY_REGISTRY.filter(e => e.
 // 5. Bot manager — manages all candle bots AND cross-venue bots.
 //    Receives hlVenue (for live order placement) and dydxVenue (for cross-venue).
 //    If no HL key, hlVenue is undefined and live bots warn on each trade attempt.
-const laneManager = new BotManager(hlVenue, dydxVenue, logger);
+const cvDb = new Database("data/bot.db");
+cvDb.pragma("journal_mode = WAL");
+const cvStateStore = new CvStateStore(cvDb);
+const laneManager = new BotManager(hlVenue, dydxVenue, logger, cvStateStore);
 
 // 6. dYdX funding poller (cross-exchange comparison on Strategies page)
 const dydxPoller = new DydxFundingPoller();
