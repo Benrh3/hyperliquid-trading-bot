@@ -817,8 +817,11 @@ export class BotManager {
 
   private applySignal(bot: BotRuntime, signal: Signal, candle: Candle): void {
     // Signal counter and logger always see every bot's signals.
-    // paper:true tells the risk manager and executor to skip execution.
-    bus.emit("signal", { ...signal, paper: !bot.config.live });
+    // Always paper:true for the bus — BotManager handles its own execution
+    // in executeLiveSignal(). Without this, the legacy Executor also hears
+    // the signal via RiskManager → signal:approved and double-executes,
+    // causing "failed, qty 0" rows in the trade log.
+    bus.emit("signal", { ...signal, paper: true });
 
     if (bot.config.live) {
       // Real execution path — async, venue fetches its own price for any coin.
