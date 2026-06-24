@@ -60,14 +60,20 @@ export class Logger {
     this.db.pragma("journal_mode = WAL");
 
     // Load all migrations in order
-    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql"]) {
+    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql"]) {
       const p = join(process.cwd(), "migrations", file);
-      if (existsSync(p)) this.db.exec(readFileSync(p, "utf-8"));
+      if (existsSync(p)) {
+        try { this.db.exec(readFileSync(p, "utf-8")); }
+        catch (e) {
+          // ALTER TABLE fails if column already exists — safe to ignore
+          if (!(e instanceof Error && e.message.includes("duplicate column"))) throw e;
+        }
+      }
     }
 
     this.stmtInsertTrade = this.db.prepare(`
-      INSERT INTO trades (order_id, coin, side, size, price, pnl, strategy, success, error)
-      VALUES (@orderId, @coin, @side, @size, @price, @pnl, @strategy, @success, @error)
+      INSERT INTO trades (order_id, coin, side, size, price, pnl, strategy, success, error, bot_id)
+      VALUES (@orderId, @coin, @side, @size, @price, @pnl, @strategy, @success, @error, @botId)
     `);
 
     this.stmtInsertEvent = this.db.prepare(`
@@ -101,6 +107,7 @@ export class Logger {
         strategy: result.strategy ?? config.strategy.type,
         success: result.success ? 1 : 0,
         error: result.error ?? null,
+        botId: result.botId ?? null,
       });
     });
 
@@ -169,11 +176,18 @@ export class Logger {
 
   /**
    * Reconstruct realised trade count and P&L for a bot from the durable trade log.
-   * Keyed by strategy+coin (the fields currently stored on each trade row).
-   * NOTE: two bots with the same strategy+coin would collide — if that's ever
-   * needed, add a bot_id column to the trades table.
+   * Prefers bot_id (exact, no collision). Falls back to strategy+coin for
+   * pre-migration rows that lack bot_id.
    */
-  getBotRealisedStats(strategy: string, coin: string): { tradeCount: number; realisedPnl: number } {
+  getBotRealisedStats(strategy: string, coin: string, botId?: string): { tradeCount: number; realisedPnl: number } {
+    if (botId) {
+      // Rows with this bot_id + fallback rows with matching strategy+coin but no bot_id
+      const row = this.db.prepare(
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE success = 1 AND (bot_id = ? OR (bot_id IS NULL AND strategy = ? AND coin = ?))",
+      ).get(botId, strategy, coin) as { cnt: number; pnl: number };
+      return { tradeCount: row.cnt, realisedPnl: row.pnl };
+    }
+    // Legacy path — no bot_id available
     const row = this.db.prepare(
       "SELECT COUNT(*) as cnt, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE strategy = ? AND coin = ? AND success = 1",
     ).get(strategy, coin) as { cnt: number; pnl: number };

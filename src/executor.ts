@@ -150,6 +150,7 @@ export class Executor {
           timestamp: Date.now(),
           success:   true,
           reason:    signal.reason,
+          botId:     "legacy",
         });
         return;
       }
@@ -169,6 +170,7 @@ export class Executor {
         timestamp: Date.now(),
         success:   true,
         reason:    signal.reason,
+        botId:     "legacy",
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -183,6 +185,7 @@ export class Executor {
         timestamp: Date.now(),
         success:   false,
         error:     error.message,
+        botId:     "legacy",
       });
     }
   }
@@ -223,6 +226,7 @@ export class Executor {
           success:   true,
           pnl,
           reason,
+          botId:     "legacy",
         });
         return;
       }
@@ -252,6 +256,7 @@ export class Executor {
         success:   true,
         pnl,
         reason,
+        botId:     "legacy",
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

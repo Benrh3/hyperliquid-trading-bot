@@ -262,7 +262,7 @@ export class BotManager {
       // Seed durable stats from the trades table (strategy+coin key).
       // NOTE: two bots with the same strategy+coin would collide; if that's
       // ever needed, add a bot_id column to the trades table.
-      const durableStats = this.logger?.getBotRealisedStats(bc.strategyId, bc.coin);
+      const durableStats = this.logger?.getBotRealisedStats(bc.strategyId, bc.coin, bc.id);
       const realisedPnl    = old?.realisedPnl    ?? durableStats?.realisedPnl    ?? 0;
       const realisedTrades = old?.realisedTrades  ?? durableStats?.tradeCount     ?? 0;
 
@@ -976,6 +976,7 @@ export class BotManager {
         success:   true,
         reason:    signal.reason,
         strategy:  bot.config.strategyId,
+        botId:     bot.config.id,
       });
     } catch (e) {
       const msg = (e as Error).message;
@@ -1022,6 +1023,7 @@ export class BotManager {
         pnl,
         reason,
         strategy:  bot.config.strategyId,
+        botId:     bot.config.id,
       });
     } catch (e) {
       const msg = (e as Error).message;
@@ -1425,6 +1427,7 @@ export class BotManager {
         success:   true,
         reason:    "adopted_from_exchange",
         strategy:  bot.config.strategyId,
+        botId:     bot.config.id,
       });
       this.logger?.logEvent("reconcile", "warn",
         `Position adopted: ${bot.config.coin} — exchange shows ${exchangePos.side} ${exchangePos.size.toFixed(5)} @ $${exchangePos.entryPrice.toFixed(2)}`,
