@@ -253,13 +253,19 @@ export class DydxVenue implements Venue {
   }
 
   private async initClient(): Promise<void> {
-    // ── Lazy dynamic import ───────────────────────────────────────────────
-    // Loaded here (not at module top-level) so a broken ESM path inside the
-    // package never crashes the process when no mnemonic is configured.
+    // ── Lazy load via CJS require ──────────────────────────────────────────
+    // The dYdX v4-client-js ESM build has broken relative imports (missing
+    // .js extensions in specifiers like `export * from './types'`). Node16
+    // ESM resolution rejects these. Using createRequire forces the CJS build
+    // path (build/cjs/src/index.js) which resolves correctly.
+    // Loaded lazily so a broken package never crashes the process when no
+    // mnemonic is configured.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let sdk: Record<string, any>;
     try {
-      sdk = await import("@dydxprotocol/v4-client-js") as Record<string, any>;
+      const { createRequire } = await import("node:module");
+      const require = createRequire(import.meta.url);
+      sdk = require("@dydxprotocol/v4-client-js") as Record<string, any>;
     } catch (e) {
       this.initPromise = null; // allow a future retry after a package fix
       const msg = (e as Error).message;
