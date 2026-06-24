@@ -167,7 +167,7 @@ async function buildFundingTop(): Promise<CachedFundingItem[]> {
       const currentRate = parseFloat(ctx.funding);
       const premium = parseFloat(ctx.premium);
       const predictedNextRate = Math.min(0.0005, Math.max(-0.0005, premium)) + 0.0001;
-      const annualizedRate = Math.pow(1 + currentRate, 8760) - 1;
+      const annualizedRate = currentRate * 8760;
 
       const { rates } = await getCoinHistory(name).catch(() => ({ rates: [] as number[], times: [] as number[] }));
       const last24h = rates.slice(-24);
