@@ -52,6 +52,7 @@ export class Logger {
   private stmtInsertEvent:    Database.Statement;
   private stmtInsertEquity:   Database.Statement;
   private stmtInsertFunding:  Database.Statement;
+  private stmtInsertSpread:   Database.Statement;
 
   constructor(dbPath = "data/bot.db") {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -59,7 +60,7 @@ export class Logger {
     this.db.pragma("journal_mode = WAL");
 
     // Load all migrations in order
-    for (const file of ["001_init.sql", "002_funding_matrix.sql"]) {
+    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql"]) {
       const p = join(process.cwd(), "migrations", file);
       if (existsSync(p)) this.db.exec(readFileSync(p, "utf-8"));
     }
@@ -79,6 +80,9 @@ export class Logger {
     );
     this.stmtInsertFunding = this.db.prepare(
       "INSERT OR REPLACE INTO funding_samples (ts, coin, venue, rate_hourly) VALUES (?, ?, ?, ?)",
+    );
+    this.stmtInsertSpread = this.db.prepare(
+      "INSERT OR REPLACE INTO funding_spread_history (ts, coin, hl_funding, dydx_funding, spread_abs, spread_dir, hl_oi_usd) VALUES (?, ?, ?, ?, ?, ?, ?)",
     );
 
     this.wire();
@@ -213,6 +217,28 @@ export class Logger {
         for (const s of samples) {
           const rate = isFinite(s.rateHourly) ? s.rateHourly : 0;
           insert.run(ts, s.coin, s.venue, rate);
+        }
+      });
+      tx();
+    } catch { /* non-critical */ }
+  }
+
+  writeSpreadHistory(
+    ts:      number,
+    entries: Array<{ coin: string; hlFunding: number | null; dydxFunding: number | null; spreadAbs: number | null; spreadDir: string | null; hlOiUsd: number }>,
+  ): void {
+    const insert = this.stmtInsertSpread;
+    try {
+      const tx = this.db.transaction(() => {
+        for (const e of entries) {
+          insert.run(
+            ts, e.coin,
+            e.hlFunding !== null && isFinite(e.hlFunding) ? e.hlFunding : null,
+            e.dydxFunding !== null && isFinite(e.dydxFunding) ? e.dydxFunding : null,
+            e.spreadAbs !== null && isFinite(e.spreadAbs) ? e.spreadAbs : null,
+            e.spreadDir,
+            isFinite(e.hlOiUsd) ? e.hlOiUsd : null,
+          );
         }
       });
       tx();

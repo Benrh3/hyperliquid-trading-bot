@@ -294,3 +294,40 @@ describe("retention / rollup", () => {
     expect(hourly.n).toBe(1);
   });
 });
+
+// ── Spread history persistence ───────────────────────────────────────────────
+
+import { Logger } from "../logger.js";
+
+describe("writeSpreadHistory", () => {
+  it("writes one row per coin per refresh, queryable by coin + time range", () => {
+    const logger = new Logger(":memory:");
+    const ts = Date.now();
+
+    logger.writeSpreadHistory(ts, [
+      { coin: "BTC", hlFunding: 0.0001, dydxFunding: 0.00005, spreadAbs: 0.00005, spreadDir: "hl>dydx", hlOiUsd: 5e8 },
+      { coin: "ETH", hlFunding: 0.0002, dydxFunding: 0.00015, spreadAbs: 0.00005, spreadDir: "hl>dydx", hlOiUsd: 3e8 },
+      { coin: "SOL", hlFunding: 0.0003, dydxFunding: null,    spreadAbs: null,     spreadDir: null,       hlOiUsd: 1e8 },
+    ]);
+
+    // Query: all rows for this timestamp
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = (logger as any).db;
+    const rows = db.prepare("SELECT * FROM funding_spread_history WHERE ts = ?").all(ts) as unknown[];
+    expect(rows).toHaveLength(3);
+
+    // Query: BTC rows in time range
+    const btcRows = db.prepare(
+      "SELECT * FROM funding_spread_history WHERE coin = ? AND ts >= ? AND ts <= ?",
+    ).all("BTC", ts - 1000, ts + 1000) as Array<{ hl_funding: number; spread_abs: number }>;
+    expect(btcRows).toHaveLength(1);
+    expect(btcRows[0].hl_funding).toBeCloseTo(0.0001);
+    expect(btcRows[0].spread_abs).toBeCloseTo(0.00005);
+
+    // SOL has null spread (dYdX doesn't list it)
+    const solRows = db.prepare(
+      "SELECT * FROM funding_spread_history WHERE coin = ?",
+    ).all("SOL") as Array<{ spread_abs: number | null }>;
+    expect(solRows[0].spread_abs).toBeNull();
+  });
+});

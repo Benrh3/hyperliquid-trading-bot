@@ -269,6 +269,19 @@ export class FundingMatrixPoller {
       for (const [coin, d] of hlCoins)   samples.push({ coin, venue: "hyperliquid", rateHourly: d.rateHourly });
       for (const [coin, d] of dydxCoins) samples.push({ coin, venue: "dydx",        rateHourly: d.rateHourly });
       void Promise.resolve().then(() => this.logger!.writeFundingSamples(ts, samples));
+
+      // Persist per-coin spread history for long-run analysis
+      const spreadRows = coins.map((e) => ({
+        coin:        e.coin,
+        hlFunding:   e.rates.hyperliquid,
+        dydxFunding: e.rates.dydx,
+        spreadAbs:   e.spread,
+        spreadDir:   e.bestPair === "hyperliquid_short_dydx_long" ? "hl>dydx"
+                   : e.bestPair === "dydx_short_hyperliquid_long" ? "dydx>hl"
+                   : null,
+        hlOiUsd:     e.oiUsd,
+      }));
+      void Promise.resolve().then(() => this.logger!.writeSpreadHistory(ts, spreadRows));
     }
   }
 
