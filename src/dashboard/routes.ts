@@ -279,21 +279,24 @@ export function createRouter(
   });
 
   router.get("/trades", (_req, res) => {
-    const total  = logger.getTradeCount();
-    const trades = logger.getTrades(100, 0);
-    res.render("trades", {
-      trades,
-      total,
-      coin: config.exchange.coin,
-    });
+    const { trades, total } = logger.getFilteredTrades({ limit: 200 });
+    const stats   = logger.getTradeStats();
+    const options = logger.getTradeFilterOptions();
+    res.render("trades", { trades, total, stats, options });
   });
 
   router.get("/api/trades", (req, res) => {
-    const limit  = Math.min(parseInt(typeof req.query.limit  === "string" ? req.query.limit  : "100") || 100, 500);
+    const limit  = Math.min(parseInt(typeof req.query.limit  === "string" ? req.query.limit  : "200") || 200, 500);
     const offset = parseInt(typeof req.query.offset === "string" ? req.query.offset : "0") || 0;
-    const trades = logger.getTrades(limit, offset);
-    const total  = logger.getTradeCount();
-    res.json({ trades, total, hasMore: offset + trades.length < total });
+    const botId    = typeof req.query.botId    === "string" ? req.query.botId    : undefined;
+    const strategy = typeof req.query.strategy === "string" ? req.query.strategy : undefined;
+    const coin     = typeof req.query.coin     === "string" ? req.query.coin     : undefined;
+    const success  = typeof req.query.success  === "string" ? parseInt(req.query.success) : undefined;
+
+    const { trades, total } = logger.getFilteredTrades({ botId, strategy, coin, success, limit, offset });
+    const stats   = logger.getTradeStats({ botId, strategy, coin });
+    const options = logger.getTradeFilterOptions();
+    res.json({ trades, total, stats, options, hasMore: offset + trades.length < total });
   });
 
   router.get("/backtest", (_req, res) => {

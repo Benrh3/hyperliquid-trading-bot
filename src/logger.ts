@@ -5,7 +5,7 @@ import { bus } from "./events.js";
 import { config } from "./config.js";
 import type { Signal, TradeResult } from "./events.js";
 
-interface TradeRow {
+export interface TradeRow {
   id: number;
   order_id: string;
   coin: string;
@@ -13,11 +13,13 @@ interface TradeRow {
   size: number;
   price: number;
   pnl: number | null;
+  fees: number | null;
   strategy: string;
   reason: string | null;
   success: number;
   error: string | null;
   created_at: string;
+  bot_id: string | null;
 }
 
 interface EventRow {
@@ -166,6 +168,62 @@ export class Logger {
       .prepare("SELECT COUNT(*) as count FROM trades")
       .get() as { count: number };
     return row.count;
+  }
+
+  /** Filtered trade query for the enriched Trades view. */
+  getFilteredTrades(filters: {
+    botId?: string; strategy?: string; coin?: string; success?: number;
+    limit?: number; offset?: number;
+  }): { trades: TradeRow[]; total: number } {
+    const clauses: string[] = [];
+    const params: (string | number)[] = [];
+    if (filters.botId)    { clauses.push("bot_id = ?");   params.push(filters.botId); }
+    if (filters.strategy) { clauses.push("strategy = ?"); params.push(filters.strategy); }
+    if (filters.coin)     { clauses.push("coin = ?");     params.push(filters.coin); }
+    if (filters.success !== undefined) { clauses.push("success = ?"); params.push(filters.success); }
+    const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
+    const total = (this.db.prepare("SELECT COUNT(*) as n FROM trades" + where).get(...params) as { n: number }).n;
+    const limit  = Math.min(filters.limit ?? 200, 500);
+    const offset = filters.offset ?? 0;
+    const trades = this.db
+      .prepare("SELECT * FROM trades" + where + " ORDER BY created_at DESC LIMIT ? OFFSET ?")
+      .all(...params, limit, offset) as TradeRow[];
+    return { trades, total };
+  }
+
+  /** Summary stats over the current filter for the Trades summary header. */
+  getTradeStats(filters?: { botId?: string; strategy?: string; coin?: string }): {
+    totalTrades: number; netPnl: number; winRate: number; avgNetPnl: number;
+  } {
+    const clauses = ["success = 1"];
+    const params: string[] = [];
+    if (filters?.botId)    { clauses.push("bot_id = ?");   params.push(filters.botId); }
+    if (filters?.strategy) { clauses.push("strategy = ?"); params.push(filters.strategy); }
+    if (filters?.coin)     { clauses.push("coin = ?");     params.push(filters.coin); }
+    const where = " WHERE " + clauses.join(" AND ");
+
+    const row = this.db.prepare(
+      "SELECT COUNT(*) as cnt, COALESCE(SUM(pnl),0) as net FROM trades" + where,
+    ).get(...params) as { cnt: number; net: number };
+
+    const wins = (this.db.prepare(
+      "SELECT COUNT(*) as w FROM trades" + where + " AND pnl > 0",
+    ).get(...params) as { w: number }).w;
+
+    return {
+      totalTrades: row.cnt,
+      netPnl:      row.net,
+      winRate:     row.cnt > 0 ? wins / row.cnt : 0,
+      avgNetPnl:   row.cnt > 0 ? row.net / row.cnt : 0,
+    };
+  }
+
+  /** Distinct values for filter dropdowns. */
+  getTradeFilterOptions(): { bots: string[]; strategies: string[]; coins: string[] } {
+    const bots = (this.db.prepare("SELECT DISTINCT bot_id FROM trades WHERE bot_id IS NOT NULL ORDER BY bot_id").all() as { bot_id: string }[]).map((r) => r.bot_id);
+    const strategies = (this.db.prepare("SELECT DISTINCT strategy FROM trades ORDER BY strategy").all() as { strategy: string }[]).map((r) => r.strategy);
+    const coins = (this.db.prepare("SELECT DISTINCT coin FROM trades ORDER BY coin").all() as { coin: string }[]).map((r) => r.coin);
+    return { bots, strategies, coins };
   }
 
   getSumPnl(): number {
