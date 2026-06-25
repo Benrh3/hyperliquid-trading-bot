@@ -66,6 +66,16 @@ export interface Venue {
   closePosition(coin: string): Promise<OrderReceipt>;
 
   /**
+   * Query exchange fills for a coin since `sinceMs` and return total closedPnl
+   * (exchange-computed, includes liquidation fills). Optional — only implemented
+   * by venues that support fill history queries.
+   */
+  getClosedPnlForCoin?(coin: string, sinceMs: number): Promise<{
+    totalClosedPnl: number;
+    closingFills: Array<{ time: number; side: string; px: number; sz: number; closedPnl: number; fee: number; hash: string }>;
+  }>;
+
+  /**
    * Returns the open position for this coin, or null if flat.
    * Implementations should query the exchange's live state rather than relying
    * on cached data so callers always see the real position.

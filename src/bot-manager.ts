@@ -80,6 +80,8 @@ export interface BotState {
   realisedPnl:      number;
   /** Durable trade count from the trades table — survives restarts. */
   realisedTrades:   number;
+  /** Exchange-authoritative closedPnl from HL fills (live bots only, includes liquidations). */
+  hlClosedPnl?:     number;
   startedAt:        number;
   error?:           string;
   /** Funding-basis only: human-readable description of current legs. */
@@ -149,6 +151,8 @@ interface BotRuntime {
   realisedPnl:   number;
   /** Durable trade count from the trades table — survives restarts. */
   realisedTrades: number;
+  /** Exchange-authoritative closedPnl (live bots only). */
+  hlClosedPnl?:  number;
   position: {
     side:          "long" | "short";
     entryPrice:    number;
@@ -374,8 +378,9 @@ export class BotManager {
         position,
         sessionPnl:    bot.sessionPnl,
         tradeCount:    bot.tradeCount,
-        realisedPnl:   bot.realisedPnl,
+        realisedPnl:   bot.hlClosedPnl ?? bot.realisedPnl,
         realisedTrades: bot.realisedTrades,
+        hlClosedPnl:   bot.hlClosedPnl,
         startedAt:     bot.startedAt,
         error:         bot.error,
         hadRecentMismatch:  bot.hadRecentMismatch,
@@ -515,6 +520,11 @@ export class BotManager {
       this.reconcileTimer = setInterval(() => void this.runReconcile(), RECONCILE_INTERVAL_MS);
       // Run an initial check shortly after startup so early mismatches are caught immediately
       setTimeout(() => void this.runReconcile(), 5_000);
+
+      // Reconcile HL closedPnl for live bots on startup
+      void this.reconcileHlClosedPnl().catch((e: Error) =>
+        console.warn(`[bot-manager] HL closedPnl reconcile failed: ${e.message}`),
+      );
 
       // ── Per-trade trigger (improvement 1) ─────────────────────────────────
       // In addition to the 60 s backstop, run a single-coin reconcile every time
@@ -1359,6 +1369,32 @@ export class BotManager {
    * Top-level reconcile cycle: checks every live candle-strategy bot against
    * the real exchange state, then scans for orphaned positions.
    */
+  /**
+   * On startup, query HL fills for each live directional bot and set
+   * hlClosedPnl — the exchange-authoritative realized P&L including
+   * liquidation fills that our internal log may have missed.
+   * NOTE: if two live bots trade the same coin on the same HL account,
+   * their fills merge and attribution is ambiguous. Currently each live
+   * bot trades a distinct coin, so coin-level attribution is clean.
+   */
+  private async reconcileHlClosedPnl(): Promise<void> {
+    if (!this.venue?.getClosedPnlForCoin) return;
+    for (const bot of this.bots.values()) {
+      if (!bot.config.live || bot.crossVenue) continue;
+      try {
+        const { totalClosedPnl } = await this.venue.getClosedPnlForCoin(
+          bot.config.coin, bot.startedAt,
+        );
+        bot.hlClosedPnl = totalClosedPnl;
+        console.log(
+          `[bot-manager] ${bot.config.id} HL closedPnl: ${totalClosedPnl >= 0 ? "+" : ""}${totalClosedPnl.toFixed(2)}`,
+        );
+      } catch (e) {
+        console.warn(`[bot-manager] ${bot.config.id} HL closedPnl query failed: ${(e as Error).message}`);
+      }
+    }
+  }
+
   private async runReconcile(): Promise<void> {
     if (!this.venue || this.isWarming) return;
     try {
@@ -1392,20 +1428,61 @@ export class BotManager {
 
     const botPos = bot.position;
 
-    // Case A: exchange FLAT, bot thinks OPEN
+    // Case A: exchange FLAT, bot thinks OPEN — likely liquidation
     if (!exchangePos && botPos) {
       const desc = `${botPos.side} ${botPos.size.toFixed(5)} @ $${botPos.entryPrice.toFixed(2)}`;
       console.warn(
         `[reconcile] ${bot.config.id}/${bot.config.coin}: expected ${desc} ` +
-        `but exchange is FLAT — clearing bot state (exchange is source of truth)`,
+        `but exchange is FLAT — likely liquidated. Querying HL fills for closedPnl.`,
       );
+
+      // Query HL fills to capture the liquidation P&L
+      let liqPnl = 0;
+      if (bot.config.live && this.venue?.getClosedPnlForCoin) {
+        try {
+          const { totalClosedPnl, closingFills } = await this.venue.getClosedPnlForCoin(
+            bot.config.coin, botPos.entryTime,
+          );
+          liqPnl = totalClosedPnl;
+          // Write a trade row for each closing fill so the loss is visible in the log
+          for (const fill of closingFills) {
+            bus.emit("trade", {
+              orderId:   fill.hash,
+              coin:      bot.config.coin,
+              side:      botPos.side,
+              size:      fill.sz,
+              price:     fill.px,
+              timestamp: fill.time,
+              success:   true,
+              pnl:       fill.closedPnl,
+              fees:      fill.fee,
+              reason:    "liquidation (exchange-initiated close)",
+              strategy:  bot.config.strategyId,
+              botId:     bot.config.id,
+            });
+          }
+          if (closingFills.length > 0) {
+            bot.realisedPnl    += liqPnl;
+            bot.realisedTrades += closingFills.length;
+            console.warn(
+              `[reconcile] ${bot.config.id}: recorded ${closingFills.length} liquidation fill(s), ` +
+              `closedPnl=${liqPnl >= 0 ? "+" : ""}${liqPnl.toFixed(2)}`,
+            );
+          }
+        } catch (e) {
+          console.warn(`[reconcile] ${bot.config.id}: failed to query HL fills: ${(e as Error).message}`);
+        }
+      }
+
       bot.position           = null;
       bot.unrealisedPnl      = 0;
       bot.hadRecentMismatch  = true;
-      bot.lastReconcileEvent = `Cleared stale position (bot had ${desc}, exchange flat)`;
+      bot.lastReconcileEvent = liqPnl !== 0
+        ? `Liquidated: ${desc}, closedPnl=${liqPnl >= 0 ? "+" : ""}${liqPnl.toFixed(2)}`
+        : `Cleared stale position (bot had ${desc}, exchange flat)`;
       this.logger?.logEvent("reconcile", "warn",
-        `Position cleared: ${bot.config.coin} — bot had ${desc}, exchange flat`,
-        { id: bot.config.id, botPosition: botPos },
+        `Position cleared: ${bot.config.coin} — bot had ${desc}, exchange flat, closedPnl=${liqPnl.toFixed(2)}`,
+        { id: bot.config.id, botPosition: botPos, closedPnl: liqPnl },
       );
       return;
     }

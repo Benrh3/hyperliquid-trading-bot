@@ -189,6 +189,40 @@ export class HyperliquidVenue implements Venue {
     return results;
   }
 
+  // ── Fill history (for P&L reconciliation) ─────────────────────────────────
+
+  /**
+   * Query HL fills for a coin since `sinceMs`, return total closedPnl and
+   * individual closing fills. Used to reconcile live-bot P&L against the
+   * exchange's authoritative record (captures liquidations the bot didn't
+   * initiate).
+   */
+  async getClosedPnlForCoin(coin: string, sinceMs: number): Promise<{
+    totalClosedPnl: number;
+    closingFills: Array<{ time: number; side: string; px: number; sz: number; closedPnl: number; fee: number; hash: string }>;
+  }> {
+    if (!this.walletAddress) return { totalClosedPnl: 0, closingFills: [] };
+    type Fill = { coin: string; px: string; sz: string; side: string; time: number; closedPnl: string; fee: string; hash: string };
+    const fills = await this.info.userFillsByTime({
+      user: this.walletAddress as `0x${string}`,
+      startTime: sinceMs,
+    }) as unknown as Fill[];
+
+    let totalClosedPnl = 0;
+    const closingFills: Array<{ time: number; side: string; px: number; sz: number; closedPnl: number; fee: number; hash: string }> = [];
+    for (const f of fills) {
+      if (f.coin !== coin) continue;
+      const cp = parseFloat(f.closedPnl);
+      if (!Number.isFinite(cp) || cp === 0) continue;
+      totalClosedPnl += cp;
+      closingFills.push({
+        time: f.time, side: f.side, px: parseFloat(f.px), sz: parseFloat(f.sz),
+        closedPnl: cp, fee: parseFloat(f.fee) || 0, hash: f.hash,
+      });
+    }
+    return { totalClosedPnl, closingFills };
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private findCoin(universe: { name: string }[], coin: string): number {
