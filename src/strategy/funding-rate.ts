@@ -121,7 +121,10 @@ export class FundingRateStrategy implements Strategy {
             timestamp: Date.now(),
           };
           console.log(`[funding-rate] Signal: ${signal.side} — ${signal.reason}`);
-          bus.emit("signal", signal);
+          // Observe-only: the Strategies page displays these signals but they
+          // must NOT route to the Executor. Actual funding-basis trading is
+          // handled by CrossVenueFundingBasis in BotManager.
+          bus.emit("signal", { ...signal, paper: true });
         } else if (predictedRate < THRESHOLD_LOW) {
           this.state.signalCount++;
           const signal: Signal = {
@@ -131,7 +134,7 @@ export class FundingRateStrategy implements Strategy {
             timestamp: Date.now(),
           };
           console.log(`[funding-rate] Signal: ${signal.side} — ${signal.reason}`);
-          bus.emit("signal", signal);
+          bus.emit("signal", { ...signal, paper: true });
         }
       }
     } catch (e) {
