@@ -51,6 +51,7 @@ Dark-first, defined globally in `_head.ejs`. The per-pillar accent is the only t
 - **Zombie-bot guard:** a deleted bot sets a `runtime.deleted` poison flag that is checked at every `await` boundary, so a stale async continuation can never open a real position after deletion.
 - **Reskins are presentation-only:** never rename element IDs the JS targets, never touch routes or data logic, and always preserve the semantic green/red.
 - **`data/` is irreplaceable:** `bot.db` plus the accumulating Market snapshot history. Never delete it during cleanup.
+- **Backups:** `scripts/backup-db.sh` runs nightly via cron (03:00 UTC). Uses SQLite `.backup` for a crash-safe snapshot. Retention: 7 daily + 4 weekly. Off-server via `BACKUP_REMOTE` env var (rclone or rsync). Install: `bash scripts/install-backup-cron.sh`. Restore: `pm2 stop all && cp ~/backups/bot-db/daily/bot-db-YYYY-MM-DD.db data/bot.db && pm2 start all`.
 
 ## Deploy
 
