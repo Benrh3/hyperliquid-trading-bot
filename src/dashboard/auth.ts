@@ -114,10 +114,20 @@ export function isAuthenticated(req: Request, res: Response, next: NextFunction)
  * only mutating routes exempted are the ones registered on the auth router
  * before this middleware runs (POST /login). Read-only methods always pass
  * through untouched.
+ *
+ * Read-only POST endpoints (backtests) are exempted — they use POST only
+ * for the JSON body, not because they mutate state.
  */
+const READ_ONLY_POST_PATHS = ["/api/backtest/run", "/api/backtest/walkforward"];
+
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
   if (!mutating || res.locals.isAdmin) {
+    next();
+    return;
+  }
+  // Exempt read-only POST endpoints (computation, no state change)
+  if (req.method === "POST" && READ_ONLY_POST_PATHS.includes(req.path)) {
     next();
     return;
   }
