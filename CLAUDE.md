@@ -51,7 +51,7 @@ Dark-first, defined globally in `_head.ejs`. The per-pillar accent is the only t
 - **Zombie-bot guard:** a deleted bot sets a `runtime.deleted` poison flag that is checked at every `await` boundary, so a stale async continuation can never open a real position after deletion.
 - **Reskins are presentation-only:** never rename element IDs the JS targets, never touch routes or data logic, and always preserve the semantic green/red.
 - **`data/` is irreplaceable:** `bot.db` plus the accumulating Market snapshot history. Never delete it during cleanup.
-- **Backups:** `scripts/backup-db.sh` runs nightly via cron (03:00 UTC). Uses SQLite `.backup` for a crash-safe snapshot. Retention: 7 daily + 4 weekly. Off-server via `BACKUP_REMOTE` env var (rclone or rsync). Install: `bash scripts/install-backup-cron.sh`. Restore: `pm2 stop all && cp ~/backups/bot-db/daily/bot-db-YYYY-MM-DD.db data/bot.db && pm2 start all`.
+- **Backups:** `scripts/backup-db.sh` runs nightly via cron (03:00 UTC). Two paths: (1) local binary `.backup` → `~/backups/bot-db/` with 7-daily + 4-weekly retention for fast restore; (2) SQL `.dump` → `~/howbrook-quant-backups/bot-db.sql` → git push to private `Benrh3/howbrook-quant-backups` repo (text diffs efficiently, won't bloat). Install: `bash scripts/install-backup-cron.sh`. Restore from local: `pm2 stop all && cp ~/backups/bot-db/daily/bot-db-YYYY-MM-DD.db data/bot.db && pm2 start all`. Restore from GitHub: `cd ~/howbrook-quant-backups && git pull && sqlite3 ~/hyperliquid-trading-bot/data/bot.db < bot-db.sql`.
 
 ## Deploy
 
