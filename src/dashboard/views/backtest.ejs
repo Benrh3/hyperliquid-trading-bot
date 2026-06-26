@@ -753,6 +753,8 @@
     runBtn.disabled    = true;
     statusEl.textContent = 'Fetching candles & running…';
 
+    if (!coin) { statusEl.textContent = 'Select a coin first'; runBtn.disabled = false; return; }
+
     try {
       var body = Object.assign({ strategyId: strategyId, coin: coin, interval: interval, strategyParams: strategyParams, initialEquity: initialEquity, commissionPct: commissionPct, stopLossPct: stopLossPct }, rangeParams);
       var [res, fundingRes] = await Promise.all([
@@ -764,10 +766,15 @@
         fetch('/api/backtest/funding?interval=' + interval + '&limit=' + (rangeParams.candles || 2000)),
       ]);
 
-      const result  = await res.json();
-      const funding = fundingRes.ok ? await fundingRes.json() : null;
+      if (!res.ok) {
+        var errText = await res.text();
+        try { var errJson = JSON.parse(errText); throw new Error(errJson.error || res.statusText); }
+        catch (pe) { if (pe instanceof SyntaxError) throw new Error('Server error (HTTP ' + res.status + ')'); throw pe; }
+      }
+      var result  = await res.json();
+      var funding = fundingRes.ok ? await fundingRes.json() : null;
 
-      if (!res.ok || result.error) throw new Error(result.error || res.statusText);
+      if (result.error) throw new Error(result.error);
 
       statusEl.textContent = result.runConfig.fetchedCandles.toLocaleString() + ' candles · ' + interval;
 
@@ -831,6 +838,8 @@
     var commissionPct = parseFloat(document.getElementById('bt-commission').value) || 0.05;
     var stopLossPct   = parseFloat(document.getElementById('bt-stoploss').value) || 2;
 
+    if (!coin) { statusEl.textContent = 'Select a coin first'; runBtn.disabled = false; return; }
+
     runBtn.disabled = true;
     statusEl.textContent = 'Running walk-forward (' + windows + ' windows)…';
 
@@ -844,10 +853,15 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(wfBody),
       });
-      const data = await resp.json();
-      if (!resp.ok || data.error) throw new Error(data.error || resp.statusText);
+      if (!resp.ok) {
+        var wfErrText = await resp.text();
+        try { var wfErrJson = JSON.parse(wfErrText); throw new Error(wfErrJson.error || resp.statusText); }
+        catch (wpe) { if (wpe instanceof SyntaxError) throw new Error('Server error (HTTP ' + resp.status + ')'); throw wpe; }
+      }
+      var data = await resp.json();
+      if (data.error) throw new Error(data.error);
 
-      statusEl.textContent = `${data.windows.length} OOS windows completed`;
+      statusEl.textContent = data.windows.length + ' OOS windows completed';
       document.getElementById('bt-placeholder').style.display = 'none';
       document.getElementById('wf-results').style.display = '';
 

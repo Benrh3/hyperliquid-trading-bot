@@ -117,6 +117,17 @@ export function startDashboard(logger: Logger, strategies: Strategy[] = [], feed
   app.set("views", viewsDir);
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
+
+  // Return JSON (not HTML) for body-parse errors so the frontend can handle them
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app.use((err: any, _req: any, res: any, next: any) => {
+    if (err.type === "entity.parse.failed") {
+      res.status(400).json({ error: "Invalid JSON in request body" });
+      return;
+    }
+    next(err);
+  });
+
   console.log(`[dashboard] Views directory: ${viewsDir}`);
 
   // Auth: sets res.locals.isAdmin for every request (never blocks reads),
