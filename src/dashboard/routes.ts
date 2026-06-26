@@ -1027,6 +1027,11 @@ export function createRouter(
   // ── Walk-forward backtesting ──────────────────────────────────────────────
 
   router.post("/api/backtest/walkforward", async (req, res) => {
+    // Walk-forward grid-searches many param combos × expanding windows;
+    // can take 30–120s for strategies with params. Extend the timeout
+    // so nginx/Express don't kill the request.
+    req.setTimeout(300_000);
+    res.setTimeout(300_000);
     try {
       const {
         strategyId,
@@ -1063,7 +1068,7 @@ export function createRouter(
       const nWin      = Math.min(Math.max(parseInt(String(windows)) || 5, 2), 10);
       const segSize   = Math.floor(allCandles.length / nWin);
       const btOpts    = { initialEquity, positionSizeUsd: Math.round(initialEquity * (config.risk.riskPerTradePercent / config.risk.stopLossPercent)), stopLossPct, commissionPct: commissionPct / 100 };
-      const grid      = generateParamGrid(entry.params, 200);
+      const grid      = generateParamGrid(entry.params, 50);
 
       const windowResults: object[] = [];
       const stitchedEquity: { time: number; equity: number }[] = [];

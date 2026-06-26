@@ -108,7 +108,7 @@ export function runBacktest(
       }
     }
 
-    const signal: Signal | null = strategy.onCandle(candle, history.slice());
+    const signal: Signal | null = strategy.onCandle(candle, history);
 
     // Use next candle open for fill (realistic)
     const fillOpen = candles[i + 1]?.open ?? candle.close;
