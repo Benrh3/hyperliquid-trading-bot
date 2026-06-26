@@ -317,7 +317,7 @@ export function createRouter(
         candles:   candleLimit = 1000,
         strategyParams = {},
         initialEquity  = 1000,
-        commissionPct  = 0.045,   // received as % (e.g. 0.045), stored in runConfig as-is
+        commissionPct  = 0.05,    // received as % (e.g. 0.05 = 0.05%/side), matches live TAKER_FEE_PER_SIDE
         stopLossPct    = config.risk.stopLossPercent,
       } = req.body as {
         strategyId:      string;
@@ -1035,7 +1035,7 @@ export function createRouter(
         totalCandles = 2000,
         windows      = 5,
         optimiseBy   = "sharpeRatio",
-        commissionPct = 0.045,
+        commissionPct = 0.05,     // 0.05%/side, matches live TAKER_FEE_PER_SIDE
         stopLossPct   = config.risk.stopLossPercent,
         initialEquity = 1000,
       } = req.body as {

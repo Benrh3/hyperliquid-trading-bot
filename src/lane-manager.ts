@@ -18,7 +18,7 @@ import type { Candle, Signal } from "./events.js";
 const LANES_PATH     = resolve(process.cwd(), "config", "lanes.json");
 const INITIAL_EQUITY = 1000;
 const SLIPPAGE       = 0.0005;
-const TAKER_FEE      = 0.00045; // 0.045% per leg
+const TAKER_FEE      = 0.0005;  // 0.05% per leg — matches live TAKER_FEE_PER_SIDE
 const MAX_HISTORY    = 600;
 const FUNDING_POLL_MS = 60_000;
 const HOUR_MS         = 3_600_000;

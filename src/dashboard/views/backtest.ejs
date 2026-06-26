@@ -303,7 +303,7 @@
 
         <div class="ctrl-field">
           <label class="ctrl-label" for="bt-commission">Commission per side (%)</label>
-          <input class="ctrl-inp" id="bt-commission" type="number" min="0" step="0.001" value="0.045">
+          <input class="ctrl-inp" id="bt-commission" type="number" min="0" step="0.001" value="0.05">
         </div>
 
         <div class="ctrl-field">
@@ -687,7 +687,7 @@
           '<div class="funding-stat">' +
             '<div class="card-label">Fee Drag</div>' +
             '<div class="card-value mono"><span class="pnl-neg">−' + f.feeDragPct.toFixed(3) + '%</span></div>' +
-            '<div class="card-sub">4 × 0.045% taker</div>' +
+            '<div class="card-sub">4 × 0.05% taker</div>' +
           '</div>' +
           '<div class="funding-stat">' +
             '<div class="card-label">Periods</div>' +
@@ -709,7 +709,7 @@
     const interval       = document.getElementById('bt-tf').value;
     const candles        = parseInt(document.getElementById('bt-limit').value) || 1000;
     const initialEquity  = parseFloat(document.getElementById('bt-equity').value) || 1000;
-    const commissionPct  = parseFloat(document.getElementById('bt-commission').value) || 0.045;
+    const commissionPct  = parseFloat(document.getElementById('bt-commission').value) || 0.05;
     const stopLossPct    = parseFloat(document.getElementById('bt-stoploss').value) || 2;
 
     // Collect strategy params from dynamic inputs
@@ -796,7 +796,7 @@
     const windows     = parseInt(document.getElementById('wf-windows').value) || 5;
     const optimiseBy  = document.getElementById('wf-metric').value;
     const initialEquity = parseFloat(document.getElementById('bt-equity').value) || 1000;
-    const commissionPct = parseFloat(document.getElementById('bt-commission').value) || 0.045;
+    const commissionPct = parseFloat(document.getElementById('bt-commission').value) || 0.05;
     const stopLossPct   = parseFloat(document.getElementById('bt-stoploss').value) || 2;
 
     runBtn.disabled = true;

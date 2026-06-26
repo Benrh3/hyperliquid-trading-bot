@@ -53,7 +53,7 @@ interface BacktestOptions {
   initialEquity?:   number;
   positionSizeUsd?: number;
   stopLossPct?:     number;
-  commissionPct?:   number;   // per-side decimal fraction, e.g. 0.00045 for 0.045%
+  commissionPct?:   number;   // per-side decimal fraction, e.g. 0.0005 for 0.05%
 }
 
 export function runBacktest(
@@ -215,7 +215,7 @@ export interface FundingBasisResult {
   equityCurve:     { time: number; equity: number }[];
 }
 
-const TAKER_FEE = 0.00045; // 0.045% per leg
+const TAKER_FEE = 0.0005; // 0.05% per leg — matches live TAKER_FEE_PER_SIDE
 
 export function runFundingBasisBacktest(
   records: FundingRecord[],
