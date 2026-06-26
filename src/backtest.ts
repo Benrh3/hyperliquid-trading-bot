@@ -268,12 +268,15 @@ export async function fetchFundingHistory(coin: string, startTime: number, endTi
 // ── Candle fetch ─────────────────────────────────────────────────────────────
 
 export async function fetchCandles(coin: string, interval: string, limit: number): Promise<Candle[]> {
-  const isTestnet  = config.exchange.network === "testnet";
-  const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
   const intervalMs = BACKTEST_INTERVAL_MS[interval] ?? 60_000;
   const endTime    = Date.now();
   const startTime  = endTime - limit * intervalMs;
+  return fetchCandlesByRange(coin, interval, startTime, endTime);
+}
 
+export async function fetchCandlesByRange(coin: string, interval: string, startTime: number, endTime: number): Promise<Candle[]> {
+  const isTestnet  = config.exchange.network === "testnet";
+  const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
   const raw = await infoClient.candleSnapshot({ coin, interval: interval as "1m", startTime, endTime });
   return raw.map((c) => ({
     timestamp: c.t,

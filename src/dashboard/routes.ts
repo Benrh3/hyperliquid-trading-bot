@@ -2,7 +2,7 @@ import { Router } from "express";
 import { join } from "path";
 import { RSI } from "technicalindicators";
 import { config, coins, API_URL } from "../config.js";
-import { runBacktest, fetchCandles, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
+import { runBacktest, fetchCandles, fetchCandlesByRange, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
 import { alignFundingRows } from "../chart-utils.js";
 import { makeCacheKey, isValidCoin, isValidInterval } from "../candle-cache-utils.js";
 import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
@@ -315,6 +315,7 @@ export function createRouter(
         coin,
         interval   = "1h",
         candles:   candleLimit = 1000,
+        rangeDays,
         strategyParams = {},
         initialEquity  = 1000,
         commissionPct  = 0.05,    // received as % (e.g. 0.05 = 0.05%/side), matches live TAKER_FEE_PER_SIDE
@@ -324,6 +325,7 @@ export function createRouter(
         coin:            string;
         interval?:       string;
         candles?:        number;
+        rangeDays?:      number;
         strategyParams?: Record<string, number>;
         initialEquity?:  number;
         commissionPct?:  number;
@@ -343,8 +345,15 @@ export function createRouter(
         return;
       }
 
-      const limit   = Math.min(parseInt(String(candleLimit)) || 1000, 2000);
-      const candles = await fetchCandles(coin.toUpperCase(), interval, limit);
+      let candles: Awaited<ReturnType<typeof fetchCandles>>;
+      if (rangeDays && rangeDays > 0) {
+        const endTime   = Date.now();
+        const startTime = endTime - rangeDays * 86_400_000;
+        candles = await fetchCandlesByRange(coin.toUpperCase(), interval, startTime, endTime);
+      } else {
+        const limit = Math.min(parseInt(String(candleLimit)) || 1000, 5000);
+        candles = await fetchCandles(coin.toUpperCase(), interval, limit);
+      }
       if (candles.length === 0) {
         res.status(400).json({ error: "No candle data returned for this coin/interval" });
         return;
@@ -375,6 +384,9 @@ export function createRouter(
           coin:           coin.toUpperCase(),
           interval,
           fetchedCandles: candles.length,
+          rangeStart:     candles.length > 0 ? new Date(candles[0].timestamp).toISOString() : null,
+          rangeEnd:       candles.length > 0 ? new Date(candles[candles.length - 1].timestamp).toISOString() : null,
+          rangeDays:      candles.length > 1 ? Math.round((candles[candles.length - 1].timestamp - candles[0].timestamp) / 86_400_000) : 0,
           strategyParams: mergedParams,
           initialEquity,
           commissionPct,
@@ -1038,6 +1050,7 @@ export function createRouter(
         coin,
         interval    = "1h",
         totalCandles = 2000,
+        rangeDays,
         windows      = 5,
         optimiseBy   = "sharpeRatio",
         commissionPct = 0.05,     // 0.05%/side, matches live TAKER_FEE_PER_SIDE
@@ -1048,6 +1061,7 @@ export function createRouter(
         coin:           string;
         interval?:      string;
         totalCandles?:  number;
+        rangeDays?:     number;
         windows?:       number;
         optimiseBy?:    string;
         commissionPct?: number;
@@ -1058,8 +1072,15 @@ export function createRouter(
       const entry = STRATEGY_REGISTRY.find(e => e.id === strategyId && e.isCandleStrategy && e.factory);
       if (!entry?.factory) { res.status(400).json({ error: `Unknown strategy: ${strategyId}` }); return; }
 
-      const limit   = Math.min(parseInt(String(totalCandles)) || 2000, 5000);
-      const allCandles = await fetchCandles(coin.toUpperCase(), interval, limit);
+      let allCandles: Awaited<ReturnType<typeof fetchCandles>>;
+      if (rangeDays && rangeDays > 0) {
+        const endTime   = Date.now();
+        const startTime = endTime - rangeDays * 86_400_000;
+        allCandles = await fetchCandlesByRange(coin.toUpperCase(), interval, startTime, endTime);
+      } else {
+        const limit = Math.min(parseInt(String(totalCandles)) || 2000, 5000);
+        allCandles = await fetchCandles(coin.toUpperCase(), interval, limit);
+      }
       if (allCandles.length < windows * 10) {
         res.status(400).json({ error: "Not enough candles for the requested number of windows" });
         return;
@@ -1145,7 +1166,13 @@ export function createRouter(
         windows: windowResults,
         aggregate: { meanIsSharpe, meanOosSharpe, pctBeatBH, curveFitWarning: curveFit },
         stitchedEquity,
-        runConfig: { strategyId, strategyName: entry.displayName, coin, interval, totalCandles: allCandles.length, windows: nWin, optimiseBy, initialEquity },
+        runConfig: {
+          strategyId, strategyName: entry.displayName, coin, interval,
+          totalCandles: allCandles.length, windows: nWin, optimiseBy, initialEquity,
+          rangeStart: allCandles.length > 0 ? new Date(allCandles[0].timestamp).toISOString() : null,
+          rangeEnd:   allCandles.length > 0 ? new Date(allCandles[allCandles.length - 1].timestamp).toISOString() : null,
+          rangeDays:  allCandles.length > 1 ? Math.round((allCandles[allCandles.length - 1].timestamp - allCandles[0].timestamp) / 86_400_000) : 0,
+        },
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

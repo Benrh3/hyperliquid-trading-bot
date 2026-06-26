@@ -275,11 +275,23 @@
         </div>
 
         <div class="ctrl-field">
-          <label class="ctrl-label" for="bt-limit">Candles</label>
+          <label class="ctrl-label" for="bt-range">Period</label>
+          <select class="ctrl-sel" id="bt-range">
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="180" selected>Last 6 months</option>
+            <option value="365">Last 1 year</option>
+            <option value="0">All available</option>
+            <option value="custom">Custom candle count</option>
+          </select>
+        </div>
+        <div class="ctrl-field" id="bt-limit-field" style="display:none">
+          <label class="ctrl-label" for="bt-limit">Candle count</label>
           <select class="ctrl-sel" id="bt-limit">
             <option value="500">500</option>
             <option value="1000" selected>1000</option>
             <option value="2000">2000</option>
+            <option value="5000">5000</option>
           </select>
         </div>
       </div>
@@ -556,14 +568,18 @@
       return `<span class="rc-key">${p?.label ?? k}</span><span class="rc-val">${v}</span>`;
     }).join('');
 
+    var rangeStr = rc.rangeStart && rc.rangeEnd
+      ? rc.rangeStart.slice(0,10) + ' → ' + rc.rangeEnd.slice(0,10) + ' (' + rc.rangeDays + 'd)'
+      : rc.fetchedCandles + ' bars';
     document.getElementById('bt-run-config').innerHTML =
-      `<span class="rc-key">Strategy</span><span class="rc-val">${rc.strategyName}</span>` +
-      `<span class="rc-key">Coin</span><span class="rc-val">${rc.coin}</span>` +
-      `<span class="rc-key">Timeframe</span><span class="rc-val">${rc.interval}</span>` +
-      `<span class="rc-key">Candles</span><span class="rc-val">${rc.fetchedCandles.toLocaleString()}</span>` +
-      `<span class="rc-key">Equity</span><span class="rc-val">$${rc.initialEquity.toLocaleString()}</span>` +
-      `<span class="rc-key">Commission</span><span class="rc-val">${rc.commissionPct.toFixed(4)}%/side</span>` +
-      `<span class="rc-key">Stop-loss</span><span class="rc-val">${rc.stopLossPct}%</span>` +
+      '<span class="rc-key">Strategy</span><span class="rc-val">' + rc.strategyName + '</span>' +
+      '<span class="rc-key">Coin</span><span class="rc-val">' + rc.coin + '</span>' +
+      '<span class="rc-key">Timeframe</span><span class="rc-val">' + rc.interval + '</span>' +
+      '<span class="rc-key">Period</span><span class="rc-val">' + rangeStr + '</span>' +
+      '<span class="rc-key">Candles</span><span class="rc-val">' + rc.fetchedCandles.toLocaleString() + '</span>' +
+      '<span class="rc-key">Equity</span><span class="rc-val">$' + rc.initialEquity.toLocaleString() + '</span>' +
+      '<span class="rc-key">Commission</span><span class="rc-val">' + rc.commissionPct.toFixed(4) + '%/side</span>' +
+      '<span class="rc-key">Stop-loss</span><span class="rc-val">' + rc.stopLossPct + '%</span>' +
       paramRows;
 
     document.getElementById('bt-run-config-wrap').style.display = '';
@@ -703,19 +719,34 @@
   }
 
   // ── Run backtest ──────────────────────────────────────────────────────────
+  // Range selector toggle
+  document.getElementById('bt-range').addEventListener('change', function () {
+    document.getElementById('bt-limit-field').style.display = this.value === 'custom' ? '' : 'none';
+  });
+
+  function getRangeParams() {
+    var rangeVal = document.getElementById('bt-range').value;
+    if (rangeVal === 'custom') {
+      return { candles: parseInt(document.getElementById('bt-limit').value) || 1000 };
+    }
+    var days = parseInt(rangeVal) || 0;
+    if (days === 0) return { rangeDays: 730 }; // "All" → request 2 years, exchange caps to its depth
+    return { rangeDays: days };
+  }
+
   async function run() {
-    const strategyId     = stratSel.value;
-    const coin           = coinSel.value;
-    const interval       = document.getElementById('bt-tf').value;
-    const candles        = parseInt(document.getElementById('bt-limit').value) || 1000;
-    const initialEquity  = parseFloat(document.getElementById('bt-equity').value) || 1000;
-    const commissionPct  = parseFloat(document.getElementById('bt-commission').value) || 0.05;
-    const stopLossPct    = parseFloat(document.getElementById('bt-stoploss').value) || 2;
+    var strategyId     = stratSel.value;
+    var coin           = coinSel.value;
+    var interval       = document.getElementById('bt-tf').value;
+    var rangeParams    = getRangeParams();
+    var initialEquity  = parseFloat(document.getElementById('bt-equity').value) || 1000;
+    var commissionPct  = parseFloat(document.getElementById('bt-commission').value) || 0.05;
+    var stopLossPct    = parseFloat(document.getElementById('bt-stoploss').value) || 2;
 
     // Collect strategy params from dynamic inputs
-    const strategyParams = {};
-    paramsEl.querySelectorAll('input[name]').forEach(inp => {
-      const v = parseFloat(inp.value);
+    var strategyParams = {};
+    paramsEl.querySelectorAll('input[name]').forEach(function (inp) {
+      var v = parseFloat(inp.value);
       if (!isNaN(v)) strategyParams[inp.name] = v;
     });
 
@@ -723,13 +754,14 @@
     statusEl.textContent = 'Fetching candles & running…';
 
     try {
-      const [res, fundingRes] = await Promise.all([
+      var body = Object.assign({ strategyId: strategyId, coin: coin, interval: interval, strategyParams: strategyParams, initialEquity: initialEquity, commissionPct: commissionPct, stopLossPct: stopLossPct }, rangeParams);
+      var [res, fundingRes] = await Promise.all([
         fetch('/api/backtest/run', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ strategyId, coin, interval, candles, strategyParams, initialEquity, commissionPct, stopLossPct }),
+          body:    JSON.stringify(body),
         }),
-        fetch('/api/backtest/funding?interval=' + interval + '&limit=' + candles),
+        fetch('/api/backtest/funding?interval=' + interval + '&limit=' + (rangeParams.candles || 2000)),
       ]);
 
       const result  = await res.json();
@@ -789,24 +821,28 @@
 
   // ── Walk-forward run ──────────────────────────────────────────────────────
   async function runWalkForward() {
-    const strategyId  = stratSel.value;
-    const coin        = coinSel.value;
-    const interval    = document.getElementById('bt-tf').value;
-    const totalCandles = parseInt(document.getElementById('bt-limit').value) || 1000;
-    const windows     = parseInt(document.getElementById('wf-windows').value) || 5;
-    const optimiseBy  = document.getElementById('wf-metric').value;
-    const initialEquity = parseFloat(document.getElementById('bt-equity').value) || 1000;
-    const commissionPct = parseFloat(document.getElementById('bt-commission').value) || 0.05;
-    const stopLossPct   = parseFloat(document.getElementById('bt-stoploss').value) || 2;
+    var strategyId  = stratSel.value;
+    var coin        = coinSel.value;
+    var interval    = document.getElementById('bt-tf').value;
+    var rangeParams = getRangeParams();
+    var windows     = parseInt(document.getElementById('wf-windows').value) || 5;
+    var optimiseBy  = document.getElementById('wf-metric').value;
+    var initialEquity = parseFloat(document.getElementById('bt-equity').value) || 1000;
+    var commissionPct = parseFloat(document.getElementById('bt-commission').value) || 0.05;
+    var stopLossPct   = parseFloat(document.getElementById('bt-stoploss').value) || 2;
 
     runBtn.disabled = true;
-    statusEl.textContent = `Running walk-forward (${windows} windows)…`;
+    statusEl.textContent = 'Running walk-forward (' + windows + ' windows)…';
 
     try {
-      const resp = await fetch('/api/backtest/walkforward', {
+      var wfBody = Object.assign({
+        strategyId: strategyId, coin: coin, interval: interval, windows: windows,
+        optimiseBy: optimiseBy, commissionPct: commissionPct, stopLossPct: stopLossPct, initialEquity: initialEquity,
+      }, rangeParams.candles ? { totalCandles: rangeParams.candles } : { rangeDays: rangeParams.rangeDays });
+      var resp = await fetch('/api/backtest/walkforward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ strategyId, coin, interval, totalCandles, windows, optimiseBy, commissionPct, stopLossPct, initialEquity }),
+        body: JSON.stringify(wfBody),
       });
       const data = await resp.json();
       if (!resp.ok || data.error) throw new Error(data.error || resp.statusText);
