@@ -176,7 +176,7 @@ export function runBacktest(
     const mean     = returns.reduce((s, r) => s + r, 0) / returns.length;
     const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
     const std      = Math.sqrt(variance);
-    sharpeRatio = std > 0 ? (mean / std) * Math.sqrt(returns.length) : 0;
+    sharpeRatio = std > 1e-10 ? (mean / std) * Math.sqrt(returns.length) : 0;
   }
 
   // ── Buy-and-hold benchmark ───────────────────────────────────────────────

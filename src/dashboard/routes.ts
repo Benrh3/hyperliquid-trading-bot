@@ -1095,10 +1095,23 @@ export function createRouter(
       const stitchedEquity: { time: number; equity: number }[] = [];
       let prevEndEquity = initialEquity;
 
+      // Warmup bars prepended to OOS so indicator buffers are primed.
+      // Without this, strategies with large MIN_CANDLES (e.g. TrendFollow=201)
+      // produce zero trades on short OOS segments.
+      const WARMUP_BARS = 250;
+
       for (let i = 1; i < nWin; i++) {
         const isSamples  = allCandles.slice(0, i * segSize);
-        const oosSamples = allCandles.slice(i * segSize, (i + 1) * segSize);
-        if (oosSamples.length === 0) break;
+        const oosStart   = i * segSize;
+        const oosEnd     = (i + 1) * segSize;
+        const rawOos     = allCandles.slice(oosStart, oosEnd);
+        if (rawOos.length === 0) break;
+
+        // Prepend warmup from IS tail so indicators are primed for OOS
+        const warmupStart = Math.max(0, oosStart - WARMUP_BARS);
+        const warmup      = allCandles.slice(warmupStart, oosStart);
+        const oosSamples  = [...warmup, ...rawOos];
+        const warmupLen   = warmup.length;
 
         // Grid-search on IS window
         let bestParams: Record<string, number> = grid[0] ?? {};
@@ -1113,10 +1126,33 @@ export function createRouter(
           if (m > bestMetric) { bestMetric = m; bestParams = params; bestISResult = r; }
         }
 
-        // OOS with best params
+        // OOS with best params (warmup-prefixed so indicators are hot)
         const oosStrat = entry.factory!();
         if (Object.keys(bestParams).length > 0) Object.assign(oosStrat, bestParams);
-        const oosResult = runBacktest(oosStrat, oosSamples, btOpts);
+        const fullOosResult = runBacktest(oosStrat, oosSamples, btOpts);
+
+        // Extract OOS-only metrics: trades and equity from after the warmup period
+        const oosOnlyTrades = fullOosResult.trades.filter(t => t.entryTime >= rawOos[0].timestamp);
+        const oosOnlyPnl    = oosOnlyTrades.reduce((s, t) => s + t.pnl, 0);
+        const oosResult = {
+          ...fullOosResult,
+          totalPnl:    oosOnlyPnl,
+          tradeCount:  oosOnlyTrades.length,
+          trades:      oosOnlyTrades,
+          equityCurve: fullOosResult.equityCurve.filter(p => p.time >= rawOos[0].timestamp),
+          // Recompute win rate and Sharpe on OOS-only trades
+          winRate:     oosOnlyTrades.length > 0 ? oosOnlyTrades.filter(t => t.pnl > 0).length / oosOnlyTrades.length : 0,
+          sharpeRatio: computeOosSharpe(oosOnlyTrades),
+        };
+
+        function computeOosSharpe(trades: typeof oosOnlyTrades): number {
+          if (trades.length < 2) return 0;
+          const returns = trades.map(t => t.pnl / (t.entryPrice * t.size));
+          const mean    = returns.reduce((s, r) => s + r, 0) / returns.length;
+          const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+          const std     = Math.sqrt(variance);
+          return std > 1e-10 ? (mean / std) * Math.sqrt(returns.length) : 0;
+        }
         const oosReturn = initialEquity > 0 ? (oosResult.totalPnl / initialEquity) * 100 : 0;
         const isReturn  = initialEquity > 0 && bestISResult ? (bestISResult.totalPnl / initialEquity) * 100 : 0;
 
@@ -1130,9 +1166,9 @@ export function createRouter(
           prevEndEquity = stitched[stitched.length - 1].equity;
         }
 
-        // B&H for this OOS segment
-        const bhOos = oosSamples.length > 1
-          ? (oosSamples[oosSamples.length - 1].close - oosSamples[0].close) / oosSamples[0].close * 100
+        // B&H for this OOS segment (rawOos = actual OOS without warmup)
+        const bhOos = rawOos.length > 1
+          ? (rawOos[rawOos.length - 1].close - rawOos[0].close) / rawOos[0].close * 100
           : 0;
 
         windowResults.push({
@@ -1140,9 +1176,9 @@ export function createRouter(
           isStart:    isSamples[0]?.timestamp,
           isEnd:      isSamples[isSamples.length - 1]?.timestamp,
           isCandles:  isSamples.length,
-          oosStart:   oosSamples[0]?.timestamp,
-          oosEnd:     oosSamples[oosSamples.length - 1]?.timestamp,
-          oosCandles: oosSamples.length,
+          oosStart:   rawOos[0]?.timestamp,
+          oosEnd:     rawOos[rawOos.length - 1]?.timestamp,
+          oosCandles: rawOos.length,
           bestParams,
           isMetrics:  { sharpeRatio: bestISResult?.sharpeRatio ?? 0, returnPct: isReturn, tradeCount: bestISResult?.tradeCount ?? 0 },
           oosMetrics: { sharpeRatio: oosResult.sharpeRatio, returnPct: oosReturn, tradeCount: oosResult.tradeCount },
