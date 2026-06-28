@@ -385,38 +385,44 @@ export class Logger {
   // ── Retention / rollup ───────────────────────────────────────────────────────
 
   /**
-   * Roll up rows older than 7 days into hourly buckets, then delete the raw rows.
-   * Each table runs in its own transaction so one failure doesn't block others.
-   * Deletes are batched (50K rows per pass) to keep transactions short and avoid
-   * SQLITE_BUSY under cross-process WAL contention.
+   * Roll up raw rows into hourly buckets, then prune raw rows older than 7 days.
+   *
+   * Rollup and prune use SEPARATE cutoffs so hourly tables stay current:
+   *   - rollup: all completed hours (up to the start of the current hour)
+   *   - prune:  only raw rows older than 7 days
+   *
+   * INSERT OR IGNORE makes re-processing idempotent — already-rolled-up hours
+   * are skipped. Each table runs independently so one failure doesn't block others.
+   * Deletes are batched (50K rows/pass) to keep transactions short under WAL.
    */
   runRetentionPolicy(): void {
-    const cutoff = Date.now() - RETENTION_RAW_MS;
-    const BATCH = 50_000;
+    const hourFloor   = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
+    const pruneCutoff = Date.now() - RETENTION_RAW_MS;
+    const BATCH       = 50_000;
 
-    // Equity: roll up → hourly, then delete raws
+    // Equity: roll up → hourly, then prune old raws
     this._retainTable("equity", () => {
       this.db.prepare(`
         INSERT OR IGNORE INTO equity_history_hourly (ts_hour, avg_equity_usd, sample_count)
         SELECT (ts / ${HOUR_MS}) * ${HOUR_MS}, AVG(equity_usd), COUNT(*)
         FROM equity_history WHERE ts < ?
         GROUP BY (ts / ${HOUR_MS})
-      `).run(cutoff);
-      this._batchDelete("equity_history", "ts", cutoff, BATCH);
+      `).run(hourFloor);
+      this._batchDelete("equity_history", "ts", pruneCutoff, BATCH);
     });
 
-    // Funding samples: roll up → hourly per (coin, venue), then delete raws
+    // Funding samples: roll up → hourly per (coin, venue), then prune old raws
     this._retainTable("funding_samples", () => {
       this.db.prepare(`
         INSERT OR IGNORE INTO funding_samples_hourly (ts_hour, coin, venue, avg_rate_hourly, sample_count)
         SELECT (ts / ${HOUR_MS}) * ${HOUR_MS}, coin, venue, AVG(rate_hourly), COUNT(*)
         FROM funding_samples WHERE ts < ?
         GROUP BY (ts / ${HOUR_MS}), coin, venue
-      `).run(cutoff);
-      this._batchDelete("funding_samples", "ts", cutoff, BATCH);
+      `).run(hourFloor);
+      this._batchDelete("funding_samples", "ts", pruneCutoff, BATCH);
     });
 
-    // Funding spread history: roll up → hourly per coin, then delete raws
+    // Funding spread history: roll up → hourly per coin, then prune old raws
     // (WITHOUT ROWID table — cannot use rowid-based batch delete)
     this._retainTable("funding_spread_history", () => {
       this.db.prepare(`
@@ -424,8 +430,8 @@ export class Logger {
         SELECT (ts / ${HOUR_MS}) * ${HOUR_MS}, coin, AVG(hl_funding), AVG(dydx_funding), AVG(spread_abs), AVG(hl_oi_usd), COUNT(*)
         FROM funding_spread_history WHERE ts < ?
         GROUP BY (ts / ${HOUR_MS}), coin
-      `).run(cutoff);
-      this._batchDeleteByTs("funding_spread_history", cutoff, BATCH);
+      `).run(hourFloor);
+      this._batchDeleteByTs("funding_spread_history", pruneCutoff, BATCH);
     });
 
     // Events: prune older than 30 days (no rollup — operational log only)

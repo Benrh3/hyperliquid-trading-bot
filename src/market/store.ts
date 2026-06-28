@@ -119,37 +119,57 @@ export class MarketStore {
   }
 
   /**
-   * Roll up snapshot_metrics rows older than `retentionRawDays` into hourly
-   * buckets, then delete the raw rows. Mirrors Logger.runRetentionPolicy.
+   * Roll up snapshot_metrics into hourly buckets, then prune old raw rows.
+   *
+   * Rollup processes all completed hours (decoupled from the prune cutoff)
+   * so snapshot_metrics_hourly stays current. INSERT OR IGNORE makes
+   * re-processing idempotent. Deletes are batched to avoid long-held locks.
    */
   runRetentionPolicy(retentionRawDays = DEFAULT_RETENTION_RAW_DAYS): void {
-    const cutoff = Date.now() - retentionRawDays * 24 * HOUR_MS;
-    try {
-      this.db.transaction(() => {
-        this.db.prepare(`
-          INSERT OR IGNORE INTO snapshot_metrics_hourly (ts_hour, symbol, metric_key, avg_value, source, kind, sample_count)
-          SELECT (sm.captured_at / ${HOUR_MS}) * ${HOUR_MS},
-                 s.symbol,
-                 sm.metric_key,
-                 AVG(sm.value),
-                 sm.source,
-                 sm.kind,
-                 COUNT(*)
-          FROM snapshot_metrics sm
-          JOIN snapshots s ON s.id = sm.snapshot_id
-          WHERE sm.captured_at < ?
-          GROUP BY (sm.captured_at / ${HOUR_MS}), s.symbol, sm.metric_key
-        `).run(cutoff);
+    const hourFloor   = Math.floor(Date.now() / HOUR_MS) * HOUR_MS;
+    const pruneCutoff = Date.now() - retentionRawDays * 24 * HOUR_MS;
+    const BATCH       = 50_000;
 
-        this.db.prepare(`
-          DELETE FROM snapshot_metrics WHERE snapshot_id IN (
-            SELECT id FROM snapshots WHERE captured_at < ?
-          )
-        `).run(cutoff);
-        this.db.prepare("DELETE FROM snapshots WHERE captured_at < ?").run(cutoff);
-      })();
+    // Roll up all completed hours into hourly table
+    try {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO snapshot_metrics_hourly (ts_hour, symbol, metric_key, avg_value, source, kind, sample_count)
+        SELECT (sm.captured_at / ${HOUR_MS}) * ${HOUR_MS},
+               s.symbol,
+               sm.metric_key,
+               AVG(sm.value),
+               sm.source,
+               sm.kind,
+               COUNT(*)
+        FROM snapshot_metrics sm
+        JOIN snapshots s ON s.id = sm.snapshot_id
+        WHERE sm.captured_at < ?
+        GROUP BY (sm.captured_at / ${HOUR_MS}), s.symbol, sm.metric_key
+      `).run(hourFloor);
     } catch (e) {
-      console.warn("[market-store] Retention policy failed:", (e as Error).message);
+      console.warn("[market-store] Rollup failed:", (e as Error).message);
+    }
+
+    // Prune raw rows older than retention window
+    try {
+      let total = 0;
+      const stmt = this.db.prepare(
+        `DELETE FROM snapshot_metrics WHERE rowid IN (
+          SELECT sm.rowid FROM snapshot_metrics sm
+          JOIN snapshots s ON s.id = sm.snapshot_id
+          WHERE s.captured_at < ? LIMIT ?
+        )`,
+      );
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const result = stmt.run(pruneCutoff, BATCH);
+        total += result.changes;
+        if (result.changes < BATCH) break;
+      }
+      this.db.prepare("DELETE FROM snapshots WHERE captured_at < ?").run(pruneCutoff);
+      if (total > 0) console.log(`[market-store] Retention: pruned ${total} snapshot_metrics rows`);
+    } catch (e) {
+      console.warn("[market-store] Prune failed:", (e as Error).message);
     }
   }
 
