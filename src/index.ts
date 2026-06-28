@@ -94,6 +94,7 @@ console.log(`[init] Custom strategies loaded: ${STRATEGY_REGISTRY.filter(e => e.
 //    If no HL key, hlVenue is undefined and live bots warn on each trade attempt.
 const cvDb = new Database("data/bot.db");
 cvDb.pragma("journal_mode = WAL");
+cvDb.pragma("busy_timeout = 5000");
 const cvStateStore = new CvStateStore(cvDb);
 const laneManager = new BotManager(hlVenue, dydxVenue, logger, cvStateStore);
 
@@ -150,7 +151,8 @@ setInterval(() => {
   logger.snapshotEquity(total);
 }, EQUITY_SNAP_MS);
 
-// Retention policy — roll up rows older than 7 days, run hourly
+// Retention policy — roll up rows older than 7 days, run hourly + on startup
+void Promise.resolve().then(() => logger.runRetentionPolicy());
 setInterval(() => {
   void Promise.resolve().then(() => logger.runRetentionPolicy());
 }, 60 * 60_000);

@@ -60,9 +60,10 @@ export class Logger {
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
+    this.db.pragma("busy_timeout = 5000");
 
     // Load all migrations in order
-    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql", "009_trades_fees.sql"]) {
+    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql", "009_trades_fees.sql", "010_spread_history_hourly.sql"]) {
       const p = join(process.cwd(), "migrations", file);
       if (existsSync(p)) {
         try { this.db.exec(readFileSync(p, "utf-8")); }
@@ -385,41 +386,97 @@ export class Logger {
 
   /**
    * Roll up rows older than 7 days into hourly buckets, then delete the raw rows.
-   * Safe to call periodically (e.g. every hour). All work happens in transactions.
+   * Each table runs in its own transaction so one failure doesn't block others.
+   * Deletes are batched (50K rows per pass) to keep transactions short and avoid
+   * SQLITE_BUSY under cross-process WAL contention.
    */
   runRetentionPolicy(): void {
     const cutoff = Date.now() - RETENTION_RAW_MS;
-    try {
-      this.db.transaction(() => {
-        // Equity: roll up → hourly, then delete raws
-        this.db.prepare(`
-          INSERT OR IGNORE INTO equity_history_hourly (ts_hour, avg_equity_usd, sample_count)
-          SELECT (ts / ${HOUR_MS}) * ${HOUR_MS},
-                 AVG(equity_usd),
-                 COUNT(*)
-          FROM equity_history
-          WHERE ts < ?
-          GROUP BY (ts / ${HOUR_MS})
-        `).run(cutoff);
-        this.db.prepare("DELETE FROM equity_history WHERE ts < ?").run(cutoff);
+    const BATCH = 50_000;
 
-        // Funding: roll up → hourly per (coin, venue), then delete raws
-        this.db.prepare(`
-          INSERT OR IGNORE INTO funding_samples_hourly (ts_hour, coin, venue, avg_rate_hourly, sample_count)
-          SELECT (ts / ${HOUR_MS}) * ${HOUR_MS},
-                 coin,
-                 venue,
-                 AVG(rate_hourly),
-                 COUNT(*)
-          FROM funding_samples
-          WHERE ts < ?
-          GROUP BY (ts / ${HOUR_MS}), coin, venue
-        `).run(cutoff);
-        this.db.prepare("DELETE FROM funding_samples WHERE ts < ?").run(cutoff);
-      })();
+    // Equity: roll up → hourly, then delete raws
+    this._retainTable("equity", () => {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO equity_history_hourly (ts_hour, avg_equity_usd, sample_count)
+        SELECT (ts / ${HOUR_MS}) * ${HOUR_MS}, AVG(equity_usd), COUNT(*)
+        FROM equity_history WHERE ts < ?
+        GROUP BY (ts / ${HOUR_MS})
+      `).run(cutoff);
+      this._batchDelete("equity_history", "ts", cutoff, BATCH);
+    });
+
+    // Funding samples: roll up → hourly per (coin, venue), then delete raws
+    this._retainTable("funding_samples", () => {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO funding_samples_hourly (ts_hour, coin, venue, avg_rate_hourly, sample_count)
+        SELECT (ts / ${HOUR_MS}) * ${HOUR_MS}, coin, venue, AVG(rate_hourly), COUNT(*)
+        FROM funding_samples WHERE ts < ?
+        GROUP BY (ts / ${HOUR_MS}), coin, venue
+      `).run(cutoff);
+      this._batchDelete("funding_samples", "ts", cutoff, BATCH);
+    });
+
+    // Funding spread history: roll up → hourly per coin, then delete raws
+    // (WITHOUT ROWID table — cannot use rowid-based batch delete)
+    this._retainTable("funding_spread_history", () => {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO funding_spread_history_hourly (ts_hour, coin, avg_hl_funding, avg_dydx_funding, avg_spread_abs, avg_hl_oi_usd, sample_count)
+        SELECT (ts / ${HOUR_MS}) * ${HOUR_MS}, coin, AVG(hl_funding), AVG(dydx_funding), AVG(spread_abs), AVG(hl_oi_usd), COUNT(*)
+        FROM funding_spread_history WHERE ts < ?
+        GROUP BY (ts / ${HOUR_MS}), coin
+      `).run(cutoff);
+      this._batchDeleteByTs("funding_spread_history", cutoff, BATCH);
+    });
+
+    // Events: prune older than 30 days (no rollup — operational log only)
+    const eventCutoff = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString();
+    this._retainTable("events", () => {
+      this._batchDeleteStr("events", "created_at", eventCutoff, BATCH);
+    });
+  }
+
+  private _retainTable(label: string, work: () => void): void {
+    try {
+      work();
     } catch (e) {
-      console.warn("[logger] Retention policy failed:", (e as Error).message);
+      console.warn(`[logger] Retention (${label}) failed:`, (e as Error).message);
     }
+  }
+
+  private _batchDelete(table: string, tsCol: string, cutoff: number, batch: number): void {
+    const stmt = this.db.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${tsCol} < ? LIMIT ?)`);
+    let total = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = stmt.run(cutoff, batch);
+      total += result.changes;
+      if (result.changes < batch) break;
+    }
+    if (total > 0) console.log(`[logger] Retention: pruned ${total} rows from ${table}`);
+  }
+
+  private _batchDeleteStr(table: string, col: string, cutoff: string, batch: number): void {
+    const stmt = this.db.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${col} < ? LIMIT ?)`);
+    let total = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = stmt.run(cutoff, batch);
+      total += result.changes;
+      if (result.changes < batch) break;
+    }
+    if (total > 0) console.log(`[logger] Retention: pruned ${total} rows from ${table}`);
+  }
+
+  private _batchDeleteByTs(table: string, cutoff: number, batch: number): void {
+    const stmt = this.db.prepare(`DELETE FROM ${table} WHERE ts < ? LIMIT ?`);
+    let total = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = stmt.run(cutoff, batch);
+      total += result.changes;
+      if (result.changes < batch) break;
+    }
+    if (total > 0) console.log(`[logger] Retention: pruned ${total} rows from ${table}`);
   }
 
   close(): void {

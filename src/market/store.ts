@@ -45,6 +45,7 @@ export class MarketStore {
     mkdirSync(dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
+    this.db.pragma("busy_timeout = 5000");
 
     for (const name of ["003_market_snapshots.sql", "004_fix_imposter_spot_pair.sql", "007_cvd_buckets.sql"]) {
       const migration = join(process.cwd(), "migrations", name);
