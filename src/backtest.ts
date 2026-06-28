@@ -265,6 +265,54 @@ export async function fetchFundingHistory(coin: string, startTime: number, endTi
   return raw.map((r) => ({ fundingRate: r.fundingRate, time: r.time }));
 }
 
+// ── Signal attachment (backtest-only) ────────────────────────────────────────
+
+export interface SignalTimeSeries {
+  readonly capturedAt: number;
+  readonly value:      number | null;
+}
+
+/**
+ * Attach Market signal values to candles using a sorted merge.
+ *
+ * For each candle at time T, sets candle.signals[key] to the most recent
+ * signal value at or before T. Both candles and signal series must be sorted
+ * ascending by timestamp. The two-pointer merge is O(C + S) per signal and
+ * structurally prevents lookahead — the signal pointer only advances forward.
+ *
+ * Returns signal coverage metadata for diagnostics.
+ */
+export function attachSignals(
+  candles:   Candle[],
+  signalMap: Map<string, ReadonlyArray<SignalTimeSeries>>,
+): { key: string; filled: number; total: number }[] {
+  if (signalMap.size === 0 || candles.length === 0) return [];
+
+  const coverage: { key: string; filled: number; total: number }[] = [];
+
+  for (const [key, series] of signalMap) {
+    let ptr = 0;
+    let lastValue: number | null = null;
+    let filled = 0;
+
+    for (const candle of candles) {
+      // Advance pointer to the last entry at-or-before candle.timestamp
+      while (ptr < series.length && series[ptr].capturedAt <= candle.timestamp) {
+        lastValue = series[ptr].value;
+        ptr++;
+      }
+
+      if (!candle.signals) candle.signals = {};
+      candle.signals[key] = lastValue;
+      if (lastValue !== null) filled++;
+    }
+
+    coverage.push({ key, filled, total: candles.length });
+  }
+
+  return coverage;
+}
+
 // ── Candle fetch ─────────────────────────────────────────────────────────────
 
 export async function fetchCandles(coin: string, interval: string, limit: number): Promise<Candle[]> {

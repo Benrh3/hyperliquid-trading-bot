@@ -2,7 +2,7 @@ import { Router } from "express";
 import { join } from "path";
 import { RSI } from "technicalindicators";
 import { config, coins, API_URL } from "../config.js";
-import { runBacktest, fetchCandles, fetchCandlesByRange, runFundingBasisBacktest, fetchFundingHistory, BACKTEST_INTERVAL_MS } from "../backtest.js";
+import { runBacktest, fetchCandles, fetchCandlesByRange, runFundingBasisBacktest, fetchFundingHistory, attachSignals, BACKTEST_INTERVAL_MS } from "../backtest.js";
 import { alignFundingRows } from "../chart-utils.js";
 import { makeCacheKey, isValidCoin, isValidInterval } from "../candle-cache-utils.js";
 import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
@@ -359,6 +359,18 @@ export function createRouter(
         return;
       }
 
+      // Attach Market signal data to candles (backtest-only; no strategy reads these yet)
+      let signalCoverage: { key: string; filled: number; total: number }[] = [];
+      if (marketStore && coin.toUpperCase() === "HYPE") {
+        const BACKTEST_SIGNALS = ["lsr_agg_long_frac", "funding_rate", "book_imbalance"];
+        const signalMap = new Map<string, Array<{ capturedAt: number; value: number | null }>>();
+        for (const key of BACKTEST_SIGNALS) {
+          const series = marketStore.getMetricTimeSeries("HYPE", key);
+          if (series.length > 0) signalMap.set(key, series);
+        }
+        signalCoverage = attachSignals(candles, signalMap);
+      }
+
       // Instantiate strategy; inject user params via Object.assign — TypeScript `private`
       // compiles to regular JS properties, so this correctly overrides defaults at runtime.
       const strategy = entry.factory();
@@ -378,6 +390,7 @@ export function createRouter(
       res.json({
         ...result,
         returnPct: initialEquity > 0 ? (result.totalPnl / initialEquity) * 100 : 0,
+        signalCoverage,
         runConfig: {
           strategyId,
           strategyName:   entry.displayName,

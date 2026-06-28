@@ -10,6 +10,8 @@ export interface Candle {
   close: number;
   volume: number;
   coin?: string; // populated by Feed for multi-coin routing
+  /** Backtest-only: Market signal values at this candle's timestamp, populated by attachSignals(). Never set in live mode. */
+  signals?: Record<string, number | null>;
 }
 
 export interface Tick {
