@@ -262,12 +262,13 @@ export class FundingMatrixPoller {
       dataNetwork: this.dataNetwork,
     };
 
-    // Persist funding samples — fire-and-forget
+    // Persist funding samples for matrix coins only (not the full universe)
     if (this.logger) {
       const ts = Date.now();
+      const matrixCoins = new Set(coins.map((c) => c.coin));
       const samples: Array<{ coin: string; venue: string; rateHourly: number }> = [];
-      for (const [coin, d] of hlCoins)   samples.push({ coin, venue: "hyperliquid", rateHourly: d.rateHourly });
-      for (const [coin, d] of dydxCoins) samples.push({ coin, venue: "dydx",        rateHourly: d.rateHourly });
+      for (const [coin, d] of hlCoins)   { if (matrixCoins.has(coin)) samples.push({ coin, venue: "hyperliquid", rateHourly: d.rateHourly }); }
+      for (const [coin, d] of dydxCoins) { if (matrixCoins.has(coin)) samples.push({ coin, venue: "dydx",        rateHourly: d.rateHourly }); }
       void Promise.resolve().then(() => this.logger!.writeFundingSamples(ts, samples));
 
       // Persist per-coin spread history for long-run analysis
