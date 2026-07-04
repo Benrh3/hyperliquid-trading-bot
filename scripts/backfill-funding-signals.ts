@@ -155,9 +155,134 @@ const records = [...dedupedMap.values()].sort((a, b) => a.time - b.time);
 console.log(`\n[backfill] Fetched ${allRecords.length} raw → ${records.length} unique records`);
 console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(records[records.length - 1].time).toISOString()}`);
 
+// ── Unit/transform verification ───────────────────────────────────────────────
+// Compare backfill values (fundingHistory API, settled rates) against live-polled
+// rows already in the DB (metaAndAssetCtxs().funding, current-period accruing rate).
+//
+// Both APIs return a plain decimal string; no transform is applied by either path
+// beyond parseFloat / safeNum. This block confirms the values agree in practice:
+// settled rates and accruing rates for the same period should be equal or very close.
+//
+// Matching: live-polled rows fire at an arbitrary minute within each hour. We pair
+// each live row with the nearest historical settlement record within ±90 minutes.
+// A systematic multiplier (e.g. 8× for 8h vs hourly mismatch) would be immediately
+// visible in the delta column even before a single row is inserted.
+{
+  const OVERLAP_WINDOW_MS  = 7 * 24 * 3_600_000; // look back 7 days for live rows
+  const MATCH_TOLERANCE_MS = 90 * 60 * 1000;      // ±90 min to pair with a settlement
+
+  type LiveRow = { capturedAt: number; value: number };
+  const liveRows = db.prepare<[string, string, number], LiveRow>(`
+    SELECT sm.captured_at AS capturedAt, sm.value
+    FROM snapshot_metrics sm
+    JOIN snapshots s ON s.id = sm.snapshot_id
+    WHERE s.symbol = ? AND sm.metric_key = ?
+      AND sm.captured_at >= ?
+    ORDER BY sm.captured_at ASC
+  `).all(COIN, METRIC_KEY, Date.now() - OVERLAP_WINDOW_MS) as LiveRow[];
+
+  console.log(`\n[verify] Live-polled rows in the last 7 days: ${liveRows.length}`);
+
+  if (liveRows.length === 0) {
+    console.log("  No live-polled rows to compare against — poller may not have run yet.");
+    console.log("  Cannot verify unit alignment until the poller has accumulated data.\n");
+  } else {
+    // For each live row, binary-search records[] for the nearest settlement by time
+    function nearestRecord(targetMs: number): FundingRecord | null {
+      let lo = 0, hi = records.length - 1, best: FundingRecord | null = null;
+      let bestDist = Infinity;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const dist = Math.abs(records[mid].time - targetMs);
+        if (dist < bestDist) { bestDist = dist; best = records[mid]; }
+        if (records[mid].time < targetMs) lo = mid + 1;
+        else hi = mid - 1;
+      }
+      return bestDist <= MATCH_TOLERANCE_MS ? best : null;
+    }
+
+    type Comparison = {
+      liveTs:    number;
+      histTs:    number;
+      lagMs:     number;
+      liveVal:   number;
+      histVal:   number;
+      absDelta:  number;
+      relDelta:  number; // fraction, not percent
+    };
+
+    const comparisons: Comparison[] = [];
+    for (const live of liveRows) {
+      const hist = nearestRecord(live.capturedAt);
+      if (!hist) continue;
+      const histVal = parseFloat(hist.fundingRate);
+      if (!isFinite(histVal) || !isFinite(live.value)) continue;
+      comparisons.push({
+        liveTs:   live.capturedAt,
+        histTs:   hist.time,
+        lagMs:    live.capturedAt - hist.time,
+        liveVal:  live.value,
+        histVal,
+        absDelta: Math.abs(histVal - live.value),
+        relDelta: live.value !== 0 ? Math.abs((histVal - live.value) / live.value) : 0,
+      });
+      if (comparisons.length >= 10) break; // collect 10, show 5
+    }
+
+    if (comparisons.length === 0) {
+      console.log("  No historical records fall within ±90 min of any live-polled row.");
+      console.log("  Possible causes: backfill range doesn't reach the live-poller window,");
+      console.log("  or the poller ran exclusively outside settlement hour boundaries.\n");
+    } else {
+      // Compute aggregate stats over all matches
+      const avgRelDelta = comparisons.reduce((s, c) => s + c.relDelta, 0) / comparisons.length;
+      const maxAbsDelta = Math.max(...comparisons.map(c => c.absDelta));
+
+      // Emit a clear PASS/FAIL verdict before the table
+      const PASS_THRESHOLD = 0.01; // 1% relative delta tolerated (accounts for accrual drift)
+      const passed = avgRelDelta < PASS_THRESHOLD;
+      console.log(`\n  Verdict: ${passed ? "✓ PASS" : "✗ FAIL"} — avg relative delta ${(avgRelDelta * 100).toFixed(4)}%  max abs delta ${maxAbsDelta.toExponential(3)}`);
+      if (!passed) {
+        console.log("  WARNING: values differ by more than 1% on average.");
+        console.log("  Possible unit mismatch (e.g. 8h vs 1h rate). DO NOT proceed with insertion.");
+        console.log("  Review the comparison table and check the API documentation.\n");
+        if (!DRY) {
+          db.close();
+          process.exit(1);
+        }
+      }
+
+      // Print 5-row comparison table
+      const tableRows = comparisons.slice(0, 5);
+      const COL = { ts: 22, lag: 10, live: 15, hist: 15, delta: 12 };
+      console.log(`\n  Showing ${tableRows.length} of ${comparisons.length} matched pairs (±90 min tolerance):`);
+      console.log(
+        `  ${"Live-polled (UTC)".padEnd(COL.ts)}` +
+        `${"Lag (min)".padEnd(COL.lag)}` +
+        `${"Live value".padEnd(COL.live)}` +
+        `${"Hist value".padEnd(COL.hist)}` +
+        `${"Rel delta"}`,
+      );
+      console.log("  " + "─".repeat(COL.ts + COL.lag + COL.live + COL.hist + COL.delta));
+      for (const c of tableRows) {
+        const lagMin = (c.lagMs / 60_000).toFixed(0).padStart(4);
+        const relPct = (c.relDelta * 100).toFixed(4) + "%";
+        console.log(
+          `  ${new Date(c.liveTs).toISOString().slice(0, 19).padEnd(COL.ts)}` +
+          `${lagMin} min    ` +
+          `${c.liveVal.toFixed(8).padEnd(COL.live)}` +
+          `${c.histVal.toFixed(8).padEnd(COL.hist)}` +
+          relPct,
+        );
+      }
+      console.log();
+    }
+  }
+}
+
 // ── Insert ────────────────────────────────────────────────────────────────────
 if (DRY) {
-  // Count what would be inserted
+  // Count what would be inserted (verification already printed above)
   let wouldInsert = 0;
   let wouldSkip   = 0;
   for (const r of records) {
@@ -165,7 +290,7 @@ if (DRY) {
     if (exists) wouldSkip++;
     else         wouldInsert++;
   }
-  console.log(`\n[dry-run] Would insert: ${wouldInsert}  Would skip: ${wouldSkip}`);
+  console.log(`[dry-run] Would insert: ${wouldInsert}  Would skip: ${wouldSkip}`);
   db.close();
   process.exit(0);
 }
