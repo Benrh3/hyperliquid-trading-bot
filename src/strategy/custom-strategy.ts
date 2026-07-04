@@ -36,6 +36,8 @@ export interface CustomStrategyDef {
   stopLoss:         number;
   takeProfit:       number;
   isCustom:         true;
+  /** Set automatically when any rule uses a signal:* indicator. Live deployment is blocked. */
+  requiresSignals?: boolean;
 }
 
 // ── Custom strategy executor ──────────────────────────────────────────────────
@@ -151,21 +153,23 @@ export function deleteCustomDef(id: string): void {
 // ── Registry integration ──────────────────────────────────────────────────────
 
 export function customDefToRegistryEntry(def: CustomStrategyDef): StrategyRegistryEntry {
+  const allRules = [...def.entryLongRules, ...def.entryShortRules, ...def.exitRules];
+  const requiresSignals = def.requiresSignals ??
+    allRules.some(r => r.indicatorId.startsWith("signal:"));
   return {
     id:              def.id,
     displayName:     def.name,
     category:        "mean-reversion",        // generic; UI shows "Custom"
-    categoryLabel:   "Custom Strategy",
+    categoryLabel:   requiresSignals ? "Custom Strategy — Backtest Only" : "Custom Strategy",
     summary:         def.description || "User-defined strategy built in the Strategy Builder.",
     howItWorks:      def.description || "Evaluates indicator conditions defined in the Strategy Builder.",
-    signals:         [
-      ...def.entryLongRules.map(r => `${r.indicatorId} ${r.comparator} ${r.rhsValue}`),
-    ],
+    signals:         allRules.map(r => `${r.indicatorId} ${r.comparator} ${r.rhsValue}`),
     whenItWorks:     "Depends on the configured indicator rules.",
     whenItStruggles: "Depends on the configured indicator rules.",
     params:          [],       // custom strategies have no registry-level grid params
     isCandleStrategy: true,
     isCustom:        true,
+    requiresSignals,
     factory: () => new CustomStrategy(def),
   };
 }

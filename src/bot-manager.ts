@@ -1123,6 +1123,12 @@ export class BotManager {
     if (!entry?.isCandleStrategy || !entry.factory) {
       throw new Error(`Unknown candle strategy: ${input.strategyId}`);
     }
+    if (entry.requiresSignals && live) {
+      throw new Error(
+        `Strategy "${entry.displayName}" uses Market Signal conditions and is backtest-only. ` +
+        `Live bots do not have pre-computed signal data attached to candles.`,
+      );
+    }
 
     const { universe } = await this.info.meta();
     const validCoin = universe.find((u) => u.name.toUpperCase() === coin);

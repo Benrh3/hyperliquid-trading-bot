@@ -1,8 +1,9 @@
 import type { Candle } from "../events.js";
+import { loadManifest } from "../market/manifest.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type IndicatorCategory = "Momentum" | "Trend" | "Volatility" | "Volume";
+export type IndicatorCategory = "Momentum" | "Trend" | "Volatility" | "Volume" | "Market Signal";
 export type IndicatorOutputType = "single" | "multi" | "band";
 
 export interface IndicatorParam {
@@ -700,6 +701,42 @@ export const INDICATOR_REGISTRY: (IndicatorMeta & { fn: IndicatorFn })[] = [
     fn: computeHeikinAshi,
   },
 ];
+
+// ── Market Signal entries (auto-generated from manifest) ─────────────────────
+//
+// Each signalForScoring metric becomes an indicator whose fn reads
+// candle.signals[key] — pre-attached by attachSignals() in backtest mode.
+// In live mode signals are never populated, so NaN propagates naturally.
+
+(function buildMarketSignalEntries() {
+  try {
+    const manifest = loadManifest();
+    for (const m of manifest.metrics) {
+      if (!m.signalForScoring) continue;
+      const key = m.key;
+      INDICATOR_REGISTRY.push({
+        id:           `signal:${key}`,
+        displayName:  m.label,
+        category:     "Market Signal",
+        outputType:   "single",
+        outputKeys:   ["values"],
+        defaultParams: [],
+        description:  `Market signal: ${m.label}. Pre-computed from on-chain and exchange data — not derived from OHLCV. Only available in backtest mode (candles must have signals attached via attachSignals).`,
+        commonUse:    m.dir ? `Directional tendency: ${m.dir}` : "No directional mapping measured yet.",
+        typicalParams: "No parameters.",
+        exampleRule:  `signal:${key} > 0.5 — signal value above threshold`,
+        fn: (candles) => ({
+          values: candles.map(c => {
+            const v = c.signals?.[key];
+            return (v !== undefined && v !== null) ? v : NaN;
+          }),
+        }),
+      });
+    }
+  } catch {
+    // Manifest not present (e.g. test environment without docs/ dir) — skip silently
+  }
+})();
 
 export function getIndicator(id: string): (IndicatorMeta & { fn: IndicatorFn }) | undefined {
   return INDICATOR_REGISTRY.find(m => m.id === id);

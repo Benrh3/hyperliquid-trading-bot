@@ -20,6 +20,7 @@ import type { DydxFundingPoller } from "../dydx-funding.js";
 import type { FundingMatrixPoller } from "../funding-matrix.js";
 import type { MarketStore } from "../market/store.js";
 import { createMarketRouter } from "../market/api.js";
+import { buildScorecard } from "../market/scoring.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
@@ -616,18 +617,41 @@ export function createRouter(
   });
 
   router.get("/builder", (_req, res) => {
+    // Compute IC scores for Market Signal indicators from the live scorecard
+    const icBySignal: Record<string, { ic: number | null; horizon_h: number; n: number }> = {};
+    if (marketStore) {
+      try {
+        const cells = buildScorecard(marketStore, "HYPE");
+        // Per signal: prefer 24h horizon; if no 24h, take the horizon with max |IC|
+        for (const cell of cells) {
+          const prev = icBySignal[cell.signal];
+          const better = !prev
+            || cell.horizon_h === 24
+            || (prev.horizon_h !== 24 && Math.abs(cell.ic ?? 0) > Math.abs(prev.ic ?? 0));
+          if (better) icBySignal[cell.signal] = { ic: cell.ic, horizon_h: cell.horizon_h, n: cell.n };
+        }
+      } catch { /* scoring unavailable — IC left empty */ }
+    }
+
     res.render("builder", {
       network:    config.exchange.network,
       coin:       config.exchange.coin,
       registry:   STRATEGY_REGISTRY,
-      indicators: INDICATOR_REGISTRY.map(m => ({
-        id:           m.id,
-        displayName:  m.displayName,
-        category:     m.category,
-        outputType:   m.outputType,
-        outputKeys:   m.outputKeys,
-        defaultParams: m.defaultParams,
-      })),
+      indicators: INDICATOR_REGISTRY.map(m => {
+        const sigKey = m.category === "Market Signal" ? m.id.replace("signal:", "") : null;
+        const icData = sigKey ? (icBySignal[sigKey] ?? null) : null;
+        return {
+          id:           m.id,
+          displayName:  m.displayName,
+          category:     m.category,
+          outputType:   m.outputType,
+          outputKeys:   m.outputKeys,
+          defaultParams: m.defaultParams,
+          ic:           icData?.ic ?? null,
+          ic_horizon_h: icData?.horizon_h ?? null,
+          ic_n:         icData?.n ?? 0,
+        };
+      }),
     });
   });
 
@@ -645,6 +669,9 @@ export function createRouter(
       def.entryLongRules  = def.entryLongRules  ?? [];
       def.entryShortRules = def.entryShortRules ?? [];
       def.exitRules       = def.exitRules        ?? [];
+      // Auto-derive: any rule using a signal: indicator makes this backtest-only
+      const allRules = [...def.entryLongRules, ...def.entryShortRules, ...def.exitRules];
+      def.requiresSignals = allRules.some(r => r.indicatorId.startsWith("signal:"));
       def.entryLogic      = def.entryLogic       ?? "AND";
       def.exitLogic       = def.exitLogic        ?? "AND";
       def.stopLoss        = def.stopLoss         ?? 2;

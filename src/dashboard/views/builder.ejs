@@ -103,6 +103,23 @@
   #bld-msg.ok    { color: var(--green); }
   #bld-msg.error { color: var(--red); }
 
+  /* IC badge shown next to Market Signal options */
+  .ic-badge {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 1px 5px; border-radius: 3px; margin-left: 4px; vertical-align: middle;
+  }
+  .ic-strong { background: rgba(129,140,248,.18); color: var(--accent); }
+  .ic-weak   { background: rgba(61,90,120,.18);   color: var(--muted); }
+  .ic-warm   { background: rgba(61,90,120,.12);   color: var(--muted); font-style: italic; }
+
+  /* Backtest-only banner */
+  .sig-banner {
+    display: none; background: rgba(129,140,248,.1); border: 1px solid rgba(129,140,248,.3);
+    border-radius: 6px; padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4);
+    font-size: var(--t-label); color: var(--accent); font-weight: 600;
+  }
+  .sig-banner.visible { display: block; }
+
   @media (max-width: 600px) {
     .builder-wrap { padding: var(--sp-4) var(--sp-3); }
     .two-col { grid-template-columns: 1fr; }
@@ -123,6 +140,12 @@
   <div class="page-header">
     <h1 class="page-title">Strategy Builder</h1>
     <p class="page-subtitle">Compose indicator conditions into a strategy — appears in Bots, Backtest, and Learn immediately.</p>
+  </div>
+
+  <!-- Backtest-only notice (shown when any rule uses a Market Signal) -->
+  <div class="sig-banner" id="sig-banner">
+    ⚡ This strategy uses Market Signal conditions — it is <strong>backtest-only</strong>.
+    Live bots do not have pre-computed signal data. The launcher will refuse live deployment.
   </div>
 
   <!-- Identity -->
@@ -237,6 +260,27 @@
   const INDICATORS = <%- JSON.stringify(indicators) %>;
   let ruleCounter  = 0;
 
+  // ── IC helpers ────────────────────────────────────────────────────────────
+  function icLabel(ind) {
+    if (ind.category !== 'Market Signal') return '';
+    if (!ind.ic_n || ind.ic_n < 8) return ' [warming]';
+    if (ind.ic === null) return ' [no IC]';
+    const sign = ind.ic >= 0 ? '+' : '';
+    return ` — IC ${sign}${ind.ic.toFixed(2)} @${ind.ic_horizon_h}h`;
+  }
+
+  function icBadgeClass(ind) {
+    if (ind.category !== 'Market Signal') return '';
+    if (!ind.ic_n || ind.ic_n < 8 || ind.ic === null) return 'ic-warm';
+    return Math.abs(ind.ic) >= 0.10 ? 'ic-strong' : 'ic-weak';
+  }
+
+  // ── Banner: show/hide when any rule uses a Market Signal ─────────────────
+  function updateSignalBanner() {
+    const hasSig = !!document.querySelector('.rule-indicator-sel [value^="signal:"]:checked');
+    document.getElementById('sig-banner').classList.toggle('visible', hasSig);
+  }
+
   // ── Logic toggles ─────────────────────────────────────────────────────────
   document.getElementById('entry-logic').addEventListener('change', function () {
     document.getElementById('votes-wrap').style.display = this.value === 'votes' ? '' : 'none';
@@ -258,19 +302,43 @@
     div.innerHTML  = buildRuleHtml(id);
     list.appendChild(div);
 
-    // Wire indicator change → re-render params + output key
+    // Wire indicator change → re-render params + output key + banner
     div.querySelector('.rule-indicator-sel').addEventListener('change', function () {
       rebuildOutputKey(div, this.value);
       rebuildParams(div, this.value);
+      updateSignalBanner();
     });
     rebuildOutputKey(div, INDICATORS[0]?.id);
     rebuildParams(div, INDICATORS[0]?.id);
   };
 
   function buildRuleHtml(id) {
-    const indOpts = INDICATORS.map(m =>
-      `<option value="${m.id}">${m.displayName}</option>`
-    ).join('');
+    // Group indicators into OHLCV categories and Market Signal
+    const categories = ['Momentum', 'Trend', 'Volatility', 'Volume'];
+    let indOpts = categories.map(cat => {
+      const opts = INDICATORS
+        .filter(m => m.category === cat)
+        .map(m => `<option value="${m.id}">${m.displayName}</option>`)
+        .join('');
+      return opts ? `<optgroup label="${cat}">${opts}</optgroup>` : '';
+    }).join('');
+
+    // Market Signals — sorted: strong IC first, then warming, then weak
+    const sigInds = INDICATORS.filter(m => m.category === 'Market Signal');
+    if (sigInds.length) {
+      const sorted = [...sigInds].sort((a, b) => {
+        const aStrong = a.ic !== null && a.ic_n >= 8 && Math.abs(a.ic) >= 0.10;
+        const bStrong = b.ic !== null && b.ic_n >= 8 && Math.abs(b.ic) >= 0.10;
+        if (aStrong !== bStrong) return aStrong ? -1 : 1;
+        return Math.abs(b.ic ?? 0) - Math.abs(a.ic ?? 0);
+      });
+      const sigOpts = sorted.map(m => {
+        const label = m.displayName + icLabel(m);
+        return `<option value="${m.id}">${label}</option>`;
+      }).join('');
+      indOpts += `<optgroup label="── Market Signal (backtest-only) ──">${sigOpts}</optgroup>`;
+    }
+
     return `
       <div class="rule-field">
         <label class="rule-label">Indicator</label>
@@ -301,11 +369,12 @@
   }
 
   function rebuildOutputKey(rowEl, indId) {
-    const m   = INDICATORS.find(i => i.id === indId);
-    const sel = rowEl.querySelector('.rule-output-sel');
+    const m    = INDICATORS.find(i => i.id === indId);
+    const sel  = rowEl.querySelector('.rule-output-sel');
     const wrap = rowEl.querySelector('[id$="-output-wrap"]');
     if (!m) return;
-    if (m.outputKeys.length <= 1) {
+    // Market Signals have no output key choice (single "values" series)
+    if (m.category === 'Market Signal' || m.outputKeys.length <= 1) {
       if (wrap) wrap.style.display = 'none';
       sel.innerHTML = `<option value="values">values</option>`;
     } else {
@@ -317,11 +386,20 @@
   }
 
   function rebuildParams(rowEl, indId) {
-    const m      = INDICATORS.find(i => i.id === indId);
-    const wrap   = rowEl.querySelector('[id$="-params"]');
+    const m    = INDICATORS.find(i => i.id === indId);
+    const wrap = rowEl.querySelector('[id$="-params"]');
     if (!m) return;
-    if (!m.defaultParams || m.defaultParams.length === 0) {
+    // Market Signals have no tunable parameters
+    if (m.category === 'Market Signal' || !m.defaultParams || m.defaultParams.length === 0) {
       wrap.innerHTML = '';
+      // Show IC badge for signal indicators
+      if (m.category === 'Market Signal') {
+        const badge = icLabel(m);
+        const cls   = icBadgeClass(m);
+        wrap.innerHTML = badge
+          ? `<span class="ic-badge ${cls}">${badge.replace(' — ', '').trim()}</span>`
+          : '';
+      }
       return;
     }
     wrap.innerHTML = '<label class="rule-label">Params</label><div class="rule-params">' +
@@ -335,6 +413,7 @@
 
   window.deleteRule = function (btn) {
     btn.closest('.rule-row').remove();
+    updateSignalBanner();
   };
 
   // ── Collect all rules from a list ─────────────────────────────────────────
@@ -412,7 +491,11 @@
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || resp.statusText);
       msg.className = 'ok';
-      msg.textContent = `✓ Saved "${name}" — it now appears in Bots, Backtest, and Learn.`;
+      const allRules = [...def.entryLongRules, ...def.entryShortRules, ...def.exitRules];
+      const isSignalStrat = allRules.some(r => r.indicatorId.startsWith('signal:'));
+      msg.textContent = isSignalStrat
+        ? `✓ Saved "${name}" — backtest-only (Market Signal conditions). Appears in Backtest.`
+        : `✓ Saved "${name}" — it now appears in Bots, Backtest, and Learn.`;
     } catch (err) {
       msg.className = 'error'; msg.textContent = err.message;
     } finally {

@@ -30,6 +30,8 @@ export interface StrategyRegistryEntry {
    */
   isCandleStrategy: boolean;
   isCustom?:        boolean;   // true for user-built strategies from the Strategy Builder
+  /** true when any rule reads Market Signal data — live deployment is blocked */
+  requiresSignals?: boolean;
   factory:          (() => Strategy) | null;
 }
 
