@@ -38,7 +38,18 @@ import { resolve } from "path";
 // ── Config ────────────────────────────────────────────────────────────────────
 const COIN        = "HYPE";
 const METRIC_KEY  = "funding_rate";
-const SOURCE      = "hl-market";
+// "hl-backfill" distinguishes these rows from live-polled "hl-market" rows.
+// Checked against all consumers before using this tag:
+//   - getMetricTimeSeries: selects capturedAt+value only, no source filter
+//   - buildScorecard / scoring engine: calls getMetricTimeSeries, never sees source
+//   - attachSignals (backtest): calls getMetricTimeSeries, never sees source
+//   - /api/market/signals: source in response comes from the manifest, not the DB
+//   - market.ejs SRC_CLS badge: hardcoded tile definitions, not read from DB
+//   - rollup (runRetentionPolicy): source is SELECT'd but not in GROUP BY; arbitrary row picked
+//   - getRecentSnapshots / replay: source flows through to JSON but no code branches on it
+// Deletion: DELETE FROM snapshot_metrics WHERE source = 'hl-backfill';
+//           then DELETE FROM snapshots WHERE id NOT IN (SELECT snapshot_id FROM snapshot_metrics);
+const SOURCE      = "hl-backfill";
 const KIND        = "level";
 const NETWORK     = "mainnet";
 const DB_PATH     = resolve(process.cwd(), "data/bot.db");
