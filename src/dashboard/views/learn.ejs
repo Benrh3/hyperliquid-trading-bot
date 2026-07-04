@@ -40,6 +40,24 @@
     color: #f0883e; border: 1px solid rgba(240,136,62,0.4); background: rgba(240,136,62,0.07);
   }
 
+  .badge-backtest-only {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    padding: 2px var(--sp-2); border-radius: 20px;
+    color: var(--accent); border: 1px solid rgba(129,140,248,0.4); background: rgba(129,140,248,0.10);
+  }
+
+  .backtest-note {
+    margin: var(--sp-3) var(--sp-5) 0;
+    padding: var(--sp-3) var(--sp-4);
+    background: rgba(129,140,248,0.07);
+    border: 1px solid rgba(129,140,248,0.25);
+    border-radius: 6px;
+    font-size: var(--t-label);
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .backtest-note strong { color: var(--accent); font-weight: 600; }
+
   .strat-summary {
     padding: var(--sp-3) var(--sp-5); font-size: var(--t-body); color: var(--muted);
     border-bottom: 1px solid var(--border); line-height: 1.6;
@@ -213,6 +231,80 @@
     </div>
   </div>
   <% } %>
+
+  <!-- ── Signal-driven strategies (in registry, backtest-only) ── -->
+
+  <div class="strat-card">
+    <div class="strat-card-header">
+      <h2>Crowd Positioning</h2>
+      <span class="strat-category">Contrarian / Positioning</span>
+      <span class="strat-category" style="color:var(--muted)">Signal-Driven</span>
+      <span class="badge-backtest-only">Backtest Only</span>
+    </div>
+    <div class="strat-summary">Trades against crowded retail positioning using long/short ratio data aggregated from major CEXs. When the crowd is extremely short, a structural bid on HYPE tends to push price up; when extremely long, the crowd gets faded. Edge is measured statistically — check the <a href="/market#signals" style="color:var(--accent)">Signals tab</a> for current IC scores before relying on this strategy.</div>
+
+    <div class="backtest-note">
+      <strong>⚡ Backtest-only strategy.</strong> Entries are driven by pre-computed Market signal data (lsr_agg_long_frac) that is only available during backtests — it is not attached to live or paper candles. This strategy appears in the Backtest dropdown but is excluded from the +Add Bot launcher. The <a href="/market#signals" style="color:var(--accent)">Signals tab</a> on the Market page shows its measured IC across 4h, 24h, 72h, and 168h horizons.
+    </div>
+
+    <div class="strat-body">
+      <div>
+        <div class="strat-section-label">How it works</div>
+        <div class="strat-section-text">Each hour the strategy reads the aggregate long fraction (lsr_agg_long_frac) — the share of accounts at major CEXs that are net long HYPE. It computes the 20th and 80th percentiles from the available signal window. When the crowd is extremely short (signal below the 20th percentile), a structural bid from the Alligator Fund and staking rewards tends to push price up against the crowd: the strategy goes long. When the crowd is extremely long (above the 80th percentile), it shorts, fading the crowded side. The position exits when positioning reverts past the median (50th percentile), or unconditionally after a configurable max-hold cap to limit exposure in persistent positioning regimes.</div>
+      </div>
+      <div>
+        <div class="strat-section-label">Signals it uses</div>
+        <ul class="signal-list">
+          <li>lsr_agg_long_frac — Aggregate Long % (weighted average across Binance, OKX, Bybit). Primary entry/exit trigger. <a href="/market#signals" style="color:var(--accent);font-size:var(--t-label)">View IC →</a></li>
+          <li>lsr_okx_account — OKX account-level L/S ratio (crowd positioning on the second-largest venue). <a href="/market#signals" style="color:var(--accent);font-size:var(--t-label)">View IC →</a></li>
+          <li>lsr_binance_global — Binance global account L/S ratio (largest retail crowd). <a href="/market#signals" style="color:var(--accent);font-size:var(--t-label)">View IC →</a></li>
+        </ul>
+      </div>
+      <div class="two-col">
+        <div class="condition-box works">
+          <div class="condition-label">When it tends to work</div>
+          Ranging or squeeze-prone markets where extreme retail positioning precedes reversals. Most effective when the structural AF/staking bid is active and the crowd is systematically wrong about direction.
+        </div>
+        <div class="condition-box struggles">
+          <div class="condition-label">When it tends to struggle</div>
+          Strong sustained trends where the crowd is correct and stays positioned in the trend direction for extended periods. Positioning extremes that don't revert before the max-hold cap fires.
+        </div>
+      </div>
+      <div>
+        <div class="strat-section-label">Parameters</div>
+        <div class="param-list">
+          <div class="param-row">
+            <span class="param-label">Entry long below (p20 approx)
+              <span class="param-default" style="display:block;font-style:italic;margin-top:2px">Signal percentile threshold for long entry. A value of 0.45 means "enter long when fewer than 45% of accounts are long."</span>
+            </span>
+            <span class="param-default">default: 0.45</span>
+            <span class="param-range">0.30 – 0.50</span>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Entry short above (p80 approx)
+              <span class="param-default" style="display:block;font-style:italic;margin-top:2px">Signal percentile threshold for short entry. A value of 0.55 means "enter short when more than 55% of accounts are long."</span>
+            </span>
+            <span class="param-default">default: 0.55</span>
+            <span class="param-range">0.50 – 0.70</span>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Exit neutral threshold
+              <span class="param-default" style="display:block;font-style:italic;margin-top:2px">Signal level at which positioning is considered "back to neutral." Longs exit when signal rises above this; shorts exit when it falls below.</span>
+            </span>
+            <span class="param-default">default: 0.50</span>
+            <span class="param-range">0.40 – 0.60</span>
+          </div>
+          <div class="param-row">
+            <span class="param-label">Max hold (bars)
+              <span class="param-default" style="display:block;font-style:italic;margin-top:2px">Maximum bars to hold before force-exiting, regardless of signal. At 1h candles, 48 bars = 2 days. Prevents being trapped in a persistent positioning regime.</span>
+            </span>
+            <span class="param-default">default: 48</span>
+            <span class="param-range">4 – 240</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ── Planned strategies (display-only, NOT in registry) ── -->
 
