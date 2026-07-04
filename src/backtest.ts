@@ -275,10 +275,18 @@ export interface SignalTimeSeries {
 /**
  * Attach Market signal values to candles using a sorted merge.
  *
- * For each candle at time T, sets candle.signals[key] to the most recent
- * signal value at or before T. Both candles and signal series must be sorted
- * ascending by timestamp. The two-pointer merge is O(C + S) per signal and
- * structurally prevents lookahead — the signal pointer only advances forward.
+ * Cutoff semantics: for each candle the strategy's decision executes at the
+ * bar's CLOSE time (candles[i+1].timestamp, or candle.timestamp + intervalMs
+ * for the last bar). Signals published at or before that close time are
+ * genuinely available to a live trader at decision time and are attached.
+ * Signals published after the close are not attached.
+ *
+ * This is the correct boundary: using the bar OPEN as cutoff would miss
+ * signals that arrive during the bar, creating a spurious one-bar lag.
+ *
+ * Both candles and signal series must be sorted ascending by timestamp.
+ * The two-pointer merge is O(C + S) per signal and structurally prevents
+ * lookahead — the signal pointer only ever advances forward.
  *
  * Returns signal coverage metadata for diagnostics.
  */
@@ -288,6 +296,11 @@ export function attachSignals(
 ): { key: string; filled: number; total: number }[] {
   if (signalMap.size === 0 || candles.length === 0) return [];
 
+  // Infer interval from first consecutive pair; fall back to 0 (safe: uses open time for last bar)
+  const inferredInterval = candles.length > 1
+    ? candles[1].timestamp - candles[0].timestamp
+    : 0;
+
   const coverage: { key: string; filled: number; total: number }[] = [];
 
   for (const [key, series] of signalMap) {
@@ -295,9 +308,13 @@ export function attachSignals(
     let lastValue: number | null = null;
     let filled = 0;
 
-    for (const candle of candles) {
-      // Advance pointer to the last entry at-or-before candle.timestamp
-      while (ptr < series.length && series[ptr].capturedAt <= candle.timestamp) {
+    for (let ci = 0; ci < candles.length; ci++) {
+      const candle = candles[ci];
+      // Close time = next bar's open, or open + interval for the last bar
+      const closeTime = candles[ci + 1]?.timestamp ?? (candle.timestamp + inferredInterval);
+
+      // Advance pointer to the last entry at-or-before close time
+      while (ptr < series.length && series[ptr].capturedAt <= closeTime) {
         lastValue = series[ptr].value;
         ptr++;
       }

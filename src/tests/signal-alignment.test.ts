@@ -1,3 +1,19 @@
+/**
+ * attachSignals correctness tests.
+ *
+ * Cutoff semantics: a signal published at capturedAt is visible to candle[i]
+ * if capturedAt <= candle[i].closeTime, where closeTime = candles[i+1].timestamp
+ * (inferred from the next bar's open). This matches when the strategy actually
+ * decides — after the bar closes, not at the bar's open.
+ *
+ * Test candles use interval = 1000ms (timestamps 1000..5000), so:
+ *   candle 1000 closeTime = 2000
+ *   candle 2000 closeTime = 3000
+ *   candle 3000 closeTime = 4000
+ *   candle 4000 closeTime = 5000
+ *   candle 5000 closeTime = 6000 (inferred: 5000 + 1000)
+ */
+
 import { describe, it, expect } from "vitest";
 import { attachSignals } from "../backtest.js";
 import type { Candle } from "../events.js";
@@ -7,11 +23,12 @@ function makeCandle(timestamp: number): Candle {
 }
 
 describe("attachSignals — no-lookahead correctness", () => {
-  it("never attaches a signal value from a future timestamp", () => {
-    // Candles at 1000, 2000, 3000, 4000, 5000
+  it("signal between bar open and bar close is visible at that bar's close", () => {
+    // Candles at 1000, 2000, 3000, 4000, 5000 (interval=1000)
     const candles = [1000, 2000, 3000, 4000, 5000].map(makeCandle);
 
-    // Signal arrives at 2500 and 4500 — between candle boundaries
+    // Signal at 2500 arrives mid-bar (between open 2000 and close 3000 of candle 2000)
+    // Signal at 4500 arrives mid-bar (between open 4000 and close 5000 of candle 4000)
     const signalMap = new Map([
       ["test_signal", [
         { capturedAt: 2500, value: 0.7 },
@@ -21,34 +38,39 @@ describe("attachSignals — no-lookahead correctness", () => {
 
     attachSignals(candles, signalMap);
 
-    // Candle at 1000: no signal data yet (2500 is in the future)
+    // Candle 1000 (closeTime 2000): 2500 > 2000 → not yet visible → null
     expect(candles[0].signals!["test_signal"]).toBeNull();
 
-    // Candle at 2000: still no signal data (2500 is still in the future)
-    expect(candles[1].signals!["test_signal"]).toBeNull();
+    // Candle 2000 (closeTime 3000): 2500 ≤ 3000 → visible (arrived during this bar)
+    expect(candles[1].signals!["test_signal"]).toBe(0.7);
 
-    // Candle at 3000: signal at 2500 is now visible (at-or-before 3000)
+    // Candle 3000 (closeTime 4000): 4500 > 4000 → still seeing 0.7
     expect(candles[2].signals!["test_signal"]).toBe(0.7);
 
-    // Candle at 4000: still sees 2500's value (4500 is in the future)
-    expect(candles[3].signals!["test_signal"]).toBe(0.7);
+    // Candle 4000 (closeTime 5000): 4500 ≤ 5000 → visible
+    expect(candles[3].signals!["test_signal"]).toBe(0.3);
 
-    // Candle at 5000: now sees 4500's value
+    // Candle 5000 (closeTime 6000): 4500 ≤ 6000 → still 0.3
     expect(candles[4].signals!["test_signal"]).toBe(0.3);
   });
 
-  it("uses exact-match (at) for signal at same timestamp as candle", () => {
+  it("signal at exact close time of a bar is visible to that bar", () => {
     const candles = [1000, 2000, 3000].map(makeCandle);
 
+    // capturedAt=2000 is exactly the close time of candle 1000 (next open = 2000)
     const signalMap = new Map([
       ["exact", [{ capturedAt: 2000, value: 42 }]],
     ]);
 
     attachSignals(candles, signalMap);
 
-    expect(candles[0].signals!["exact"]).toBeNull();
-    // Signal at exactly 2000 is visible to candle at 2000 (at-or-before)
+    // Candle 1000 (closeTime 2000): 2000 ≤ 2000 → visible at close
+    expect(candles[0].signals!["exact"]).toBe(42);
+
+    // Candle 2000 (closeTime 3000): still visible
     expect(candles[1].signals!["exact"]).toBe(42);
+
+    // Candle 3000 (closeTime 4000): still visible
     expect(candles[2].signals!["exact"]).toBe(42);
   });
 
@@ -58,30 +80,32 @@ describe("attachSignals — no-lookahead correctness", () => {
     const signalMap = new Map([
       ["nullable", [
         { capturedAt: 500,  value: 0.5 },
-        { capturedAt: 1500, value: null },  // measured but undefined
+        { capturedAt: 1500, value: null },  // measured but undefined; arrives before close of 1000
         { capturedAt: 3500, value: 0.8 },
       ]],
     ]);
 
     attachSignals(candles, signalMap);
 
-    // Candle 1000: sees value from t=500
-    expect(candles[0].signals!["nullable"]).toBe(0.5);
+    // Candle 1000 (closeTime 2000): 500→0.5 and 1500→null both ≤ 2000.
+    // Most recent is 1500→null. Null propagates — does NOT fall back to 0.5.
+    expect(candles[0].signals!["nullable"]).toBeNull();
 
-    // Candle 2000: sees null from t=1500 (NOT fallback to 0.5)
+    // Candle 2000 (closeTime 3000): 3500 > 3000 → still null from 1500
     expect(candles[1].signals!["nullable"]).toBeNull();
 
-    // Candle 3000: still null (3500 is in the future)
-    expect(candles[2].signals!["nullable"]).toBeNull();
+    // Candle 3000 (closeTime 4000): 3500 ≤ 4000 → 0.8
+    expect(candles[2].signals!["nullable"]).toBe(0.8);
 
-    // Candle 4000: sees 0.8 from t=3500
+    // Candle 4000 (closeTime 5000): still 0.8
     expect(candles[3].signals!["nullable"]).toBe(0.8);
   });
 
-  it("handles multiple signals within one candle interval (last wins)", () => {
+  it("multiple signals within one candle interval: latest at-or-before close wins", () => {
     const candles = [1000, 5000].map(makeCandle);
 
-    // Three signal updates between candle 1000 and candle 5000
+    // Three signal updates between candle opens 1000 and 5000 (interval = 4000)
+    // Candle 1000 closeTime = 5000; all three are ≤ 5000 → all visible; last wins.
     const signalMap = new Map([
       ["rapid", [
         { capturedAt: 2000, value: 0.1 },
@@ -92,28 +116,33 @@ describe("attachSignals — no-lookahead correctness", () => {
 
     attachSignals(candles, signalMap);
 
-    expect(candles[0].signals!["rapid"]).toBeNull();
-    // Candle 5000 should see the latest value (t=4000), not earlier ones
+    // Candle 1000 (closeTime 5000): all three capturedAt ≤ 5000 → last wins = 0.3
+    expect(candles[0].signals!["rapid"]).toBe(0.3);
+
+    // Candle 5000 (closeTime 9000): still 0.3
     expect(candles[1].signals!["rapid"]).toBe(0.3);
   });
 
-  it("handles multiple signal keys independently", () => {
+  it("multiple signal keys are independent", () => {
     const candles = [1000, 2000, 3000].map(makeCandle);
 
     const signalMap = new Map([
-      ["signal_a", [{ capturedAt: 500, value: 10 }]],
+      ["signal_a", [{ capturedAt: 500,  value: 10 }]],
       ["signal_b", [{ capturedAt: 2500, value: 20 }]],
     ]);
 
     attachSignals(candles, signalMap);
 
-    // signal_a visible from the start, signal_b only after 2500
+    // signal_a visible from candle 1000 (500 ≤ closeTime 2000)
+    // signal_b not yet visible at candle 1000 (2500 > closeTime 2000)
     expect(candles[0].signals!["signal_a"]).toBe(10);
     expect(candles[0].signals!["signal_b"]).toBeNull();
 
+    // signal_b visible at candle 2000 (2500 ≤ closeTime 3000)
     expect(candles[1].signals!["signal_a"]).toBe(10);
-    expect(candles[1].signals!["signal_b"]).toBeNull();
+    expect(candles[1].signals!["signal_b"]).toBe(20);
 
+    // Both visible at candle 3000
     expect(candles[2].signals!["signal_a"]).toBe(10);
     expect(candles[2].signals!["signal_b"]).toBe(20);
   });
@@ -130,55 +159,59 @@ describe("attachSignals — no-lookahead correctness", () => {
 
     const signalMap = new Map([
       ["partial", [
-        { capturedAt: 2500, value: 1.0 },
-        { capturedAt: 3500, value: null },
+        { capturedAt: 2500, value: 1.0 },   // visible from candle 2000 (closeTime 3000)
+        { capturedAt: 3500, value: null },   // null — visible from candle 3000 (closeTime 4000)
       ]],
     ]);
 
     const coverage = attachSignals(candles, signalMap);
 
-    // Candle 1000: null (no data yet)
-    // Candle 2000: null (no data yet)
-    // Candle 3000: 1.0 (from t=2500) → the only non-null
-    // Candle 4000: null (explicit null from t=3500)
-    // Candle 5000: null (still null)
+    // Candle 1000 (closeTime 2000): 2500 > 2000 → null
+    // Candle 2000 (closeTime 3000): 2500 ≤ 3000 → 1.0 → filled
+    // Candle 3000 (closeTime 4000): 3500 ≤ 4000 → null → not filled
+    // Candle 4000 (closeTime 5000): still null → not filled
+    // Candle 5000 (closeTime 6000): still null → not filled
     expect(coverage).toEqual([
       { key: "partial", filled: 1, total: 5 },
     ]);
   });
 
-  it("exhaustive no-lookahead: every attached value has capturedAt <= candle.timestamp", () => {
-    // Generate a longer series with irregular signal spacing
+  it("exhaustive: every attached non-null value has capturedAt <= bar close time", () => {
     const candles = Array.from({ length: 100 }, (_, i) => makeCandle((i + 1) * 1000));
+    // inferredInterval = 1000; closeTime[i] = candles[i+1].timestamp = (i+2)*1000 for i<99;
+    // closeTime[99] = 100*1000 + 1000 = 101000
 
     const signalData = [
-      { capturedAt: 500,   value: 0.1 },
-      { capturedAt: 5200,  value: 0.2 },
-      { capturedAt: 5300,  value: 0.3 },
-      { capturedAt: 20000, value: 0.4 },
-      { capturedAt: 50500, value: 0.5 },
-      { capturedAt: 99999, value: 0.6 },
+      { capturedAt: 500,    value: 0.1 },
+      { capturedAt: 5200,   value: 0.2 },
+      { capturedAt: 5300,   value: 0.3 },
+      { capturedAt: 20000,  value: 0.4 },
+      { capturedAt: 50500,  value: 0.5 },
+      { capturedAt: 99999,  value: 0.6 },
       { capturedAt: 100000, value: 0.7 },
     ];
 
     const signalMap = new Map([["exhaustive", signalData]]);
     attachSignals(candles, signalMap);
 
-    for (const candle of candles) {
+    const interval = 1000;
+    for (let i = 0; i < candles.length; i++) {
+      const candle = candles[i];
+      const closeTime = candles[i + 1]?.timestamp ?? (candle.timestamp + interval);
       const val = candle.signals!["exhaustive"];
       if (val === null) continue;
 
-      // Find which signal entry produced this value
+      // Find which signal entry produced this value — must have capturedAt ≤ closeTime
       const source = signalData.filter(
-        (s) => s.value === val && s.capturedAt <= candle.timestamp,
+        (s) => s.value === val && s.capturedAt <= closeTime,
       );
       expect(source.length).toBeGreaterThan(0);
 
-      // Verify it's the LATEST such entry
-      const latestAtOrBefore = signalData
-        .filter((s) => s.capturedAt <= candle.timestamp)
+      // And it must be the LATEST such entry
+      const latestAtOrBeforeClose = signalData
+        .filter((s) => s.capturedAt <= closeTime)
         .at(-1)!;
-      expect(val).toBe(latestAtOrBefore.value);
+      expect(val).toBe(latestAtOrBeforeClose.value);
     }
   });
 });

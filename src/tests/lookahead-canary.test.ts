@@ -1,20 +1,23 @@
 /**
  * Lookahead canary test for signal-replay alignment.
  *
- * Constructs a scenario where a "perfect oracle" signal is available:
- * oracle[i].value = direction of candle[i+1] (future information).
+ * attachSignals uses the bar's CLOSE time as the signal cutoff (not the open).
+ * A signal published at or before candle[i]'s close is genuinely available
+ * to a strategy that decides at bar close. A signal published after is not.
  *
- * Backtest B (LOOKAHEAD): oracle published at candle[i]'s timestamp →
- *   at-or-before lookup finds it at candle i → strategy has foresight →
- *   win rate near 100%.
+ * Close time = candles[i+1].timestamp (the next bar's open).
  *
- * Backtest A (NO LOOKAHEAD): oracle published one interval LATER →
- *   at-or-before at candle[i] finds oracle[i-1] (current bar's direction,
- *   already known) → fills in candle[i+1] which moves in the OPPOSITE
- *   direction for the alternating pattern → win rate near 0%.
+ * Constructs a perfect oracle: oracle[i].value = direction of candle[i+1].
  *
- * If A and B produce similar win rates, the alignment layer is broken
- * (either leaking lookahead into A, or blocking correct data in B).
+ * Backtest B (LOOKAHEAD): oracle published at candle[i]'s OPEN (i*H).
+ *   Cutoff = close time (i+1)*H. i*H ≤ (i+1)*H → visible → foresight → ~100% win.
+ *
+ * Backtest A (NO LOOKAHEAD): oracle published TWO intervals ahead ((i+2)*H).
+ *   Cutoff = close time (i+1)*H. (i+2)*H > (i+1)*H → NOT visible.
+ *   Strategy sees oracle[i-2] = dirs[i-1] instead — stale, no predictive value.
+ *   For the alternating pattern this is systematically wrong → ~0% win.
+ *
+ * If A and B produce similar win rates, the alignment layer is broken.
  */
 
 import { describe, it, expect } from "vitest";
@@ -76,21 +79,24 @@ function freshCandles(): Candle[] {
   return BASE_CANDLES.map(c => ({ ...c }));
 }
 
-// Backtest B: oracle published at candle[i]'s timestamp (lookahead).
-// at-or-before at candle[i] finds oracle[i] = dirs[i+1] → foresight.
+// Backtest B (lookahead): oracle published at close time of candle i = (i+1)*H.
+// Cutoff = close time (i+1)*H. (i+1)*H ≤ (i+1)*H → oracle[i] visible (exact match).
+// oracle[i+1].capturedAt = (i+2)*H > (i+1)*H → NOT visible → no confusion.
+// Strategy at candle i sees dirs[i+1] (the fill bar's direction) → ~100% win.
 function runB() {
   const candles = freshCandles();
-  const series = ORACLE.map((o, i) => ({ capturedAt: i * H, value: o.value }));
+  const series = ORACLE.map((o, i) => ({ capturedAt: (i + 1) * H, value: o.value }));
   attachSignals(candles, new Map([["oracle", series]]));
   return runBacktest(new OracleStrategy(), candles, BT_OPTS);
 }
 
-// Backtest A: oracle published one interval LATER (no lookahead).
-// at-or-before at candle[i] finds oracle[i-1] = dirs[i] (current bar direction).
-// Candle[i+1] moves in direction dirs[i+1] = -dirs[i] → systematically wrong.
+// Backtest A (no lookahead): oracle published ONE interval past close = (i+2)*H.
+// Cutoff = close time (i+1)*H. (i+2)*H > (i+1)*H → oracle[i] NOT visible.
+// Candle[i] instead sees oracle[i-1] (capturedAt = i*H ≤ (i+1)*H) = dirs[i].
+// Bets dirs[i], fills in candle[i+1] which moves dirs[i+1] = -dirs[i] → always wrong.
 function runA() {
   const candles = freshCandles();
-  const series = ORACLE.map((o, i) => ({ capturedAt: (i + 1) * H, value: o.value }));
+  const series = ORACLE.map((o, i) => ({ capturedAt: (i + 2) * H, value: o.value }));
   attachSignals(candles, new Map([["oracle", series]]));
   return runBacktest(new OracleStrategy(), candles, BT_OPTS);
 }
@@ -112,9 +118,10 @@ describe("Lookahead canary — alignment layer correctness", () => {
   it("Backtest A (no lookahead) has near-zero win rate and negative P&L", () => {
     const r = runA();
 
-    // A sees oracle[i-1] = dirs[i] at candle i.
-    // It bets in direction dirs[i], fills in candle i+1 which moves in direction
-    // dirs[i+1] = -dirs[i]. Every trade is systematically wrong → ~0% win rate.
+    // A's oracle published at (i+2)*H, cutoff is close time (i+1)*H.
+    // Not visible → candle[i] sees oracle[i-2] = dirs[i-1].
+    // Bets dirs[i-1], fills in candle[i+1] which moves dirs[i+1] = -dirs[i-1].
+    // Systematically wrong for the alternating pattern → ~0% win rate.
     expect(r.tradeCount).toBeGreaterThan(50);
     expect(r.winRate).toBeLessThan(0.15);      // < 15% — systematically wrong
     expect(r.totalPnl).toBeLessThan(0);
