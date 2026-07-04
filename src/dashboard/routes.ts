@@ -360,16 +360,23 @@ export function createRouter(
         return;
       }
 
-      // Attach Market signal data to candles (backtest-only; no strategy reads these yet)
+      // Attach all available Market signal data for HYPE backtests.
+      // Covers every signalForScoring metric so any signal-driven strategy works.
       let signalCoverage: { key: string; filled: number; total: number }[] = [];
       if (marketStore && coin.toUpperCase() === "HYPE") {
-        const BACKTEST_SIGNALS = ["lsr_agg_long_frac", "funding_rate", "book_imbalance"];
-        const signalMap = new Map<string, Array<{ capturedAt: number; value: number | null }>>();
-        for (const key of BACKTEST_SIGNALS) {
-          const series = marketStore.getMetricTimeSeries("HYPE", key);
-          if (series.length > 0) signalMap.set(key, series);
-        }
-        signalCoverage = attachSignals(candles, signalMap);
+        try {
+          const { loadManifest } = await import("../market/manifest.js");
+          const manifest   = loadManifest();
+          const signalKeys = manifest.metrics
+            .filter((m) => m.signalForScoring)
+            .map((m) => m.key);
+          const signalMap  = new Map<string, Array<{ capturedAt: number; value: number | null }>>();
+          for (const key of signalKeys) {
+            const series = marketStore.getMetricTimeSeries("HYPE", key);
+            if (series.length > 0) signalMap.set(key, series);
+          }
+          signalCoverage = attachSignals(candles, signalMap);
+        } catch { /* signal attachment is best-effort */ }
       }
 
       // Instantiate strategy; inject user params via Object.assign — TypeScript `private`

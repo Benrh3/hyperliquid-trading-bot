@@ -1,6 +1,7 @@
 import type { Strategy } from "./base.js";
 import { ConfluenceStrategy } from "./confluence.js";
 import { TrendFollowStrategy } from "./trend-follow.js";
+import { CrowdPositioningStrategy } from "./crowd-positioning.js";
 
 export interface StrategyParam {
   key:     string;
@@ -124,6 +125,44 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
     ],
     isCandleStrategy: false,
     factory: null,
+  },
+
+  {
+    id:            "crowd-positioning",
+    displayName:   "Crowd Positioning (HYPE)",
+    category:      "mean-reversion",
+    categoryLabel: "Signal-Driven — Backtest Only",
+    summary:
+      "Fades extreme crowd positioning on HYPE using the lsr_agg_long_frac signal (Aggregate Long %). " +
+      "Enters long when crowd is most short, short when crowd is most long. " +
+      "Exits when signal reverts to neutral or a max-hold cap is reached.",
+    howItWorks:
+      "lsr_agg_long_frac (dirBearHigh) measures what fraction of CEX accounts are net long. " +
+      "When the crowd is positioned most short (signal below the 20th percentile), a structural " +
+      "bid from AF/staking tends to push HYPE up — the strategy goes long. When the crowd is " +
+      "most long (above the 80th percentile), that bid is absorbed and the strategy goes short. " +
+      "Position closes when the signal reverts through the neutral midpoint or after maxHoldBars bars.",
+    signals: [
+      "lsr_agg_long_frac — Aggregate Long % (dirBearHigh, CEX crowd positioning)",
+    ],
+    whenItWorks:
+      "When crowd positioning reaches extremes and the structural bid remains active.",
+    whenItStruggles:
+      "When the crowd is right (trending markets where positioning and price align).",
+    params: [
+      { key: "entryLongBelow",  label: "Entry long below (p20 approx)", default: 0.45, min: 0.30, max: 0.50, step: 0.01 },
+      { key: "entryShortAbove", label: "Entry short above (p80 approx)", default: 0.55, min: 0.50, max: 0.70, step: 0.01 },
+      { key: "exitNeutral",     label: "Exit neutral threshold",          default: 0.50, min: 0.40, max: 0.60, step: 0.01 },
+      { key: "maxHoldBars",     label: "Max hold (bars)",                 default: 48,   min: 4,    max: 240,  step: 4    },
+    ],
+    isCandleStrategy: true,
+    requiresSignals:  true,
+    factory: () => new CrowdPositioningStrategy({
+      entryLongBelow:  0.45,
+      entryShortAbove: 0.55,
+      exitNeutral:     0.50,
+      maxHoldBars:     48,
+    }),
   },
 ];
 
