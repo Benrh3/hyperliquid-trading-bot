@@ -1123,10 +1123,11 @@ export class BotManager {
     if (!entry?.isCandleStrategy || !entry.factory) {
       throw new Error(`Unknown candle strategy: ${input.strategyId}`);
     }
-    if (entry.requiresSignals && live) {
+    if (entry.requiresSignals) {
       throw new Error(
-        `Strategy "${entry.displayName}" uses Market Signal conditions and is backtest-only. ` +
-        `Live bots do not have pre-computed signal data attached to candles.`,
+        `Strategy "${entry.displayName}" is backtest-only (requires pre-attached Market Signal data). ` +
+        `It cannot be deployed as a live or paper bot — candles received from the WebSocket feed ` +
+        `do not have signal values attached. Use the Backtest page instead.`,
       );
     }
 

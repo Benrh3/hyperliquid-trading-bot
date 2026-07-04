@@ -619,7 +619,8 @@ export function createRouter(
     res.render("bots", {
       network:  config.exchange.network,
       coin:     config.exchange.coin,
-      registry: STRATEGY_REGISTRY,
+      // Exclude backtest-only strategies — they cannot be deployed as bots
+      registry: STRATEGY_REGISTRY.filter(e => !e.requiresSignals),
     });
   });
 
