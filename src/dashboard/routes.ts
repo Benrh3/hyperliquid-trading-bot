@@ -815,8 +815,7 @@ export function createRouter(
   async function getHlUniverse(): Promise<string[]> {
     const now = Date.now();
     if (hlUniverseCache && hlUniverseCache.expiresAt > now) return hlUniverseCache.names;
-    const isTestnet = config.exchange.network === "testnet";
-    const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+    const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
     const { universe } = await infoClient.meta();
     hlUniverseCache = { names: universe.map((u) => u.name.toUpperCase()), expiresAt: now + 5 * 60_000 };
     return hlUniverseCache.names;
@@ -896,8 +895,7 @@ export function createRouter(
 
     // Fetch from Hyperliquid
     try {
-      const isTestnet  = config.exchange.network === "testnet";
-      const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+      const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
       const now        = Date.now();
       const tfMs: Record<string, number> = {
         "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,

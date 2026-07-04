@@ -259,8 +259,7 @@ export function runFundingBasisBacktest(
 }
 
 export async function fetchFundingHistory(coin: string, startTime: number, endTime: number): Promise<FundingRecord[]> {
-  const isTestnet  = config.exchange.network === "testnet";
-  const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+  const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
   const raw = await infoClient.fundingHistory({ coin, startTime, endTime });
   return raw.map((r) => ({ fundingRate: r.fundingRate, time: r.time }));
 }
@@ -340,8 +339,7 @@ export async function fetchCandles(coin: string, interval: string, limit: number
 }
 
 export async function fetchCandlesByRange(coin: string, interval: string, startTime: number, endTime: number): Promise<Candle[]> {
-  const isTestnet  = config.exchange.network === "testnet";
-  const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+  const infoClient = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
   const raw = await infoClient.candleSnapshot({ coin, interval: interval as "1m", startTime, endTime });
   return raw.map((c) => ({
     timestamp: c.t,
