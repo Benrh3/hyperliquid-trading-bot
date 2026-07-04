@@ -2,6 +2,7 @@ import type { Strategy } from "./base.js";
 import { ConfluenceStrategy } from "./confluence.js";
 import { TrendFollowStrategy } from "./trend-follow.js";
 import { CrowdPositioningStrategy } from "./crowd-positioning.js";
+import { FundingExtremeStrategy } from "./funding-extreme.js";
 
 export interface StrategyParam {
   key:     string;
@@ -162,6 +163,54 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
       entryShortAbove: 0.55,
       exitNeutral:     0.50,
       maxHoldBars:     48,
+    }),
+  },
+
+  {
+    id:            "funding-extreme",
+    displayName:   "Funding Extreme (HYPE)",
+    category:      "mean-reversion",
+    categoryLabel: "Signal-Driven — Backtest Only",
+    summary:
+      "Fades extreme HYPE funding rates using a point-in-time rolling percentile window. " +
+      "Enters against the crowded side when carry is at its most extreme; exits on normalisation.",
+    howItWorks:
+      "Maintains a trailing window of funding_rate values (default 30 days × 24 h = 720 bars). " +
+      "At each bar, percentiles are recomputed from that window — point-in-time only: the window " +
+      "never includes future bars, avoiding the soft-lookahead of full-series calibration. " +
+      "When funding exceeds the p90 of the window (longs overpaying carry), the strategy shorts; " +
+      "when funding falls below p10 (shorts overpaying), it goes long. " +
+      "Position closes when funding reverts inside the p40–p60 neutral band, or after maxHoldBars bars, " +
+      "or on the engine stop-loss.",
+    signals: [
+      "funding_rate — HYPE perpetual funding /h (hl-market, dirBearPos). " +
+      "Backfill available via scripts/backfill-funding-signals.ts.",
+    ],
+    whenItWorks:
+      "When funding cycles between extremes: one side overpays carry for many hours, then " +
+      "the rate normalises as leveraged positions are closed or flipped.",
+    whenItStruggles:
+      "Sustained directional funding regimes where one side correctly pays carry for weeks " +
+      "(e.g. a strong bull market where longs persist at high funding without a squeeze).",
+    params: [
+      { key: "entryLongBelow",    label: "Entry long (pct, 0–1)",   default: 0.10, min: 0.01, max: 0.30, step: 0.01 },
+      { key: "entryShortAbove",   label: "Entry short (pct, 0–1)",  default: 0.90, min: 0.70, max: 0.99, step: 0.01 },
+      { key: "exitBandLow",       label: "Exit band low (pct, 0–1)",  default: 0.40, min: 0.20, max: 0.50, step: 0.05 },
+      { key: "exitBandHigh",      label: "Exit band high (pct, 0–1)", default: 0.60, min: 0.50, max: 0.80, step: 0.05 },
+      { key: "trailingWindowBars", label: "Trailing window (bars)",  default: 720,  min: 48,   max: 2160, step: 24  },
+      { key: "maxHoldBars",       label: "Max hold (bars)",          default: 72,   min: 4,    max: 240,  step: 4   },
+      { key: "stopLossPct",       label: "Stop-loss (%)",            default: 6,    min: 1,    max: 20,   step: 1   },
+    ],
+    isCandleStrategy: true,
+    requiresSignals:  true,
+    factory: () => new FundingExtremeStrategy({
+      entryLongBelow:     0.10,
+      entryShortAbove:    0.90,
+      exitBandLow:        0.40,
+      exitBandHigh:       0.60,
+      trailingWindowBars: 720,
+      maxHoldBars:        72,
+      stopLossPct:        6,
     }),
   },
 ];
