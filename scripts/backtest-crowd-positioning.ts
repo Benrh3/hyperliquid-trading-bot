@@ -33,27 +33,20 @@ const STOP_LOSS  = 5;           // 5% stop (wide enough not to thrash, tight eno
 console.log(`\n[1/5] Loading signal history from ${DB_PATH}...`);
 const db = new Database(DB_PATH, { readonly: true });
 
-type RawRow = { ts: number; value: number | null };
-
-// Union raw + hourly rollup so the full history is available
-const rawRows = db.prepare(
-  "SELECT ts AS ts, rate_hourly AS value FROM funding_samples WHERE coin = ? AND venue = 'hyperliquid' ORDER BY ts",
-).all("HYPE") as RawRow[];  // placeholder query shape check — signal key is in snapshot_metrics
-
-// Actual signal is in snapshot_metrics / snapshot_metrics_hourly
+// Union raw snapshots + hourly rollup so the full history is available.
+// Simple UNION ALL with ORDER BY at the top level — the column-list alias
+// syntax `AS derived(col1, col2)` is not supported by the SQLite version
+// bundled with better-sqlite3 (confirmed: `near "(": syntax error`).
 const signalRows = db.prepare(`
-  SELECT COALESCE(sm.captured_at, smh.ts_hour) AS ts, COALESCE(sm.value, smh.avg_value) AS value
-  FROM (
-    SELECT sm.captured_at, sm.value
-    FROM snapshot_metrics sm
-    JOIN snapshots s ON s.id = sm.snapshot_id
-    WHERE s.symbol = ? AND sm.metric_key = ?
-    UNION ALL
-    SELECT ts_hour AS captured_at, avg_value AS value
-    FROM snapshot_metrics_hourly
-    WHERE symbol = ? AND metric_key = ?
-  ) AS combined(captured_at, value)
-  ORDER BY captured_at ASC
+  SELECT sm.captured_at AS ts, sm.value AS value
+  FROM snapshot_metrics sm
+  JOIN snapshots s ON s.id = sm.snapshot_id
+  WHERE s.symbol = ? AND sm.metric_key = ?
+  UNION ALL
+  SELECT ts_hour AS ts, avg_value AS value
+  FROM snapshot_metrics_hourly
+  WHERE symbol = ? AND metric_key = ?
+  ORDER BY ts ASC
 `).all(COIN, SIGNAL_KEY, COIN, SIGNAL_KEY) as { ts: number; value: number | null }[];
 
 db.close();
