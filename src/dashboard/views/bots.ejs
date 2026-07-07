@@ -1,8 +1,6 @@
 <%- include('_head', { title: 'Bots' }) %>
 
 <style>
-  :root { --amber: #d29922; }
-
   .bots-page {
     max-width: 1280px;
     margin: 0 auto;
@@ -182,7 +180,7 @@
     border-radius: 4px; padding: var(--sp-1) var(--sp-3);
     cursor: pointer; transition: background 0.1s, color 0.1s;
   }
-  .bc-btn:hover { background: rgba(129,140,248,0.06); }
+  .bc-btn:hover { background: var(--accent-dim); }
   .bc-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   .bc-btn.primary:hover { opacity: 0.85; }
   .bc-btn.danger { color: var(--red); border-color: transparent; }
@@ -231,7 +229,7 @@
     font-size: 20px; cursor: pointer; line-height: 1; padding: 2px var(--sp-2);
     border-radius: 3px;
   }
-  .modal-x:hover { color: var(--text); background: rgba(129,140,248,0.08); }
+  .modal-x:hover { color: var(--text); background: var(--accent-dim); }
   .modal-body { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); }
   .modal-ftr {
     padding: var(--sp-3) var(--sp-5);
@@ -268,7 +266,8 @@
   .m-pfx + .m-inp { border-radius: 0 4px 4px 0; width: 100%; }
 
   .m-hint { font-size: var(--t-label); color: var(--muted); margin: 0; line-height: 1.4; }
-  .m-warn { font-size: var(--t-label); color: var(--amber);  margin: 0; }
+  .m-desc { font-size: var(--t-label); color: var(--muted); margin: 0; line-height: 1.5; font-style: italic; }
+  .m-warn { font-size: var(--t-label); color: var(--yellow); margin: 0; }
   .m-err  { font-size: var(--t-label); color: var(--red);    margin: 0; }
 
   .live-row {
@@ -292,7 +291,7 @@
     width: 14px; height: 14px; background: #fff;
     border-radius: 50%; top: 3px; left: 3px; transition: transform 0.15s;
   }
-  .toggle input:checked + .toggle-slider { background: var(--green); }
+  .toggle input:checked + .toggle-slider { background: var(--accent); }
   .toggle input:checked + .toggle-slider::after { transform: translateX(16px); }
   .toggle input:disabled + .toggle-slider { opacity: 0.35; cursor: default; }
 </style>
@@ -317,6 +316,7 @@
             <option value="<%= e.id %>"><%= e.displayName %></option>
           <% } %>
         </select>
+        <p class="m-desc" id="m-desc"></p>
       </div>
 
       <div class="m-field">
@@ -422,6 +422,7 @@
   'use strict';
 
   const IS_ADMIN = <%= isAdmin %>;
+  const STRATEGY_SUMMARIES = <%- JSON.stringify(Object.fromEntries(registry.map(e => [e.id, e.summary]))) %>;
 
   // ── State ─────────────────────────────────────────────────────────────────
   let allBots    = [];   // most recent /api/bots response (used by modal)
@@ -445,6 +446,12 @@
   const mNotionalF    = document.getElementById('m-notional-field');
   const mAcctEquityF  = document.getElementById('m-acct-equity-field');
   const mAcctDisp     = document.getElementById('m-acct-equity-display');
+  const mDesc         = document.getElementById('m-desc');
+
+  function updateStrategyDesc() {
+    const id = document.getElementById('m-strategy').value;
+    mDesc.textContent = STRATEGY_SUMMARIES[id] ?? '';
+  }
 
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -939,6 +946,7 @@
 
     modal.style.display = 'flex';
     document.getElementById('m-strategy').focus();
+    updateStrategyDesc();
 
     // Trigger strategy-specific field logic for whatever is currently selected
     await onStrategyChange();
@@ -1008,7 +1016,7 @@
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   mSubmit.addEventListener('click', submitModal);
   mCoin.addEventListener('change', () => { updateCoinHint(); checkLiveConflict(); });
-  document.getElementById('m-strategy').addEventListener('change', () => void onStrategyChange());
+  document.getElementById('m-strategy').addEventListener('change', () => { updateStrategyDesc(); void onStrategyChange(); });
 
   // Close on backdrop click (not on modal box itself)
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
