@@ -92,17 +92,22 @@ export function runBacktest(
     const candle = candles[i];
     history.push(candle);
 
-    // Stop-loss on candle wicks
+    // Stop-loss triggered by candle wick breaching the stop level.
+    // Fill convention: stop-price fill — assumes a stop-limit order fills at exactly
+    // entryPrice × (1 ± stopLossPct/100), plus slippage. Intra-bar gap risk is not
+    // modelled; fills on extreme gaps will be worse in practice. Reason reports the
+    // realized fill-based loss (not the wick exceedance) so it matches trade P&L.
     if (position) {
       const { side, entryPrice } = position;
-      const loss = side === "long"
+      const wickLoss = side === "long"
         ? (entryPrice - candle.low)  / entryPrice * 100
         : (candle.high - entryPrice) / entryPrice * 100;
-      if (loss >= stopLossPct) {
+      if (wickLoss >= stopLossPct) {
         const stopPx = side === "long"
           ? entryPrice * (1 - stopLossPct / 100) * (1 - SLIPPAGE)
           : entryPrice * (1 + stopLossPct / 100) * (1 + SLIPPAGE);
-        closeTrade(stopPx, candle.timestamp, `Stop-loss ${loss.toFixed(2)}%`);
+        const fillLossPct = Math.abs(stopPx - entryPrice) / entryPrice * 100;
+        closeTrade(stopPx, candle.timestamp, `Stop-loss −${fillLossPct.toFixed(2)}%`);
         equityCurve.push({ time: candle.timestamp, equity });
         continue;
       }
@@ -349,4 +354,25 @@ export async function fetchCandlesByRange(coin: string, interval: string, startT
     close:     parseFloat(c.c as unknown as string),
     volume:    parseFloat(c.v as unknown as string),
   }));
+}
+
+/**
+ * Resolve the stop-loss percentage for a backtest run.
+ *
+ * Precedence: if the strategy registry entry exposes a `stopLossPct` param,
+ * use the value from mergedStrategyParams (falling back to that param's
+ * registry default).  Otherwise fall back to the general stop passed by the
+ * caller.  This is the single authority for stop resolution — both the
+ * single-run and walk-forward route handlers import and call this function.
+ */
+export function resolveEffectiveStop(
+  params: ReadonlyArray<{ key: string; default: number }>,
+  mergedStrategyParams: Readonly<Record<string, number>>,
+  generalStop: number,
+): number {
+  const ownStop = params.find((p) => p.key === "stopLossPct");
+  if (ownStop) {
+    return mergedStrategyParams["stopLossPct"] ?? ownStop.default;
+  }
+  return generalStop;
 }

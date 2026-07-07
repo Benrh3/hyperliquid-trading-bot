@@ -2,7 +2,7 @@ import { Router } from "express";
 import { join } from "path";
 import { RSI } from "technicalindicators";
 import { config, coins, API_URL } from "../config.js";
-import { runBacktest, fetchCandles, fetchCandlesByRange, runFundingBasisBacktest, fetchFundingHistory, attachSignals, BACKTEST_INTERVAL_MS } from "../backtest.js";
+import { runBacktest, fetchCandles, fetchCandlesByRange, runFundingBasisBacktest, fetchFundingHistory, attachSignals, BACKTEST_INTERVAL_MS, resolveEffectiveStop } from "../backtest.js";
 import { alignFundingRows } from "../chart-utils.js";
 import { makeCacheKey, isValidCoin, isValidInterval } from "../candle-cache-utils.js";
 import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
@@ -388,10 +388,13 @@ export function createRouter(
       const paramDefaults = Object.fromEntries(entry.params.map((p) => [p.key, p.default]));
       const mergedParams  = { ...paramDefaults, ...strategyParams };
 
+      // Precedence: strategy's own stopLossPct param wins over the general setting.
+      const effectiveStopLossPct = resolveEffectiveStop(entry.params, mergedParams, stopLossPct);
+
       const result = runBacktest(strategy, candles, {
         initialEquity,
         positionSizeUsd: Math.round(initialEquity * (config.risk.riskPerTradePercent / config.risk.stopLossPercent)),
-        stopLossPct,
+        stopLossPct:    effectiveStopLossPct,
         commissionPct: commissionPct / 100,   // convert % → fraction for engine
       });
 
@@ -411,7 +414,7 @@ export function createRouter(
           strategyParams: mergedParams,
           initialEquity,
           commissionPct,
-          stopLossPct,
+          stopLossPct:    effectiveStopLossPct,
         },
       });
     } catch (err) {
@@ -1132,10 +1135,11 @@ export function createRouter(
         return;
       }
 
-      const nWin      = Math.min(Math.max(parseInt(String(windows)) || 5, 2), 10);
-      const segSize   = Math.floor(allCandles.length / nWin);
-      const btOpts    = { initialEquity, positionSizeUsd: Math.round(initialEquity * (config.risk.riskPerTradePercent / config.risk.stopLossPercent)), stopLossPct, commissionPct: commissionPct / 100 };
-      const grid      = generateParamGrid(entry.params, 50);
+      const nWin    = Math.min(Math.max(parseInt(String(windows)) || 5, 2), 10);
+      const segSize = Math.floor(allCandles.length / nWin);
+      // Base opts without stopLossPct — resolved per run via resolveEffectiveStop.
+      const baseOpts = { initialEquity, positionSizeUsd: Math.round(initialEquity * (config.risk.riskPerTradePercent / config.risk.stopLossPercent)), commissionPct: commissionPct / 100 };
+      const grid     = generateParamGrid(entry.params, 50);
 
       const windowResults: object[] = [];
       const stitchedEquity: { time: number; equity: number }[] = [];
@@ -1159,7 +1163,7 @@ export function createRouter(
         const oosSamples  = [...warmup, ...rawOos];
         const warmupLen   = warmup.length;
 
-        // Grid-search on IS window
+        // Grid-search on IS window; resolve effective stop per combination
         let bestParams: Record<string, number> = grid[0] ?? {};
         let bestMetric = -Infinity;
         let bestISResult: ReturnType<typeof runBacktest> | null = null;
@@ -1167,7 +1171,8 @@ export function createRouter(
         for (const params of grid) {
           const s = entry.factory!();
           if (Object.keys(params).length > 0) Object.assign(s, params);
-          const r = runBacktest(s, isSamples, btOpts);
+          const effectiveStop = resolveEffectiveStop(entry.params, params, stopLossPct);
+          const r = runBacktest(s, isSamples, { ...baseOpts, stopLossPct: effectiveStop });
           const m = (r as unknown as Record<string, number>)[optimiseBy] ?? 0;
           if (m > bestMetric) { bestMetric = m; bestParams = params; bestISResult = r; }
         }
@@ -1175,7 +1180,8 @@ export function createRouter(
         // OOS with best params (warmup-prefixed so indicators are hot)
         const oosStrat = entry.factory!();
         if (Object.keys(bestParams).length > 0) Object.assign(oosStrat, bestParams);
-        const fullOosResult = runBacktest(oosStrat, oosSamples, btOpts);
+        const effectiveOosStop = resolveEffectiveStop(entry.params, bestParams, stopLossPct);
+        const fullOosResult = runBacktest(oosStrat, oosSamples, { ...baseOpts, stopLossPct: effectiveOosStop });
 
         // Extract OOS-only metrics: trades and equity from after the warmup period
         const oosOnlyTrades = fullOosResult.trades.filter(t => t.entryTime >= rawOos[0].timestamp);
