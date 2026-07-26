@@ -8,10 +8,11 @@
  *
  * What it does:
  *   Fetches HYPE funding history from Hyperliquid's public fundingHistory API,
- *   paginating backward to the earliest data the API serves, then inserts into
- *   the same snapshot_metrics table that the live poller writes — under the
- *   existing "funding_rate" key so getMetricTimeSeries() picks it up
- *   transparently alongside live-polled rows.
+ *   paginating forward from BACKFILL_START (or from the latest already-backfilled
+ *   row when resuming an interrupted run), then inserts into the same
+ *   snapshot_metrics table that the live poller writes — under the existing
+ *   "funding_rate" key so getMetricTimeSeries() picks it up transparently
+ *   alongside live-polled rows.
  *
  * Timestamp assumption (no lookahead):
  *   The API returns one record per funding period with field `time` (epoch ms).
@@ -57,9 +58,27 @@ const DB_PATH     = resolve(process.cwd(), "data/bot.db");
 // HL fundingHistory returns at most ~5000 records per call; use a wide window
 // (30 days) per page to minimise round trips, then advance startTime.
 const PAGE_WINDOW_MS = 30 * 24 * 3_600_000;
-const FETCH_TIMEOUT  = 20_000;
+
+// HYPE genesis was ~Nov 2024. Starting from Oct 2024 avoids ~680 empty API
+// pages that would fire before any data exists (epoch 0 → Oct 2024 = ~680 months).
+const BACKFILL_START = new Date("2024-10-01T00:00:00Z").getTime();
+
+const MAX_RETRIES      = 5;    // retry attempts per page on 429
+const REQUEST_DELAY_MS = 250;  // courtesy delay between successful page fetches
+const BACKOFF_BASE_MS  = 1_000; // base for 2^n exponential backoff on 429 (1s, 2s, 4s, 8s, 16s)
 
 const DRY = process.argv.includes("--dry");
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function is429(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const msg = e.message.toLowerCase();
+  return msg.includes("429") || msg.includes("rate limit") || msg.includes("too many request");
+}
 
 // ── Open DB ───────────────────────────────────────────────────────────────────
 if (DRY) console.log("[dry-run] No rows will be written.\n");
@@ -85,10 +104,7 @@ const stmtInsertMetric = db.prepare(
   "INSERT INTO snapshot_metrics (snapshot_id, metric_key, value, source, kind, meta_json, captured_at) VALUES (?, ?, ?, ?, ?, NULL, ?)",
 );
 
-// ── Determine time range ──────────────────────────────────────────────────────
-// Start from the earliest existing backfilled row (or epoch 0 if none), then
-// fetch forward. If there are already rows, start from the day before the
-// earliest to avoid gaps.
+// ── Show existing data and determine resume point ─────────────────────────────
 const existingRange = db.prepare<[string, string], { minTs: number | null; maxTs: number | null }>(`
   SELECT MIN(sm.captured_at) AS minTs, MAX(sm.captured_at) AS maxTs
   FROM snapshot_metrics sm
@@ -96,18 +112,33 @@ const existingRange = db.prepare<[string, string], { minTs: number | null; maxTs
   WHERE s.symbol = ? AND sm.metric_key = ?
 `).get(COIN, METRIC_KEY) as { minTs: number | null; maxTs: number | null };
 
-console.log(`[backfill] Existing ${METRIC_KEY} rows for ${COIN}:`);
+console.log(`[backfill] Existing ${METRIC_KEY} rows for ${COIN} (all sources):`);
 if (existingRange.minTs) {
   console.log(`  earliest: ${new Date(existingRange.minTs).toISOString()}`);
   console.log(`  latest:   ${new Date(existingRange.maxTs!).toISOString()}`);
 } else {
-  console.log("  none — full backfill");
+  console.log("  none");
 }
 
-// Fetch from as early as HL serves. HYPE launched ~Nov 2024; use epoch 0 and
-// let the API return an empty page when we go before data exists.
-const FETCH_START = 0;
-const FETCH_END   = Date.now();
+// Resume from the latest hl-backfill row to avoid reprocessing already-fetched data.
+const latestBackfill = db.prepare<[string, string, string], { maxTs: number | null }>(`
+  SELECT MAX(sm.captured_at) AS maxTs
+  FROM snapshot_metrics sm
+  JOIN snapshots s ON s.id = sm.snapshot_id
+  WHERE s.symbol = ? AND sm.metric_key = ? AND sm.source = ?
+`).get(COIN, METRIC_KEY, SOURCE) as { maxTs: number | null };
+
+let pageStart: number;
+if (latestBackfill.maxTs !== null) {
+  // Add 1 ms so the API doesn't re-return the last known record
+  pageStart = latestBackfill.maxTs + 1;
+  console.log(`[backfill] Resuming — latest hl-backfill: ${new Date(latestBackfill.maxTs).toISOString()}`);
+  console.log(`           Fetching from ${new Date(pageStart).toISOString()} onward`);
+} else {
+  pageStart = BACKFILL_START;
+  console.log(`[backfill] Fresh backfill — starting from BACKFILL_START ${new Date(pageStart).toISOString()}`);
+}
+const FETCH_END = Date.now();
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
 console.log(`\n[backfill] Fetching from HL API (mainnet, HYPE)…`);
@@ -117,16 +148,26 @@ const info = new InfoClient({ transport: new HttpTransport({ isTestnet: false })
 type FundingRecord = { coin: string; fundingRate: string; premium: string; time: number };
 
 async function fetchPage(startTime: number, endTime: number): Promise<FundingRecord[]> {
-  const raw = await info.fundingHistory({
-    coin: COIN,
-    startTime,
-    endTime,
-  });
-  return raw as FundingRecord[];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const raw = await info.fundingHistory({ coin: COIN, startTime, endTime });
+      return raw as FundingRecord[];
+    } catch (e) {
+      if (is429(e) && attempt < MAX_RETRIES) {
+        const backoffMs = BACKOFF_BASE_MS * Math.pow(2, attempt);
+        process.stdout.write(
+          `\n  [429] rate-limited — retry ${attempt + 1}/${MAX_RETRIES} in ${(backoffMs / 1000).toFixed(0)}s… `,
+        );
+        await sleep(backoffMs);
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 const allRecords: FundingRecord[] = [];
-let pageStart = FETCH_START;
+let isFirstPage = true;
 
 while (pageStart < FETCH_END) {
   const pageEnd = Math.min(pageStart + PAGE_WINDOW_MS, FETCH_END);
@@ -134,12 +175,12 @@ while (pageStart < FETCH_END) {
     `  fetching ${new Date(pageStart).toISOString().slice(0, 10)} → ${new Date(pageEnd).toISOString().slice(0, 10)}… `,
   );
 
+  if (!isFirstPage) await sleep(REQUEST_DELAY_MS);
+  isFirstPage = false;
+
   let page: FundingRecord[];
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT);
     page = await fetchPage(pageStart, pageEnd);
-    clearTimeout(timer);
   } catch (e) {
     console.error(`\n[backfill] Fetch failed: ${(e as Error).message}`);
     process.exit(1);
