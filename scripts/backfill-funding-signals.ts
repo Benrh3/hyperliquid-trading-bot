@@ -212,13 +212,30 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
 // rows already in the DB (metaAndAssetCtxs().funding, current-period accruing rate).
 //
 // Both APIs return a plain decimal string; no transform is applied by either path
-// beyond parseFloat / safeNum. This block confirms the values agree in practice:
-// settled rates and accruing rates for the same period should be equal or very close.
+// beyond parseFloat / safeNum. This block confirms the values agree in order of
+// magnitude — no 8× or 100× scale error exists between the two sources.
+//
+// Expected discrepancy — predicted vs. settled:
+//   The live poller samples metaAndAssetCtxs().funding, which is the *predicted*
+//   (accruing) rate for the current hour, polled at an arbitrary minute within
+//   that hour. fundingHistory returns the *settled* rate for each completed hour.
+//   For the same hour these values are often identical (the protocol publishes the
+//   settled rate at the period boundary), but if the poller fires mid-hour the two
+//   can differ — sometimes by 10–20% relative — because the predicted rate tracks
+//   live mark/index divergence while the settled rate is fixed at settlement time.
+//   This intra-hour drift is normal and NOT a unit error.
+//
+// Verdict design:
+//   We use the median of hist/live ratios across matched pairs. The median is robust
+//   to the intra-hour drift outliers described above. A true unit mismatch (8× or
+//   100×) shifts every ratio by that factor and fails by orders of magnitude; a few
+//   outlier pairs from mid-hour sampling do not move the median meaningfully.
+//   PASS band: median ratio in [0.5, 2.0]. Avg/max relative delta are informational.
 //
 // Matching: live-polled rows fire at an arbitrary minute within each hour. We pair
 // each live row with the nearest historical settlement record within ±90 minutes.
-// A systematic multiplier (e.g. 8× for 8h vs hourly mismatch) would be immediately
-// visible in the delta column even before a single row is inserted.
+// A systematic multiplier would be immediately visible in the ratio column even
+// before a single row is inserted.
 {
   const OVERLAP_WINDOW_MS  = 7 * 24 * 3_600_000; // look back 7 days for live rows
   const MATCH_TOLERANCE_MS = 90 * 60 * 1000;      // ±90 min to pair with a settlement
@@ -261,6 +278,7 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
       histVal:   number;
       absDelta:  number;
       relDelta:  number; // fraction, not percent
+      ratio:     number; // histVal / liveVal — used for median-ratio verdict
     };
 
     const comparisons: Comparison[] = [];
@@ -268,7 +286,7 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
       const hist = nearestRecord(live.capturedAt);
       if (!hist) continue;
       const histVal = parseFloat(hist.fundingRate);
-      if (!isFinite(histVal) || !isFinite(live.value)) continue;
+      if (!isFinite(histVal) || !isFinite(live.value) || live.value === 0) continue;
       comparisons.push({
         liveTs:   live.capturedAt,
         histTs:   hist.time,
@@ -276,7 +294,8 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
         liveVal:  live.value,
         histVal,
         absDelta: Math.abs(histVal - live.value),
-        relDelta: live.value !== 0 ? Math.abs((histVal - live.value) / live.value) : 0,
+        relDelta: Math.abs((histVal - live.value) / live.value),
+        ratio:    histVal / live.value,
       });
       if (comparisons.length >= 10) break; // collect 10, show 5
     }
@@ -286,18 +305,29 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
       console.log("  Possible causes: backfill range doesn't reach the live-poller window,");
       console.log("  or the poller ran exclusively outside settlement hour boundaries.\n");
     } else {
-      // Compute aggregate stats over all matches
+      // Median ratio (hist/live) — robust to intra-hour drift outliers.
+      // A true unit mismatch shifts every ratio by the scale factor (e.g. 8.0 for
+      // an 8h-vs-1h error); a few outlier pairs from mid-hour sampling leave the
+      // median near 1.0. PASS band: [0.5, 2.0].
+      const sortedRatios = [...comparisons.map(c => c.ratio)].sort((a, b) => a - b);
+      const mid = Math.floor(sortedRatios.length / 2);
+      const medianRatio = sortedRatios.length % 2 === 1
+        ? sortedRatios[mid]
+        : (sortedRatios[mid - 1] + sortedRatios[mid]) / 2;
+
+      const RATIO_LO = 0.5;
+      const RATIO_HI = 2.0;
+      const passed = medianRatio >= RATIO_LO && medianRatio <= RATIO_HI;
+
+      // Informational stats (not used for pass/fail)
       const avgRelDelta = comparisons.reduce((s, c) => s + c.relDelta, 0) / comparisons.length;
       const maxAbsDelta = Math.max(...comparisons.map(c => c.absDelta));
 
-      // Emit a clear PASS/FAIL verdict before the table
-      const PASS_THRESHOLD = 0.01; // 1% relative delta tolerated (accounts for accrual drift)
-      const passed = avgRelDelta < PASS_THRESHOLD;
-      console.log(`\n  Verdict: ${passed ? "✓ PASS" : "✗ FAIL"} — avg relative delta ${(avgRelDelta * 100).toFixed(4)}%  max abs delta ${maxAbsDelta.toExponential(3)}`);
+      console.log(`\n  Verdict: ${passed ? "✓ PASS" : "✗ FAIL"} — median ratio hist/live ${medianRatio.toFixed(4)}  (pass band [${RATIO_LO}, ${RATIO_HI}])`);
+      console.log(`  Info:    avg relative delta ${(avgRelDelta * 100).toFixed(4)}%  max abs delta ${maxAbsDelta.toExponential(3)}  (intra-hour drift, not used for verdict)`);
       if (!passed) {
-        console.log("  WARNING: values differ by more than 1% on average.");
-        console.log("  Possible unit mismatch (e.g. 8h vs 1h rate). DO NOT proceed with insertion.");
-        console.log("  Review the comparison table and check the API documentation.\n");
+        console.log("  WARNING: median ratio outside pass band — likely unit mismatch (e.g. 8h vs 1h rate).");
+        console.log("  DO NOT proceed with insertion. Review the comparison table and check the API documentation.\n");
         if (!DRY) {
           db.close();
           process.exit(1);
@@ -306,16 +336,17 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
 
       // Print 5-row comparison table
       const tableRows = comparisons.slice(0, 5);
-      const COL = { ts: 22, lag: 10, live: 15, hist: 15, delta: 12 };
+      const COL = { ts: 22, lag: 10, live: 15, hist: 15, ratio: 8, delta: 12 };
       console.log(`\n  Showing ${tableRows.length} of ${comparisons.length} matched pairs (±90 min tolerance):`);
       console.log(
         `  ${"Live-polled (UTC)".padEnd(COL.ts)}` +
         `${"Lag (min)".padEnd(COL.lag)}` +
         `${"Live value".padEnd(COL.live)}` +
         `${"Hist value".padEnd(COL.hist)}` +
+        `${"Ratio".padEnd(COL.ratio)}` +
         `${"Rel delta"}`,
       );
-      console.log("  " + "─".repeat(COL.ts + COL.lag + COL.live + COL.hist + COL.delta));
+      console.log("  " + "─".repeat(COL.ts + COL.lag + COL.live + COL.hist + COL.ratio + COL.delta));
       for (const c of tableRows) {
         const lagMin = (c.lagMs / 60_000).toFixed(0).padStart(4);
         const relPct = (c.relDelta * 100).toFixed(4) + "%";
@@ -324,6 +355,7 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
           `${lagMin} min    ` +
           `${c.liveVal.toFixed(8).padEnd(COL.live)}` +
           `${c.histVal.toFixed(8).padEnd(COL.hist)}` +
+          `${c.ratio.toFixed(4).padEnd(COL.ratio)}` +
           relPct,
         );
       }
