@@ -172,43 +172,43 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
     category:      "mean-reversion",
     categoryLabel: "Signal-Driven — Backtest Only",
     summary:
-      "Fades extreme HYPE funding rates using a point-in-time rolling percentile window. " +
-      "Enters against the crowded side when carry is at its most extreme; exits on normalisation.",
+      "Fades extreme HYPE funding deviations from the protocol default. " +
+      "The distribution is a mass point at 1.25e-5; deviations are genuine outliers — " +
+      "enters against the crowded side when carry is at a multiple of the default; exits on normalisation.",
     howItWorks:
-      "Maintains a trailing window of funding_rate values (default 30 days × 24 h = 720 bars). " +
-      "At each bar, percentiles are recomputed from that window — point-in-time only: the window " +
-      "never includes future bars, avoiding the soft-lookahead of full-series calibration. " +
-      "When funding exceeds the p90 of the window (longs overpaying carry), the strategy shorts; " +
-      "when funding falls below p10 (shorts overpaying), it goes long. " +
-      "Position closes when funding reverts inside the p40–p60 neutral band, or after maxHoldBars bars, " +
-      "or on the engine stop-loss.",
+      "No rolling window needed: thresholds are absolute, derived from params. " +
+      "Enter short when funding ≥ defaultRate × entryShortMultiple (longs overpaying carry). " +
+      "Enter long when funding < entryLongNegative (negative funding — longs paying shorts). " +
+      "Exit when |funding − defaultRate| < exitBand (normalised), or after maxHoldBars bars, " +
+      "or on the engine stop-loss. " +
+      "Because ≥80% of funding values sit at exactly the default, percentile-based entries are " +
+      "degenerate (p10 = p90); this strategy uses absolute deviation instead.",
     signals: [
       "funding_rate — HYPE perpetual funding /h (hl-market, dirBearPos). " +
       "Backfill available via scripts/backfill-funding-signals.ts.",
     ],
     whenItWorks:
-      "When funding cycles between extremes: one side overpays carry for many hours, then " +
-      "the rate normalises as leveraged positions are closed or flipped.",
+      "When funding spikes to several multiples of the default (longs overpaying) then reverts, " +
+      "or briefly goes negative (longs paying shorts). The deviation-from-default approach is " +
+      "robust precisely because the distribution is a mass point — outliers are structurally unusual.",
     whenItStruggles:
-      "Sustained directional funding regimes where one side correctly pays carry for weeks " +
-      "(e.g. a strong bull market where longs persist at high funding without a squeeze).",
+      "Persistent high-funding regimes where longs pay extreme carry for weeks without deleveraging " +
+      "(strong bull markets). Max-hold and stop-loss cap the damage but the strategy will underperform.",
     params: [
-      { key: "entryLongBelow",    label: "Entry long (pct, 0–1)",   default: 0.10, min: 0.01, max: 0.30, step: 0.01 },
-      { key: "entryShortAbove",   label: "Entry short (pct, 0–1)",  default: 0.90, min: 0.70, max: 0.99, step: 0.01 },
-      { key: "exitBandLow",       label: "Exit band low (pct, 0–1)",  default: 0.40, min: 0.20, max: 0.50, step: 0.05 },
-      { key: "exitBandHigh",      label: "Exit band high (pct, 0–1)", default: 0.60, min: 0.50, max: 0.80, step: 0.05 },
-      { key: "trailingWindowBars", label: "Trailing window (bars)",  default: 720,  min: 48,   max: 2160, step: 24  },
-      { key: "maxHoldBars",       label: "Max hold (bars)",          default: 72,   min: 4,    max: 240,  step: 4   },
-      { key: "stopLossPct",       label: "Stop-loss (%)",            default: 6,    min: 1,    max: 20,   step: 1   },
+      { key: "defaultRate",        label: "Default rate",             default: 0.0000125,  min: 0.000001,  max: 0.0001,   step: 0.000001  },
+      { key: "entryShortMultiple", label: "Short entry multiple (k)", default: 3,          min: 1.5,       max: 10,       step: 0.5       },
+      { key: "entryLongNegative",  label: "Long entry threshold",     default: 0,          min: -0.0001,   max: 0,        step: 0.00001   },
+      { key: "exitBand",           label: "Exit band (ε)",            default: 0.00000625, min: 0.000001,  max: 0.00005,  step: 0.000001  },
+      { key: "maxHoldBars",        label: "Max hold (bars)",          default: 72,         min: 4,         max: 240,      step: 4         },
+      { key: "stopLossPct",        label: "Stop-loss (%)",            default: 6,          min: 1,         max: 20,       step: 1         },
     ],
     isCandleStrategy: true,
     requiresSignals:  true,
     factory: () => new FundingExtremeStrategy({
-      entryLongBelow:     0.10,
-      entryShortAbove:    0.90,
-      exitBandLow:        0.40,
-      exitBandHigh:       0.60,
-      trailingWindowBars: 720,
+      defaultRate:        0.0000125,
+      entryShortMultiple: 3,
+      entryLongNegative:  0,
+      exitBand:           0.00000625,
       maxHoldBars:        72,
       stopLossPct:        6,
     }),

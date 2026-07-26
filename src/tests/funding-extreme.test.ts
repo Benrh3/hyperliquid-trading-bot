@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePercentile, FundingExtremeStrategy, SIGNAL_KEY } from "../strategy/funding-extreme.js";
+import { FundingExtremeStrategy, SIGNAL_KEY } from "../strategy/funding-extreme.js";
 import { STRATEGY_REGISTRY } from "../strategy/registry.js";
 import { runBacktest } from "../backtest.js";
 import type { Candle } from "../events.js";
@@ -12,228 +12,181 @@ function makeCandle(timestamp: number, funding: number | null): Candle {
   return c;
 }
 
+const DEFAULT_RATE   = 1.25e-5;
+const SHORT_MULT     = 3;
+const SHORT_THRESH   = DEFAULT_RATE * SHORT_MULT; // 3.75e-5
+const EXIT_BAND      = 0.5 * DEFAULT_RATE;        // 6.25e-6
+const LONG_THRESH    = 0;
+
 const DEFAULT_PARAMS = {
-  entryLongBelow:     0.10,
-  entryShortAbove:    0.90,
-  exitBandLow:        0.40,
-  exitBandHigh:       0.60,
-  trailingWindowBars: 30,   // small window for fast tests
+  defaultRate:        DEFAULT_RATE,
+  entryShortMultiple: SHORT_MULT,
+  entryLongNegative:  LONG_THRESH,
+  exitBand:           EXIT_BAND,
   maxHoldBars:        10,
   stopLossPct:        6,
 };
 
+// stopLossPct:100 disables engine stops so we isolate strategy logic
 const BT_OPTS = { initialEquity: 1000, positionSizeUsd: 500, stopLossPct: 100, commissionPct: 0 };
 
-// ── 1. computePercentile unit tests ──────────────────────────────────────────
+// ── 1. Short entry conditions ─────────────────────────────────────────────────
 
-describe("computePercentile", () => {
-  it("returns the only value for a single-element array", () => {
-    expect(computePercentile([0.5], 0.5)).toBe(0.5);
-    expect(computePercentile([0.5], 0)).toBe(0.5);
-    expect(computePercentile([0.5], 1)).toBe(0.5);
+describe("FundingExtremeStrategy — short entries", () => {
+  it("fires at exactly defaultRate × entryShortMultiple", () => {
+    const candles = [
+      ...Array.from({ length: 5 }, (_, i) => makeCandle(i * H, DEFAULT_RATE)),
+      makeCandle(5 * H, SHORT_THRESH),  // exactly at threshold → should fire
+      ...Array.from({ length: 4 }, (_, i) => makeCandle((6 + i) * H, DEFAULT_RATE)),
+    ];
+    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
+    const entry = result.trades.find(t => t.side === "short");
+    expect(entry).toBeDefined();
+    expect(entry!.entryTime).toBe(5 * H);
   });
 
-  it("returns NaN for empty array", () => {
-    expect(isNaN(computePercentile([], 0.5))).toBe(true);
+  it("does NOT fire when funding is just below the threshold", () => {
+    const belowThresh = SHORT_THRESH - 1e-9;
+    const candles = Array.from({ length: 20 }, (_, i) => makeCandle(i * H, belowThresh));
+    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
+    expect(result.trades.filter(t => t.side === "short").length).toBe(0);
   });
 
-  it("returns min and max at p0 and p1", () => {
-    const s = [1, 2, 3, 4, 5];
-    expect(computePercentile(s, 0)).toBe(1);
-    expect(computePercentile(s, 1)).toBe(5);
-  });
-
-  it("returns exact median for odd-length array", () => {
-    expect(computePercentile([1, 2, 3, 4, 5], 0.5)).toBe(3);
-  });
-
-  it("interpolates correctly for even-length array", () => {
-    // [1, 2, 3, 4]: p0.5 index = 1.5 → 2 + (3-2)*0.5 = 2.5
-    expect(computePercentile([1, 2, 3, 4], 0.5)).toBeCloseTo(2.5);
-  });
-
-  it("p90 of [0.0001 × 29, 0.001] (30 values) is 0.0001", () => {
-    const sorted = [...Array(29).fill(0.0001), 0.001];
-    // p90 index = 0.9 × 29 = 26.1 → between indices 26 and 27 (both 0.0001)
-    expect(computePercentile(sorted, 0.90)).toBeCloseTo(0.0001, 6);
-  });
-
-  it("p10 of [0.001, 0.001, ...28×0.0001] (30 values) is 0.001 interpolated low", () => {
-    const sorted = [0.001, 0.001, ...Array(28).fill(0.0001)].sort((a, b) => a - b);
-    // sorted: 28 × 0.0001, 2 × 0.001
-    // p10 index = 0.1 × 29 = 2.9 → between index 2 (0.0001) and 3 (0.0001)
-    expect(computePercentile(sorted, 0.10)).toBeCloseTo(0.0001, 6);
+  it("fires multiple times as funding spikes and normalises repeatedly", () => {
+    // spike → normalise → spike → normalise
+    const candles = [
+      ...Array.from({ length: 3 }, (_, i) => makeCandle(i * H, DEFAULT_RATE)),
+      makeCandle(3 * H, SHORT_THRESH),   // entry 1
+      makeCandle(4 * H, DEFAULT_RATE),   // exit 1 (normalised)
+      makeCandle(5 * H, DEFAULT_RATE),
+      makeCandle(6 * H, SHORT_THRESH),   // entry 2
+      makeCandle(7 * H, DEFAULT_RATE),   // exit 2 (normalised)
+      makeCandle(8 * H, DEFAULT_RATE),
+    ];
+    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
+    expect(result.trades.filter(t => t.side === "short").length).toBe(2);
   });
 });
 
-// ── 2. Point-in-time invariant ────────────────────────────────────────────────
+// ── 2. Long entry conditions ──────────────────────────────────────────────────
 
-describe("FundingExtremeStrategy — point-in-time percentile invariant", () => {
-  /**
-   * Core invariant: the entry decision at bar T is identical whether we run
-   * the strategy on candles[0..T+5] or candles[0..T+50].  Adding future bars
-   * must not affect decisions at earlier bars.
-   *
-   * Test design: bar 40 has a spike (0.001) in a sea of 0.0002.  With a 30-bar
-   * trailing window the spike is clearly above p90 of [0.0002×29, 0.001] →
-   * short entry.  We verify this entry appears identically in both a short run
-   * (50 bars) and a long run (80 bars).
-   */
-  function buildCandles(n: number): Candle[] {
-    return Array.from({ length: n }, (_, i) =>
-      makeCandle(i * H, i === 40 ? 0.001 : 0.0002),
-    );
-  }
-
-  it("short entry at bar 40 exists in a 50-bar and an 80-bar run", () => {
-    const entry40ts = 40 * H;
-
-    const r50 = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), buildCandles(50), BT_OPTS);
-    const r80 = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), buildCandles(80), BT_OPTS);
-
-    const e50 = r50.trades.find(t => t.entryTime === entry40ts && t.side === "short");
-    const e80 = r80.trades.find(t => t.entryTime === entry40ts && t.side === "short");
-
-    expect(e50).toBeDefined();
-    expect(e80).toBeDefined();
-    // Same candle, same decision → fill prices must be equal
-    expect(e50!.entryPrice).toBeCloseTo(e80!.entryPrice, 8);
+describe("FundingExtremeStrategy — long entries", () => {
+  it("fires when funding < entryLongNegative (default 0 → strictly negative)", () => {
+    const candles = [
+      ...Array.from({ length: 5 }, (_, i) => makeCandle(i * H, DEFAULT_RATE)),
+      makeCandle(5 * H, -1e-6),          // strictly negative → long entry
+      ...Array.from({ length: 4 }, (_, i) => makeCandle((6 + i) * H, DEFAULT_RATE)),
+    ];
+    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
+    const entry = result.trades.find(t => t.side === "long");
+    expect(entry).toBeDefined();
+    expect(entry!.entryTime).toBe(5 * H);
   });
 
-  it("entry fires at bar 40 and funding there exceeds independently computed point-in-time p90", () => {
-    // Note: BacktestTrade.reason records the EXIT reason, not the entry reason.
-    // Verify point-in-time correctness by independently recomputing the trailing
-    // window p90 at bar 40 and asserting the entry's signal value exceeds it.
-    const WINDOW  = 30;
-    const candles = buildCandles(50);
+  it("does NOT fire when funding is zero (not strictly negative)", () => {
+    const candles = Array.from({ length: 20 }, (_, i) => makeCandle(i * H, 0));
+    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
+    expect(result.trades.filter(t => t.side === "long").length).toBe(0);
+  });
 
+  it("does NOT fire when funding is positive", () => {
+    const candles = Array.from({ length: 20 }, (_, i) => makeCandle(i * H, DEFAULT_RATE));
+    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
+    expect(result.trades.filter(t => t.side === "long").length).toBe(0);
+  });
+
+  it("respects a custom entryLongNegative threshold more negative than zero", () => {
+    // With entryLongNegative = -1e-5, funding must be < -1e-5 to trigger.
+    // -5e-6 is negative but NOT below -1e-5 → no entry.
+    // -2e-5 IS below -1e-5 → entry.
+    const params = { ...DEFAULT_PARAMS, entryLongNegative: -1e-5 };
+    const candlesNoEntry = Array.from({ length: 10 }, (_, i) => makeCandle(i * H, -5e-6));
+    const candlesEntry   = Array.from({ length: 10 }, (_, i) =>
+      makeCandle(i * H, i === 5 ? -2e-5 : DEFAULT_RATE),
+    );
+    const rNo  = runBacktest(new FundingExtremeStrategy(params), candlesNoEntry, BT_OPTS);
+    const rYes = runBacktest(new FundingExtremeStrategy(params), candlesEntry,   BT_OPTS);
+    expect(rNo.trades.filter(t => t.side === "long").length).toBe(0);
+    expect(rYes.trades.filter(t => t.side === "long").length).toBeGreaterThan(0);
+  });
+});
+
+// ── 3. Exit conditions ────────────────────────────────────────────────────────
+
+describe("FundingExtremeStrategy — exits", () => {
+  it("normalised exit fires when |funding − defaultRate| < exitBand", () => {
+    // Short entry at bar 3, funding returns to DEFAULT_RATE at bar 4 → normalised
+    const candles = [
+      ...Array.from({ length: 3 }, (_, i) => makeCandle(i * H, DEFAULT_RATE)),
+      makeCandle(3 * H, SHORT_THRESH),   // short entry
+      makeCandle(4 * H, DEFAULT_RATE),   // |DEFAULT - DEFAULT| = 0 < EXIT_BAND → exit
+      makeCandle(5 * H, DEFAULT_RATE),
+    ];
+    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
+    const trade = result.trades.find(t => t.side === "short");
+    expect(trade).toBeDefined();
+    expect(trade!.reason).toMatch(/normalised/);
+  });
+
+  it("does NOT exit while funding stays outside exitBand", () => {
+    // Short entry at bar 2; bar 3 still extreme; bar 4 normalises
+    const candles = [
+      makeCandle(0,     DEFAULT_RATE),
+      makeCandle(H,     DEFAULT_RATE),
+      makeCandle(2 * H, SHORT_THRESH),   // short entry
+      makeCandle(3 * H, SHORT_THRESH),   // still outside band: |3.75e-5 - 1.25e-5| = 2.5e-5 > 6.25e-6
+      makeCandle(4 * H, DEFAULT_RATE),   // normalised → exit
+      makeCandle(5 * H, DEFAULT_RATE),
+    ];
+    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
+    const trade = result.trades.find(t => t.side === "short");
+    expect(trade).toBeDefined();
+    // exitTime is the timestamp of the bar on which the exit signal was emitted
+    expect(trade!.exitTime).toBe(4 * H);
+  });
+
+  it("max-hold exit fires when funding stays extreme beyond maxHoldBars", () => {
+    // Entry at bar 2; funding stays at SHORT_THRESH for 20 bars (never normalises)
+    const MAX_HOLD = 10;
+    const candles = [
+      makeCandle(0,     DEFAULT_RATE),
+      makeCandle(H,     DEFAULT_RATE),
+      ...Array.from({ length: 20 }, (_, i) => makeCandle((2 + i) * H, SHORT_THRESH)),
+    ];
     const result = runBacktest(
-      new FundingExtremeStrategy({ ...DEFAULT_PARAMS, trailingWindowBars: WINDOW }),
+      new FundingExtremeStrategy({ ...DEFAULT_PARAMS, maxHoldBars: MAX_HOLD }),
       candles,
       BT_OPTS,
     );
-    const entry = result.trades.find(t => t.entryTime === 40 * H && t.side === "short");
-    expect(entry).toBeDefined();
-
-    // Signal value at entry bar 40
-    const fundingAtEntry = candles[40].signals?.[SIGNAL_KEY] as number;
-    expect(isFinite(fundingAtEntry)).toBe(true);
-
-    // Independently compute p90 of the trailing window at bar 40:
-    // window = candles[max(0,40-30+1)..40] = candles[11..40] (30 values)
-    // = [0.0002 × 29, 0.001]
-    const windowVals = candles
-      .slice(Math.max(0, 41 - WINDOW), 41)
-      .map(c => c.signals?.[SIGNAL_KEY] as number)
-      .filter(v => v !== undefined && isFinite(v));
-    const sorted      = [...windowVals].sort((a, b) => a - b);
-    const ptP90       = computePercentile(sorted, DEFAULT_PARAMS.entryShortAbove);
-
-    // The entry is a short, so funding must be strictly above p90
-    expect(fundingAtEntry).toBeGreaterThan(ptP90);
-
-    // Sanity: full-series p90 (all 50 bars) differs from trailing-window p90,
-    // showing the trailing window is actually doing something different
-    const allVals  = candles.map(c => c.signals?.[SIGNAL_KEY] as number).filter(isFinite);
-    const allSorted = [...allVals].sort((a, b) => a - b);
-    const fullP90   = computePercentile(allSorted, DEFAULT_PARAMS.entryShortAbove);
-    // Both are non-NaN; the point-in-time p90 ≤ full-series p90
-    expect(isFinite(ptP90)).toBe(true);
-    expect(isFinite(fullP90)).toBe(true);
-    // The point-in-time window excludes bars 41-49 (which are 0.0002 and would
-    // dilute the spike) so ptP90 and fullP90 may or may not differ here,
-    // but both must be below the spike value so the entry fires regardless
-    expect(fundingAtEntry).toBeGreaterThan(fullP90);
+    const trade = result.trades.find(t => t.side === "short");
+    expect(trade).toBeDefined();
+    expect(trade!.reason).toMatch(/max-hold/);
   });
 
-  it("no trades before minimum window (24 bars) have accumulated", () => {
-    // With trailingWindowBars=30 and MIN_WINDOW=24, first entry cannot occur before bar 23
-    const candles = Array.from({ length: 60 }, (_, i) =>
-      makeCandle(i * H, 0.001), // spike on every bar — would trigger immediately if no warmup
+  it("thresholds are pure functions of params — different multiples give different entry points", () => {
+    // candle at 3×DEFAULT: fires for k=2 (threshold 2.5e-5), does NOT fire for k=5 (threshold 6.25e-5)
+    const threeX = DEFAULT_RATE * 3; // 3.75e-5 — above 2× default but below 5× default
+    const candles = [
+      ...Array.from({ length: 5 }, (_, i) => makeCandle(i * H, DEFAULT_RATE)),
+      makeCandle(5 * H, threeX),
+      ...Array.from({ length: 5 }, (_, i) => makeCandle((6 + i) * H, DEFAULT_RATE)),
+    ];
+
+    const rK2 = runBacktest(
+      new FundingExtremeStrategy({ ...DEFAULT_PARAMS, entryShortMultiple: 2 }),
+      candles, BT_OPTS,
     );
-    const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
-    if (result.trades.length > 0) {
-      const firstEntryBar = result.trades[0].entryTime / H;
-      expect(firstEntryBar).toBeGreaterThanOrEqual(24);
-    }
-  });
-});
+    const rK5 = runBacktest(
+      new FundingExtremeStrategy({ ...DEFAULT_PARAMS, entryShortMultiple: 5 }),
+      candles, BT_OPTS,
+    );
 
-// ── 3. Entry threshold correctness ───────────────────────────────────────────
-
-describe("FundingExtremeStrategy — entries respect computed thresholds", () => {
-  it("every short entry has funding value above the point-in-time p90", () => {
-    // Vary signal enough to get a mix of entries
-    const signals = Array.from({ length: 200 }, (_, i) => {
-      const phase = i % 60;
-      if (phase < 5)  return 0.002;   // spike high → short entry zone
-      if (phase < 10) return 0.0005;  // normalise → short exits
-      if (phase < 15) return -0.001;  // spike low → long entry zone
-      if (phase < 20) return 0.0005;  // normalise → long exits
-      return 0.0005;                  // baseline
-    });
-    const WINDOW = 30;
-    const candles = signals.map((sig, i) => makeCandle(i * H, sig));
-    const params  = { ...DEFAULT_PARAMS, trailingWindowBars: WINDOW };
-    const result  = runBacktest(new FundingExtremeStrategy(params), candles, BT_OPTS);
-
-    const shortTrades = result.trades.filter(t => t.side === "short");
-    expect(shortTrades.length).toBeGreaterThan(0);
-
-    for (const trade of shortTrades) {
-      const barIdx     = trade.entryTime / H;
-      const entryCandle = candles[barIdx];
-      const fundingVal  = entryCandle?.signals?.[SIGNAL_KEY] as number;
-      expect(fundingVal).toBeDefined();
-
-      // Recompute trailing-window p90 at this bar
-      const windowVals = candles
-        .slice(Math.max(0, barIdx + 1 - WINDOW), barIdx + 1)
-        .map(c => c.signals?.[SIGNAL_KEY] as number)
-        .filter(v => v !== undefined && isFinite(v));
-      const sorted     = [...windowVals].sort((a, b) => a - b);
-      const p90        = computePercentile(sorted, params.entryShortAbove);
-
-      expect(fundingVal).toBeGreaterThan(p90 - 1e-12); // strictly above (fp tolerance)
-    }
-  });
-
-  it("every long entry has funding value below the point-in-time p10", () => {
-    const signals = Array.from({ length: 200 }, (_, i) => {
-      const phase = i % 60;
-      if (phase < 5)  return -0.001;  // spike low
-      if (phase < 10) return 0.0005;  // normalise
-      return 0.0005;
-    });
-    const WINDOW = 30;
-    const candles = signals.map((sig, i) => makeCandle(i * H, sig));
-    const params  = { ...DEFAULT_PARAMS, trailingWindowBars: WINDOW };
-    const result  = runBacktest(new FundingExtremeStrategy(params), candles, BT_OPTS);
-
-    const longTrades = result.trades.filter(t => t.side === "long");
-    expect(longTrades.length).toBeGreaterThan(0);
-
-    for (const trade of longTrades) {
-      const barIdx      = trade.entryTime / H;
-      const entryCandle = candles[barIdx];
-      const fundingVal  = entryCandle?.signals?.[SIGNAL_KEY] as number;
-      expect(fundingVal).toBeDefined();
-
-      const windowVals = candles
-        .slice(Math.max(0, barIdx + 1 - WINDOW), barIdx + 1)
-        .map(c => c.signals?.[SIGNAL_KEY] as number)
-        .filter(v => v !== undefined && isFinite(v));
-      const sorted = [...windowVals].sort((a, b) => a - b);
-      const p10    = computePercentile(sorted, params.entryLongBelow);
-
-      expect(fundingVal).toBeLessThan(p10 + 1e-12); // strictly below (fp tolerance)
-    }
+    expect(rK2.trades.filter(t => t.side === "short").length).toBeGreaterThan(0);
+    expect(rK5.trades.filter(t => t.side === "short").length).toBe(0);
   });
 
   it("produces no trades when signal is missing on all candles", () => {
-    const candles = Array.from({ length: 100 }, (_, i) =>
-      makeCandle(i * H, null),  // null signal — no data attached
-    );
+    const candles = Array.from({ length: 50 }, (_, i) => makeCandle(i * H, null));
     const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
     expect(result.tradeCount).toBe(0);
   });
@@ -251,7 +204,6 @@ describe("funding-extreme requiresSignals gate", () => {
   });
 
   it("addBot gate blocks funding-extreme in paper mode", () => {
-    // Inline the same gate logic used by BotManager.addBot
     function simulateAddBot(strategyId: string, live: boolean): void {
       const entry = STRATEGY_REGISTRY.find(
         e => e.id === strategyId && e.isCandleStrategy && e.factory !== null,
