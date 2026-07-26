@@ -4,13 +4,18 @@
  * Thesis: the HYPE funding rate has a strong mass-point at the protocol default
  * (≈ 1.25e-5 /h). Deviations from this default are therefore meaningful signals:
  * when funding is a large multiple of the default, one side is paying extreme carry;
- * when funding goes negative, longs are paying shorts.
+ * when funding is a negative multiple of the default, longs are paying shorts.
  *
  * Signal: funding_rate (hl-market, dirBearPos).
  * Entry short: funding ≥ defaultRate × entryShortMultiple (longs overpaying carry).
- * Entry long:  funding < entryLongNegative threshold (shorts receiving carry from longs).
+ * Entry long:  funding ≤ −(defaultRate × entryLongMultiple) (longs paying shorts).
  * Exit: |funding − defaultRate| < exitBand (normalised), or max-hold cap,
  *       or stop-loss (applied by the backtest engine, not this class).
+ *
+ * Symmetric threshold design: both entry conditions are expressed as multiples of
+ * the default rate, making k_short and k_long directly comparable and ensuring the
+ * long entry filters the shallow-negative "noise" that contaminates any-negative-funding
+ * approaches (e.g. −1e-6 is only 0.08× default magnitude and should not trigger).
  *
  * No rolling window: thresholds are absolute, derived from params alone.
  * Requires backtest-only execution (candles must have signals attached).
@@ -26,8 +31,8 @@ export interface FundingExtremeParams {
   defaultRate:         number;
   /** Enter short when funding ≥ defaultRate × this multiple. Default 3. */
   entryShortMultiple:  number;
-  /** Enter long when funding ≤ this threshold. Default 0 (strictly negative funding). */
-  entryLongNegative:   number;
+  /** Enter long when funding ≤ −(defaultRate × this multiple). Default 1 (≤ −1.25e-5). */
+  entryLongMultiple:   number;
   /** Exit when |funding − defaultRate| < this absolute ε. Default 0.5 × defaultRate. */
   exitBand:            number;
   /** Maximum bars to hold before a forced exit. Default 72 = 3 days at 1h. */
@@ -51,7 +56,7 @@ export class FundingExtremeStrategy implements Strategy {
     return {
       side:           this.side,
       shortThreshold: this.params.defaultRate * this.params.entryShortMultiple,
-      longThreshold:  this.params.entryLongNegative,
+      longThreshold:  -(this.params.defaultRate * this.params.entryLongMultiple),
       exitBand:       this.params.exitBand,
     };
   }
@@ -64,6 +69,7 @@ export class FundingExtremeStrategy implements Strategy {
     const barIdx = history.length - 1;
 
     const shortThreshold = this.params.defaultRate * this.params.entryShortMultiple;
+    const longThreshold  = -(this.params.defaultRate * this.params.entryLongMultiple);
 
     // ── Exit checks (before entries) ─────────────────────────────────────────
     if (this.side !== null) {
@@ -83,11 +89,11 @@ export class FundingExtremeStrategy implements Strategy {
 
     // ── Entry checks (only when flat) ────────────────────────────────────────
     if (!this.side) {
-      if (sig < this.params.entryLongNegative) {
+      if (sig <= longThreshold) {
         this.side = "long"; this.entryIdx = barIdx;
         return {
           side: "long", coin,
-          reason: `funding ${sig.toExponential(3)} < ${this.params.entryLongNegative.toExponential(2)} (shorts receiving carry from longs)`,
+          reason: `funding ${sig.toExponential(3)} ≤ ${longThreshold.toExponential(2)} (${this.params.entryLongMultiple}× default neg, longs paying shorts)`,
           timestamp: 0,
         };
       }

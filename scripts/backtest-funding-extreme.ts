@@ -32,8 +32,8 @@ const SIZE_USD   = 500;
 const PARAMS = {
   defaultRate:        1.25e-5,
   entryShortMultiple: 3,
-  entryLongNegative:  0,
-  exitBand:           0.5 * 1.25e-5,  // 6.25e-6
+  entryLongMultiple:  1,             // long when funding ≤ −1× default = −1.25e-5
+  exitBand:           0.5 * 1.25e-5, // 6.25e-6
   maxHoldBars:        72,
   stopLossPct:        6,
 };
@@ -71,57 +71,88 @@ console.log("\n[2/6] Funding distribution histogram...");
 
 const D  = PARAMS.defaultRate;
 const n  = values.length;
-const atDefault = values.filter(v => Math.abs(v - D) < 1e-12).length;
-const ge2x      = values.filter(v => v >= 2 * D).length;
-const ge3x      = values.filter(v => v >= 3 * D).length;
-const ge5x      = values.filter(v => v >= 5 * D).length;
-const negative  = values.filter(v => v < 0).length;
-const sortedAll = [...values].sort((a, b) => a - b);
-const median    = sortedAll[Math.floor(sortedAll.length / 2)];
+const atDefault     = values.filter(v => Math.abs(v - D) < 1e-12).length;
+const ge2x          = values.filter(v => v >= 2 * D).length;
+const ge3x          = values.filter(v => v >= 3 * D).length;
+const ge5x          = values.filter(v => v >= 5 * D).length;
+const negative      = values.filter(v => v < 0).length;
+const sortedAll     = [...values].sort((a, b) => a - b);
+const median        = sortedAll[Math.floor(sortedAll.length / 2)];
 
+// Computed thresholds — also used later in the trade log and alignment check
 const shortThreshold = D * PARAMS.entryShortMultiple;
+const longThreshold  = -(D * PARAMS.entryLongMultiple);
+const atOrBelowLong  = values.filter(v => v <= longThreshold).length;
 
 console.log(`  Total non-null values:  ${n}`);
-console.log(`  Exactly at default (${D.toExponential(3)}):       ${atDefault.toString().padStart(5)}  (${(atDefault / n * 100).toFixed(1)}%)`);
-console.log(`  ≥ 2× default   (${(2 * D).toExponential(3)}):   ${ge2x.toString().padStart(5)}  (${(ge2x / n * 100).toFixed(1)}%)`);
-console.log(`  ≥ 3× default   (${(3 * D).toExponential(3)})  ← SHORT entry threshold`);
-console.log(`     = ${shortThreshold.toExponential(3)}:             ${ge3x.toString().padStart(5)}  (${(ge3x / n * 100).toFixed(1)}%)`);
-console.log(`  ≥ 5× default   (${(5 * D).toExponential(3)}):   ${ge5x.toString().padStart(5)}  (${(ge5x / n * 100).toFixed(1)}%)`);
-console.log(`  Negative       (< 0):                  ${negative.toString().padStart(5)}  (${(negative / n * 100).toFixed(1)}%)  ← LONG entry threshold`);
+console.log(`  Exactly at default (${D.toExponential(3)}):            ${atDefault.toString().padStart(5)}  (${(atDefault / n * 100).toFixed(1)}%)`);
+console.log(`  ≥ 2× default   (${(2 * D).toExponential(3)}):        ${ge2x.toString().padStart(5)}  (${(ge2x / n * 100).toFixed(1)}%)`);
+console.log(`  ≥ ${PARAMS.entryShortMultiple}× default   (${shortThreshold.toExponential(3)})  ← SHORT entry: ${ge3x.toString().padStart(5)}  (${(ge3x / n * 100).toFixed(1)}%)`);
+console.log(`  ≥ 5× default   (${(5 * D).toExponential(3)}):        ${ge5x.toString().padStart(5)}  (${(ge5x / n * 100).toFixed(1)}%)`);
+console.log(`  Negative (< 0):                           ${negative.toString().padStart(5)}  (${(negative / n * 100).toFixed(1)}%)`);
+console.log(`  ≤ −${PARAMS.entryLongMultiple}× default  (${longThreshold.toExponential(3)})  ← LONG  entry: ${atOrBelowLong.toString().padStart(5)}  (${(atOrBelowLong / n * 100).toFixed(1)}%)`);
 console.log(`  Min: ${Math.min(...values).toExponential(3)}   Max: ${Math.max(...values).toExponential(3)}   Median: ${median.toExponential(3)}`);
 
-// ── 3. Fetch HYPE candles for the signal window (paginated) ──────────────────
-console.log("\n[3/6] Fetching HYPE 1h candles from HL API (paginated)...");
-const startTime = signalRows[0].ts;
-const endTime   = signalRows[signalRows.length - 1].ts + INTERVAL_MS;
+// ── 3. Fetch HYPE candles (probe retention boundary, then paginate) ───────────
+console.log("\n[3/6] Fetching HYPE 1h candles from HL API...");
+
+const signalStart = signalRows[0].ts;
+const signalEnd   = signalRows[signalRows.length - 1].ts;
 
 const info = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
-
 type RawCandle = Awaited<ReturnType<typeof info.candleSnapshot>>[number];
 
-async function fetchAllCandles(startMs: number, endMs: number): Promise<RawCandle[]> {
-  const all: RawCandle[] = [];
-  let pageStart = startMs;
-  let pages = 0;
-  while (pageStart < endMs) {
-    const pageEnd = Math.min(pageStart + MAX_PAGE * INTERVAL_MS, endMs);
-    const raw = await info.candleSnapshot({ coin: COIN, interval: INTERVAL as "1h", startTime: pageStart, endTime: pageEnd });
-    if (raw.length === 0) break;
-    for (const c of raw) all.push(c);
-    pages++;
-    const lastTs = raw[raw.length - 1].t;
-    if (lastTs >= endMs - INTERVAL_MS) break;
-    pageStart = lastTs + INTERVAL_MS;
-  }
-  // Deduplicate by timestamp in case pages overlap at boundary
-  const seen = new Set<number>();
-  const deduped = all.filter(c => { if (seen.has(c.t)) return false; seen.add(c.t); return true; });
-  console.log(`  Fetched ${deduped.length} candles in ${pages} page(s)`);
-  return deduped;
+// Probe: request a wide window from signalStart → now. HL returns up to MAX_PAGE
+// candles starting from its retention boundary, regardless of how far back
+// signalStart is. The first returned timestamp is the earliest simulatable bar.
+process.stdout.write("  Probing earliest available candle… ");
+const probeRaw = await info.candleSnapshot({
+  coin: COIN, interval: INTERVAL as "1h",
+  startTime: signalStart,
+  endTime:   Date.now(),
+});
+if (probeRaw.length === 0) {
+  console.error("\nERROR: No candles returned from probe — API may be unreachable.");
+  process.exit(1);
+}
+const earliestCandleTs = probeRaw[0].t;
+const backtestStart    = Math.max(signalStart, earliestCandleTs);
+const backtestEnd      = Date.now();
+
+const signalMonths  = (signalEnd - signalStart)   / (30 * 24 * 3_600_000);
+const overlapMonths = (backtestEnd - backtestStart) / (30 * 24 * 3_600_000);
+
+console.log(`earliest candle: ${new Date(earliestCandleTs).toISOString().slice(0, 10)}`);
+console.log(`  Signal history:   ${new Date(signalStart).toISOString().slice(0, 10)} → ${new Date(signalEnd).toISOString().slice(0, 10)}  (${signalMonths.toFixed(1)} mo — full range used for histogram)`);
+console.log(`  Candle retention: ${new Date(earliestCandleTs).toISOString().slice(0, 10)} → now`);
+console.log(`  Backtest window:  ${new Date(backtestStart).toISOString().slice(0, 10)} → ${new Date(backtestEnd).toISOString().slice(0, 10)}  (${overlapMonths.toFixed(1)} months of overlap)`);
+if (earliestCandleTs > signalStart) {
+  const gapMonths = (earliestCandleTs - signalStart) / (30 * 24 * 3_600_000);
+  console.log(`  NOTE: ${gapMonths.toFixed(1)} months of signal history pre-date candle retention and cannot be backtested`);
 }
 
-const rawCandles = await fetchAllCandles(startTime, endTime);
-const candles = rawCandles.map(c => ({
+// Paginate from backtestStart, seeding with the probe page (already fetched).
+const allRaw: RawCandle[] = [...probeRaw];
+let pageStart = probeRaw[probeRaw.length - 1].t + INTERVAL_MS;
+let pages = 1;
+
+while (pageStart < backtestEnd) {
+  const pageEnd = Math.min(pageStart + MAX_PAGE * INTERVAL_MS, backtestEnd);
+  const raw = await info.candleSnapshot({ coin: COIN, interval: INTERVAL as "1h", startTime: pageStart, endTime: pageEnd });
+  if (raw.length === 0) break;
+  for (const c of raw) allRaw.push(c);
+  pages++;
+  const lastTs = raw[raw.length - 1].t;
+  if (lastTs >= backtestEnd - INTERVAL_MS) break;
+  pageStart = lastTs + INTERVAL_MS;
+}
+
+// Deduplicate at probe/page boundary
+const seen = new Set<number>();
+const deduped = allRaw.filter(c => { if (seen.has(c.t)) return false; seen.add(c.t); return true; });
+console.log(`  Fetched ${deduped.length} candles in ${pages} page(s)`);
+
+const candles = deduped.map(c => ({
   timestamp: c.t,
   open:      parseFloat(c.o as unknown as string),
   high:      parseFloat(c.h as unknown as string),
@@ -130,7 +161,7 @@ const candles = rawCandles.map(c => ({
   volume:    parseFloat(c.v as unknown as string),
 }));
 
-if (candles.length === 0) { console.error("ERROR: No candles returned."); process.exit(1); }
+if (candles.length === 0) { console.error("ERROR: No candles after deduplication."); process.exit(1); }
 
 // ── 4. Attach signals ─────────────────────────────────────────────────────────
 console.log("\n[4/6] Attaching signals to candles...");
@@ -170,9 +201,10 @@ const pctReturn = EQUITY > 0 ? (result.totalPnl / EQUITY * 100) : 0;
 console.log("═══════════════════════════════════════════════════════════════════");
 console.log(" FUNDING EXTREME BACKTEST — HYPE funding_rate");
 console.log("═══════════════════════════════════════════════════════════════════");
-console.log(`  Signal window:  ${new Date(startTime).toISOString().slice(0,16)} → ${new Date(endTime).toISOString().slice(0,16)}`);
+console.log(`  Signal history:  ${new Date(signalStart).toISOString().slice(0,10)} → ${new Date(signalEnd).toISOString().slice(0,10)}  (${signalMonths.toFixed(1)} mo, histogram)`);
+console.log(`  Backtest window: ${new Date(backtestStart).toISOString().slice(0,10)} → ${new Date(backtestEnd).toISOString().slice(0,10)}  (${overlapMonths.toFixed(1)} months)`);
 console.log(`  Entry short: funding ≥ ${PARAMS.entryShortMultiple}× default = ${shortThreshold.toExponential(3)}`);
-console.log(`  Entry long:  funding < ${PARAMS.entryLongNegative} (negative)`);
+console.log(`  Entry long:  funding ≤ −${PARAMS.entryLongMultiple}× default = ${longThreshold.toExponential(3)}`);
 console.log(`  Exit:        |funding − default| < ${PARAMS.exitBand.toExponential(2)}, max-hold ${PARAMS.maxHoldBars}h, stop ${PARAMS.stopLossPct}%`);
 console.log(`  Commission:      ${(COMMISSION * 100).toFixed(3)}%/side`);
 console.log(`  Candles:         ${candles.length}  with signal: ${cov?.filled ?? 0}`);
@@ -207,8 +239,8 @@ if (result.trades.length > 0) {
         thresholdStr = shortThreshold.toExponential(3);
         meetsStr = fundingVal >= shortThreshold ? "above ✓" : "BELOW ✗";
       } else if (t.side === "long") {
-        thresholdStr = PARAMS.entryLongNegative.toExponential(1);
-        meetsStr = fundingVal < PARAMS.entryLongNegative ? "below ✓" : "ABOVE ✗";
+        thresholdStr = longThreshold.toExponential(3);
+        meetsStr = fundingVal <= longThreshold ? "below ✓" : "ABOVE ✗";
       }
     }
 
@@ -244,11 +276,11 @@ for (const t of longEntries) {
   const barIdx = candleByTs.get(t.entryTime) ?? -1;
   const sig    = barIdx >= 0 ? candles[barIdx]?.signals?.[SIGNAL_KEY] as number | undefined : undefined;
   if (sig === undefined || !isFinite(sig)) continue;
-  if (sig >= PARAMS.entryLongNegative) longFail++;
+  if (sig > longThreshold) longFail++;
 }
 
 console.log(`  Short entries (${shortEntries.length}): funding ≥ ${shortThreshold.toExponential(3)}? ${shortFail === 0 ? "✓ ALL PASS" : `✗ ${shortFail} FAIL — ALIGNMENT BUG`}`);
-console.log(`  Long  entries (${longEntries.length}): funding < ${PARAMS.entryLongNegative}? ${longFail === 0 ? "✓ ALL PASS" : `✗ ${longFail} FAIL — ALIGNMENT BUG`}`);
+console.log(`  Long  entries (${longEntries.length}): funding ≤ ${longThreshold.toExponential(3)}? ${longFail === 0 ? "✓ ALL PASS" : `✗ ${longFail} FAIL — ALIGNMENT BUG`}`);
 
 // ── Exit-reason distribution ──────────────────────────────────────────────────
 console.log("\n  EXIT-REASON DISTRIBUTION:");

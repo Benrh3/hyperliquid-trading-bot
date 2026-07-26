@@ -178,7 +178,9 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
     howItWorks:
       "No rolling window needed: thresholds are absolute, derived from params. " +
       "Enter short when funding ≥ defaultRate × entryShortMultiple (longs overpaying carry). " +
-      "Enter long when funding < entryLongNegative (negative funding — longs paying shorts). " +
+      "Enter long when funding ≤ −(defaultRate × entryLongMultiple) (longs paying shorts at k× default magnitude). " +
+      "The symmetric multiple design filters shallow-negative noise (e.g. −1e-6 ≈ 0.08× default) " +
+      "that any-negative-funding rules misfire on. " +
       "Exit when |funding − defaultRate| < exitBand (normalised), or after maxHoldBars bars, " +
       "or on the engine stop-loss. " +
       "Because ≥80% of funding values sit at exactly the default, percentile-based entries are " +
@@ -197,7 +199,7 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
     params: [
       { key: "defaultRate",        label: "Default rate",             default: 0.0000125,  min: 0.000001,  max: 0.0001,   step: 0.000001  },
       { key: "entryShortMultiple", label: "Short entry multiple (k)", default: 3,          min: 1.5,       max: 10,       step: 0.5       },
-      { key: "entryLongNegative",  label: "Long entry threshold",     default: 0,          min: -0.0001,   max: 0,        step: 0.00001   },
+      { key: "entryLongMultiple",  label: "Long entry multiple (k_long)", default: 1,       min: 0.5,       max: 5,        step: 0.25      },
       { key: "exitBand",           label: "Exit band (ε)",            default: 0.00000625, min: 0.000001,  max: 0.00005,  step: 0.000001  },
       { key: "maxHoldBars",        label: "Max hold (bars)",          default: 72,         min: 4,         max: 240,      step: 4         },
       { key: "stopLossPct",        label: "Stop-loss (%)",            default: 6,          min: 1,         max: 20,       step: 1         },
@@ -207,7 +209,7 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
     factory: () => new FundingExtremeStrategy({
       defaultRate:        0.0000125,
       entryShortMultiple: 3,
-      entryLongNegative:  0,
+      entryLongMultiple:  1,
       exitBand:           0.00000625,
       maxHoldBars:        72,
       stopLossPct:        6,

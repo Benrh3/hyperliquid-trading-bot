@@ -12,16 +12,17 @@ function makeCandle(timestamp: number, funding: number | null): Candle {
   return c;
 }
 
-const DEFAULT_RATE   = 1.25e-5;
-const SHORT_MULT     = 3;
-const SHORT_THRESH   = DEFAULT_RATE * SHORT_MULT; // 3.75e-5
-const EXIT_BAND      = 0.5 * DEFAULT_RATE;        // 6.25e-6
-const LONG_THRESH    = 0;
+const DEFAULT_RATE  = 1.25e-5;
+const SHORT_MULT    = 3;
+const SHORT_THRESH  = DEFAULT_RATE * SHORT_MULT;          // 3.75e-5
+const EXIT_BAND     = 0.5 * DEFAULT_RATE;                  // 6.25e-6
+const LONG_MULT     = 1;
+const LONG_THRESH   = -(DEFAULT_RATE * LONG_MULT);         // -1.25e-5
 
 const DEFAULT_PARAMS = {
   defaultRate:        DEFAULT_RATE,
   entryShortMultiple: SHORT_MULT,
-  entryLongNegative:  LONG_THRESH,
+  entryLongMultiple:  LONG_MULT,
   exitBand:           EXIT_BAND,
   maxHoldBars:        10,
   stopLossPct:        6,
@@ -71,10 +72,10 @@ describe("FundingExtremeStrategy — short entries", () => {
 // ── 2. Long entry conditions ──────────────────────────────────────────────────
 
 describe("FundingExtremeStrategy — long entries", () => {
-  it("fires when funding < entryLongNegative (default 0 → strictly negative)", () => {
+  it("fires at exactly −defaultRate × entryLongMultiple (LONG_THRESH = −1.25e-5)", () => {
     const candles = [
       ...Array.from({ length: 5 }, (_, i) => makeCandle(i * H, DEFAULT_RATE)),
-      makeCandle(5 * H, -1e-6),          // strictly negative → long entry
+      makeCandle(5 * H, LONG_THRESH),   // exactly at threshold (−1.25e-5) → should fire
       ...Array.from({ length: 4 }, (_, i) => makeCandle((6 + i) * H, DEFAULT_RATE)),
     ];
     const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
@@ -83,8 +84,11 @@ describe("FundingExtremeStrategy — long entries", () => {
     expect(entry!.entryTime).toBe(5 * H);
   });
 
-  it("does NOT fire when funding is zero (not strictly negative)", () => {
-    const candles = Array.from({ length: 20 }, (_, i) => makeCandle(i * H, 0));
+  it("does NOT fire when funding is only slightly negative (above threshold)", () => {
+    // −1e-6 is negative but above −1.25e-5; would be noise under any-negative rule
+    const candles = Array.from({ length: 20 }, (_, i) =>
+      makeCandle(i * H, i === 10 ? -1e-6 : DEFAULT_RATE),
+    );
     const result = runBacktest(new FundingExtremeStrategy(DEFAULT_PARAMS), candles, BT_OPTS);
     expect(result.trades.filter(t => t.side === "long").length).toBe(0);
   });
@@ -95,14 +99,15 @@ describe("FundingExtremeStrategy — long entries", () => {
     expect(result.trades.filter(t => t.side === "long").length).toBe(0);
   });
 
-  it("respects a custom entryLongNegative threshold more negative than zero", () => {
-    // With entryLongNegative = -1e-5, funding must be < -1e-5 to trigger.
-    // -5e-6 is negative but NOT below -1e-5 → no entry.
-    // -2e-5 IS below -1e-5 → entry.
-    const params = { ...DEFAULT_PARAMS, entryLongNegative: -1e-5 };
-    const candlesNoEntry = Array.from({ length: 10 }, (_, i) => makeCandle(i * H, -5e-6));
-    const candlesEntry   = Array.from({ length: 10 }, (_, i) =>
-      makeCandle(i * H, i === 5 ? -2e-5 : DEFAULT_RATE),
+  it("respects custom entryLongMultiple — higher k requires more extreme negative funding", () => {
+    // k_long = 2: threshold = −2.5e-5
+    // −1.25e-5 > −2.5e-5 → no entry; −3e-5 ≤ −2.5e-5 → entry
+    const params = { ...DEFAULT_PARAMS, entryLongMultiple: 2 };
+    const candlesNoEntry = Array.from({ length: 10 }, (_, i) =>
+      makeCandle(i * H, i === 5 ? -1.25e-5 : DEFAULT_RATE),
+    );
+    const candlesEntry = Array.from({ length: 10 }, (_, i) =>
+      makeCandle(i * H, i === 5 ? -3e-5 : DEFAULT_RATE),
     );
     const rNo  = runBacktest(new FundingExtremeStrategy(params), candlesNoEntry, BT_OPTS);
     const rYes = runBacktest(new FundingExtremeStrategy(params), candlesEntry,   BT_OPTS);
