@@ -196,7 +196,9 @@ const result = runBacktest(strategy, candles, {
 
 // ── 6. Report ─────────────────────────────────────────────────────────────────
 console.log("[6/6] Results\n");
-const pctReturn = EQUITY > 0 ? (result.totalPnl / EQUITY * 100) : 0;
+const pctPriceReturn   = EQUITY > 0 ? (result.totalPricePnl   / EQUITY * 100) : 0;
+const pctFundingReturn = EQUITY > 0 ? (result.totalFundingPnl / EQUITY * 100) : 0;
+const pctReturn        = EQUITY > 0 ? (result.totalPnl        / EQUITY * 100) : 0;
 
 console.log("═══════════════════════════════════════════════════════════════════");
 console.log(" FUNDING EXTREME BACKTEST — HYPE funding_rate");
@@ -211,7 +213,10 @@ console.log(`  Candles:         ${candles.length}  with signal: ${cov?.filled ??
 console.log("───────────────────────────────────────────────────────────────────");
 console.log(`  Trade count:    ${result.tradeCount}`);
 console.log(`  Win rate:       ${(result.winRate * 100).toFixed(1)}%`);
-console.log(`  Net P&L:        $${result.totalPnl.toFixed(2)}  (${pctReturn.toFixed(2)}%)`);
+console.log(`  Price P&L:      $${result.totalPricePnl.toFixed(2)}  (${pctPriceReturn.toFixed(2)}%)`);
+console.log(`  Funding P&L:    $${result.totalFundingPnl.toFixed(4)}  (${pctFundingReturn.toFixed(3)}%)`);
+console.log(`  Total P&L:      $${result.totalPnl.toFixed(2)}  (${pctReturn.toFixed(2)}%)`);
+console.log(`  ─── price-only: $${result.totalPricePnl.toFixed(2)}  total: $${result.totalPnl.toFixed(2)}`);
 console.log(`  Profit factor:  ${result.profitFactor.toFixed(2)}`);
 console.log(`  Sharpe:         ${result.sharpeRatio.toFixed(2)}`);
 console.log(`  Max drawdown:   ${result.maxDrawdownPct.toFixed(1)}%`);
@@ -221,7 +226,7 @@ console.log("──────────────────────�
 // ── Trade log ─────────────────────────────────────────────────────────────────
 if (result.trades.length > 0) {
   console.log("\n  TRADE LOG  (funding vs threshold at each entry):");
-  console.log(`  ${"#".padEnd(3)} ${"Side".padEnd(6)} ${"Entry time".padEnd(17)} ${"Funding".padEnd(12)} ${"Threshold".padEnd(12)} ${"Meets?".padEnd(8)} ${"Entry $".padEnd(9)} ${"Exit $".padEnd(9)} ${"P&L".padEnd(10)} Reason`);
+  console.log(`  ${"#".padEnd(3)} ${"Side".padEnd(6)} ${"Entry time".padEnd(17)} ${"Funding".padEnd(12)} ${"Threshold".padEnd(12)} ${"Meets?".padEnd(8)} ${"Entry $".padEnd(9)} ${"Exit $".padEnd(9)} ${"P&L".padEnd(10)} ${"Fund P&L".padEnd(10)} Reason`);
 
   const candleByTs = new Map(candles.map((c, i) => [c.timestamp, i]));
 
@@ -244,13 +249,14 @@ if (result.trades.length > 0) {
       }
     }
 
-    const fundingStr = fundingVal !== undefined ? fundingVal.toExponential(3) : "n/a";
-    const pnlStr     = (t.pnl >= 0 ? "+" : "") + t.pnl.toFixed(2);
+    const fundingStr  = fundingVal !== undefined ? fundingVal.toExponential(3) : "n/a";
+    const pnlStr      = (t.pnl >= 0 ? "+" : "") + t.pnl.toFixed(2);
+    const fundPnlStr  = (t.fundingPnl >= 0 ? "+" : "") + t.fundingPnl.toFixed(4);
 
     console.log(
       `  ${String(i + 1).padEnd(3)} ${t.side.padEnd(6)} ${new Date(t.entryTime).toISOString().slice(0,16).padEnd(17)} ` +
       `${fundingStr.padEnd(12)} ${thresholdStr.padEnd(12)} ${meetsStr.padEnd(8)} ` +
-      `${t.entryPrice.toFixed(2).padEnd(9)} ${t.exitPrice.toFixed(2).padEnd(9)} ${pnlStr.padEnd(10)} ${t.reason}`,
+      `${t.entryPrice.toFixed(2).padEnd(9)} ${t.exitPrice.toFixed(2).padEnd(9)} ${pnlStr.padEnd(10)} ${fundPnlStr.padEnd(10)} ${t.reason}`,
     );
   }
 }

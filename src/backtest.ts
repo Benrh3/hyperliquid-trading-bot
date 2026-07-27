@@ -5,6 +5,12 @@ import type { Strategy } from "./strategy/base.js";
 
 const SLIPPAGE = 0.0005; // 0.05%
 
+// Funding-rate signal key used for per-bar accrual.
+// Must match FundingExtremeStrategy.SIGNAL_KEY and the key written by attachSignals().
+// Accrual only fires when this key is present and finite on a candle; unsignalled
+// candles (and all candle-only strategies) are completely unaffected.
+const FUNDING_SIGNAL_KEY = "funding_rate";
+
 export const BACKTEST_INTERVAL_MS: Record<string, number> = {
   "1m":  60_000,
   "3m":  3 * 60_000,
@@ -27,7 +33,9 @@ export interface BacktestTrade {
   exitTime:   number;
   exitPrice:  number;
   size:       number;
-  pnl:        number;
+  pricePnl:   number;   // price-move P&L net of commission; excludes funding
+  fundingPnl: number;   // cumulative funding accrual while position was open
+  pnl:        number;   // total = pricePnl + fundingPnl
   reason:     string;
 }
 
@@ -38,15 +46,17 @@ export interface BuyHoldResult {
 }
 
 export interface BacktestResult {
-  totalPnl:       number;
-  winRate:        number;
-  tradeCount:     number;
-  maxDrawdownPct: number;
-  profitFactor:   number;
-  sharpeRatio:    number;
-  trades:         BacktestTrade[];
-  equityCurve:    { time: number; equity: number }[];
-  buyHold:        BuyHoldResult;
+  totalPricePnl:   number;   // price-move P&L net of commission, summed across all trades
+  totalFundingPnl: number;   // funding accrual P&L, summed across all trades
+  totalPnl:        number;   // = totalPricePnl + totalFundingPnl
+  winRate:         number;
+  tradeCount:      number;
+  maxDrawdownPct:  number;
+  profitFactor:    number;
+  sharpeRatio:     number;
+  trades:          BacktestTrade[];
+  equityCurve:     { time: number; equity: number }[];
+  buyHold:         BuyHoldResult;
 }
 
 interface BacktestOptions {
@@ -66,24 +76,27 @@ export function runBacktest(
 
   let equity = initialEquity;
   let position: {
-    side:       "long" | "short";
-    entryPrice: number;
-    entryTime:  number;
-    size:       number;
+    side:            "long" | "short";
+    entryPrice:      number;
+    entryTime:       number;
+    size:            number;
+    accruedFunding:  number;   // funding P&L accumulated bar-by-bar while position is open
   } | null = null;
 
   const history: Candle[] = [];
 
   function closeTrade(exitPrice: number, exitTime: number, reason: string): void {
     if (!position) return;
-    const { side, entryPrice, entryTime, size } = position;
-    const rawPnl = side === "long"
+    const { side, entryPrice, entryTime, size, accruedFunding } = position;
+    const rawPricePnl = side === "long"
       ? (exitPrice - entryPrice) * size
       : (entryPrice - exitPrice) * size;
     // Two-sided commission: charged on entry notional + exit notional
     const commission = commissionPct * size * (entryPrice + exitPrice);
-    const pnl = rawPnl - commission;
-    trades.push({ index: trades.length, side, entryTime, entryPrice, exitTime, exitPrice, size, pnl, reason });
+    const pricePnl   = rawPricePnl - commission;
+    const fundingPnl = accruedFunding;
+    const pnl        = pricePnl + fundingPnl;
+    trades.push({ index: trades.length, side, entryTime, entryPrice, exitTime, exitPrice, size, pricePnl, fundingPnl, pnl, reason });
     equity += pnl;
     position = null;
   }
@@ -91,6 +104,20 @@ export function runBacktest(
   for (let i = 0; i < candles.length; i++) {
     const candle = candles[i];
     history.push(candle);
+
+    // Accrue funding for the open position.
+    // Notional = entryPrice × size = positionSizeUsd (approximation; mark-price drift
+    // not modelled — entry notional is constant throughout the hold).
+    // Short receives positive funding (longs pay carry); long pays positive (shorts receive).
+    // No FUNDING_SIGNAL_KEY on this candle → zero accrual → behavior unchanged for
+    // candle-only strategies and any existing test that does not attach funding signals.
+    if (position) {
+      const rate = candle.signals?.[FUNDING_SIGNAL_KEY];
+      if (rate !== null && rate !== undefined && isFinite(rate as number)) {
+        const direction = position.side === "short" ? 1 : -1;
+        position.accruedFunding += (position.entryPrice * position.size) * (rate as number) * direction;
+      }
+    }
 
     // Stop-loss triggered by candle wick breaching the stop level.
     // Fill convention: stop-price fill — assumes a stop-limit order fills at exactly
@@ -135,10 +162,11 @@ export function runBacktest(
           ? fillOpen * (1 + SLIPPAGE)
           : fillOpen * (1 - SLIPPAGE);
         position = {
-          side: signal.side,
-          entryPrice: entryPx,
-          entryTime:  candle.timestamp,
-          size:       positionSizeUsd / entryPx,
+          side:           signal.side,
+          entryPrice:     entryPx,
+          entryTime:      candle.timestamp,
+          size:           positionSizeUsd / entryPx,
+          accruedFunding: 0,
         };
       }
     }
@@ -157,9 +185,11 @@ export function runBacktest(
   }
 
   // ── Metrics ──────────────────────────────────────────────────────────────
-  const winners     = trades.filter((t) => t.pnl > 0);
-  const losers      = trades.filter((t) => t.pnl < 0);
-  const totalPnl    = trades.reduce((s, t) => s + t.pnl, 0);
+  const winners        = trades.filter((t) => t.pnl > 0);
+  const losers         = trades.filter((t) => t.pnl < 0);
+  const totalPricePnl  = trades.reduce((s, t) => s + t.pricePnl,  0);
+  const totalFundingPnl = trades.reduce((s, t) => s + t.fundingPnl, 0);
+  const totalPnl       = totalPricePnl + totalFundingPnl;
   const winRate     = trades.length > 0 ? winners.length / trades.length : 0;
   const grossProfit = winners.reduce((s, t) => s + t.pnl, 0);
   const grossLoss   = Math.abs(losers.reduce((s, t) => s + t.pnl, 0));
@@ -200,7 +230,7 @@ export function runBacktest(
     buyHold.returnPct = (candles[candles.length - 1].close - entryPrice) / entryPrice * 100;
   }
 
-  return { totalPnl, winRate, tradeCount: trades.length, maxDrawdownPct, profitFactor, sharpeRatio, trades, equityCurve, buyHold };
+  return { totalPricePnl, totalFundingPnl, totalPnl, winRate, tradeCount: trades.length, maxDrawdownPct, profitFactor, sharpeRatio, trades, equityCurve, buyHold };
 }
 
 // ── Funding basis (delta-neutral) backtest ───────────────────────────────────
