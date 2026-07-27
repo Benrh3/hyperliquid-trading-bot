@@ -4,27 +4,33 @@
  *
  * Usage:
  *   cd ~/hyperliquid-trading-bot
- *   npx tsx scripts/backfill-funding-signals.ts [--dry]
+ *   npx tsx scripts/backfill-funding-signals.ts [--dry] [--repair]
  *
- * What it does:
- *   Fetches HYPE funding history from Hyperliquid's public fundingHistory API,
- *   paginating forward from BACKFILL_START (or from the latest already-backfilled
- *   row when resuming an interrupted run), then inserts into the same
- *   snapshot_metrics table that the live poller writes — under the existing
- *   "funding_rate" key so getMetricTimeSeries() picks it up transparently
- *   alongside live-polled rows.
+ * Flags:
+ *   --dry     Preview only — shows counts and gap audit without writing rows.
+ *   --repair  Gap-repair mode: start from BACKFILL_START regardless of existing
+ *             hl-backfill rows. The per-row EXISTS check is the sole idempotency
+ *             guard — no duplicates can be inserted. Use this to fill interior
+ *             gaps that the normal resume (MAX(captured_at)) would skip past.
+ *             Reports inserted-vs-skipped so you can confirm which rows were missing.
+ *             Combine with --dry to preview before committing.
+ *
+ * Pagination:
+ *   fundingHistory caps at 500 records per call. The script advances startTime to
+ *   lastRecord.time + 1 after every full page (500 records) and keeps fetching
+ *   until a page returns fewer than 500 records (stream exhausted). No fixed time
+ *   windows — drains completely regardless of data density.
  *
  * Timestamp assumption (no lookahead):
  *   The API returns one record per funding period with field `time` (epoch ms).
- *   That timestamp is when the funding rate was published/settled — it is
- *   publicly known at that moment. Storing capturedAt = time is leak-free:
- *   a backtest at bar T will only see funding records where time <= closeTime(T).
+ *   That timestamp is when the funding rate was published/settled — publicly known
+ *   at that moment. Storing capturedAt = time is leak-free: a backtest at bar T
+ *   only sees records where time <= closeTime(T).
  *
  * Storage design:
- *   funding_rate is NOT in funding_samples/rollups. It lives in snapshot_metrics
- *   (source="hl-market", kind="level"), joined to a parent snapshots row. Each
- *   backfilled funding period gets one snapshots row and one snapshot_metrics row.
- *   network is set to "mainnet" to match what the live poller writes.
+ *   funding_rate lives in snapshot_metrics (source="hl-market", kind="level"),
+ *   joined to a parent snapshots row. Each backfilled period gets one snapshots
+ *   row and one snapshot_metrics row. network is "mainnet" to match the live poller.
  *
  * Idempotency:
  *   Before inserting, we check for an existing snapshot_metrics row with
@@ -55,9 +61,9 @@ const KIND        = "level";
 const NETWORK     = "mainnet";
 const DB_PATH     = resolve(process.cwd(), "data/bot.db");
 
-// HL fundingHistory returns at most ~5000 records per call; use a wide window
-// (30 days) per page to minimise round trips, then advance startTime.
-const PAGE_WINDOW_MS = 30 * 24 * 3_600_000;
+// fundingHistory hard-caps at 500 records per call.
+// After a full page the script advances startTime and keeps fetching.
+const API_PAGE_SIZE = 500;
 
 // HYPE genesis was ~Nov 2024. Starting from Oct 2024 avoids ~680 empty API
 // pages that would fire before any data exists (epoch 0 → Oct 2024 = ~680 months).
@@ -67,7 +73,8 @@ const MAX_RETRIES      = 5;    // retry attempts per page on 429
 const REQUEST_DELAY_MS = 250;  // courtesy delay between successful page fetches
 const BACKOFF_BASE_MS  = 1_000; // base for 2^n exponential backoff on 429 (1s, 2s, 4s, 8s, 16s)
 
-const DRY = process.argv.includes("--dry");
+const DRY    = process.argv.includes("--dry");
+const REPAIR = process.argv.includes("--repair");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function sleep(ms: number): Promise<void> {
@@ -81,7 +88,8 @@ function is429(e: unknown): boolean {
 }
 
 // ── Open DB ───────────────────────────────────────────────────────────────────
-if (DRY) console.log("[dry-run] No rows will be written.\n");
+if (DRY)    console.log("[dry-run] No rows will be written.\n");
+if (REPAIR) console.log("[repair] Starting from BACKFILL_START — interior gaps will be filled.\n");
 console.log(`[backfill] Opening ${DB_PATH}`);
 
 const db = new Database(DB_PATH);
@@ -120,24 +128,30 @@ if (existingRange.minTs) {
   console.log("  none");
 }
 
-// Resume from the latest hl-backfill row to avoid reprocessing already-fetched data.
-const latestBackfill = db.prepare<[string, string, string], { maxTs: number | null }>(`
-  SELECT MAX(sm.captured_at) AS maxTs
-  FROM snapshot_metrics sm
-  JOIN snapshots s ON s.id = sm.snapshot_id
-  WHERE s.symbol = ? AND sm.metric_key = ? AND sm.source = ?
-`).get(COIN, METRIC_KEY, SOURCE) as { maxTs: number | null };
-
 let pageStart: number;
-if (latestBackfill.maxTs !== null) {
-  // Add 1 ms so the API doesn't re-return the last known record
-  pageStart = latestBackfill.maxTs + 1;
-  console.log(`[backfill] Resuming — latest hl-backfill: ${new Date(latestBackfill.maxTs).toISOString()}`);
-  console.log(`           Fetching from ${new Date(pageStart).toISOString()} onward`);
-} else {
+if (REPAIR) {
+  // --repair: ignore MAX(captured_at) so interior gaps aren't skipped
   pageStart = BACKFILL_START;
-  console.log(`[backfill] Fresh backfill — starting from BACKFILL_START ${new Date(pageStart).toISOString()}`);
+  console.log(`[backfill] --repair: fetching from BACKFILL_START ${new Date(pageStart).toISOString()} onward`);
+} else {
+  // Normal mode: resume from the latest hl-backfill row
+  const latestBackfill = db.prepare<[string, string, string], { maxTs: number | null }>(`
+    SELECT MAX(sm.captured_at) AS maxTs
+    FROM snapshot_metrics sm
+    JOIN snapshots s ON s.id = sm.snapshot_id
+    WHERE s.symbol = ? AND sm.metric_key = ? AND sm.source = ?
+  `).get(COIN, METRIC_KEY, SOURCE) as { maxTs: number | null };
+
+  if (latestBackfill.maxTs !== null) {
+    pageStart = latestBackfill.maxTs + 1;
+    console.log(`[backfill] Resuming — latest hl-backfill: ${new Date(latestBackfill.maxTs).toISOString()}`);
+    console.log(`           Fetching from ${new Date(pageStart).toISOString()} onward`);
+  } else {
+    pageStart = BACKFILL_START;
+    console.log(`[backfill] Fresh backfill — starting from BACKFILL_START ${new Date(pageStart).toISOString()}`);
+  }
 }
+
 const FETCH_END = Date.now();
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
@@ -167,34 +181,40 @@ async function fetchPage(startTime: number, endTime: number): Promise<FundingRec
 }
 
 const allRecords: FundingRecord[] = [];
-let isFirstPage = true;
+let pageCount = 0;
 
 while (pageStart < FETCH_END) {
-  const pageEnd = Math.min(pageStart + PAGE_WINDOW_MS, FETCH_END);
-  process.stdout.write(
-    `  fetching ${new Date(pageStart).toISOString().slice(0, 10)} → ${new Date(pageEnd).toISOString().slice(0, 10)}… `,
-  );
+  if (pageCount > 0) await sleep(REQUEST_DELAY_MS);
+  pageCount++;
 
-  if (!isFirstPage) await sleep(REQUEST_DELAY_MS);
-  isFirstPage = false;
+  process.stdout.write(`  [page ${String(pageCount).padStart(3)}] from ${new Date(pageStart).toISOString().slice(0, 16)}… `);
 
   let page: FundingRecord[];
   try {
-    page = await fetchPage(pageStart, pageEnd);
+    page = await fetchPage(pageStart, FETCH_END);
   } catch (e) {
     console.error(`\n[backfill] Fetch failed: ${(e as Error).message}`);
     process.exit(1);
   }
 
-  process.stdout.write(`${page.length} records\n`);
+  if (page.length === 0) {
+    console.log("0 records (done)");
+    break;
+  }
+
+  const lastTs = page[page.length - 1].time;
+  console.log(`${page.length} records  (through ${new Date(lastTs).toISOString().slice(0, 10)})`);
   allRecords.push(...page);
 
-  if (page.length === 0 && pageEnd >= FETCH_END) break;
-  pageStart = pageEnd + 1;
+  if (page.length < API_PAGE_SIZE) break; // < full page → stream exhausted
+
+  // Full page: advance past the last returned record and fetch next batch
+  pageStart = lastTs + 1;
 }
 
 if (allRecords.length === 0) {
   console.log("\n[backfill] No records returned from API. Nothing to insert.");
+  runGapAudit();
   db.close();
   process.exit(0);
 }
@@ -256,7 +276,6 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
     console.log("  No live-polled rows to compare against — poller may not have run yet.");
     console.log("  Cannot verify unit alignment until the poller has accumulated data.\n");
   } else {
-    // For each live row, binary-search records[] for the nearest settlement by time
     function nearestRecord(targetMs: number): FundingRecord | null {
       let lo = 0, hi = records.length - 1, best: FundingRecord | null = null;
       let bestDist = Infinity;
@@ -277,8 +296,8 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
       liveVal:   number;
       histVal:   number;
       absDelta:  number;
-      relDelta:  number; // fraction, not percent
-      ratio:     number; // histVal / liveVal — used for median-ratio verdict
+      relDelta:  number;
+      ratio:     number;
     };
 
     const comparisons: Comparison[] = [];
@@ -297,7 +316,7 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
         relDelta: Math.abs((histVal - live.value) / live.value),
         ratio:    histVal / live.value,
       });
-      if (comparisons.length >= 10) break; // collect 10, show 5
+      if (comparisons.length >= 10) break;
     }
 
     if (comparisons.length === 0) {
@@ -305,10 +324,6 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
       console.log("  Possible causes: backfill range doesn't reach the live-poller window,");
       console.log("  or the poller ran exclusively outside settlement hour boundaries.\n");
     } else {
-      // Median ratio (hist/live) — robust to intra-hour drift outliers.
-      // A true unit mismatch shifts every ratio by the scale factor (e.g. 8.0 for
-      // an 8h-vs-1h error); a few outlier pairs from mid-hour sampling leave the
-      // median near 1.0. PASS band: [0.5, 2.0].
       const sortedRatios = [...comparisons.map(c => c.ratio)].sort((a, b) => a - b);
       const mid = Math.floor(sortedRatios.length / 2);
       const medianRatio = sortedRatios.length % 2 === 1
@@ -319,7 +334,6 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
       const RATIO_HI = 2.0;
       const passed = medianRatio >= RATIO_LO && medianRatio <= RATIO_HI;
 
-      // Informational stats (not used for pass/fail)
       const avgRelDelta = comparisons.reduce((s, c) => s + c.relDelta, 0) / comparisons.length;
       const maxAbsDelta = Math.max(...comparisons.map(c => c.absDelta));
 
@@ -334,7 +348,6 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
         }
       }
 
-      // Print 5-row comparison table
       const tableRows = comparisons.slice(0, 5);
       const COL = { ts: 22, lag: 10, live: 15, hist: 15, ratio: 8, delta: 12 };
       console.log(`\n  Showing ${tableRows.length} of ${comparisons.length} matched pairs (±90 min tolerance):`);
@@ -365,23 +378,22 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
 }
 
 // ── Insert ────────────────────────────────────────────────────────────────────
-if (DRY) {
-  // Count what would be inserted (verification already printed above)
-  let wouldInsert = 0;
-  let wouldSkip   = 0;
-  for (const r of records) {
-    const exists = (stmtExists.get(COIN, METRIC_KEY, r.time) as { n: number }).n > 0;
-    if (exists) wouldSkip++;
-    else         wouldInsert++;
-  }
-  console.log(`[dry-run] Would insert: ${wouldInsert}  Would skip: ${wouldSkip}`);
-  db.close();
-  process.exit(0);
-}
-
 let inserted = 0;
 let skipped  = 0;
 let errored  = 0;
+
+if (DRY) {
+  for (const r of records) {
+    const exists = (stmtExists.get(COIN, METRIC_KEY, r.time) as { n: number }).n > 0;
+    if (exists) skipped++;
+    else         inserted++;
+  }
+  console.log(`[dry-run] Would insert: ${inserted}  Would skip: ${skipped}`);
+  console.log();
+  runGapAudit();
+  db.close();
+  process.exit(0);
+}
 
 const insertBatch = db.transaction((batch: FundingRecord[]) => {
   for (const r of batch) {
@@ -402,7 +414,6 @@ const insertBatch = db.transaction((batch: FundingRecord[]) => {
   }
 });
 
-// Process in batches of 500 to keep transactions short
 const BATCH_SIZE = 500;
 for (let i = 0; i < records.length; i += BATCH_SIZE) {
   const batch = records.slice(i, i + BATCH_SIZE);
@@ -420,7 +431,7 @@ const finalRange = db.prepare<[string, string], { minTs: number | null; maxTs: n
 `).get(COIN, METRIC_KEY) as { minTs: number | null; maxTs: number | null };
 
 console.log("\n═══════════════════════════════════════════════════════");
-console.log(" BACKFILL COMPLETE");
+console.log(` BACKFILL ${REPAIR ? "(REPAIR) " : ""}COMPLETE`);
 console.log("═══════════════════════════════════════════════════════");
 console.log(`  Fetched:    ${records.length} unique funding records`);
 console.log(`  Inserted:   ${inserted}`);
@@ -431,4 +442,63 @@ if (finalRange.minTs) {
 }
 console.log("═══════════════════════════════════════════════════════\n");
 
+runGapAudit();
+
 db.close();
+
+// ── Gap audit ─────────────────────────────────────────────────────────────────
+// Scans the full merged time series (raw snapshot_metrics + rolled-up hourly,
+// the same UNION the backtest and signal reader use) for consecutive rows spaced
+// more than 2 hours apart. Lists remaining holes so you can decide whether
+// another --repair pass or manual investigation is needed.
+function runGapAudit(): void {
+  console.log("[gap audit] Scanning for holes > 2h in stored series…");
+
+  type TsRow = { ts: number };
+  const rows = db.prepare<[string, string, string, string], TsRow>(`
+    SELECT sm.captured_at AS ts
+    FROM snapshot_metrics sm
+    JOIN snapshots s ON s.id = sm.snapshot_id
+    WHERE s.symbol = ? AND sm.metric_key = ?
+    UNION ALL
+    SELECT ts_hour AS ts
+    FROM snapshot_metrics_hourly
+    WHERE symbol = ? AND metric_key = ?
+    ORDER BY ts ASC
+  `).all(COIN, METRIC_KEY, COIN, METRIC_KEY) as TsRow[];
+
+  if (rows.length < 2) {
+    console.log("  Fewer than 2 rows in DB — cannot audit.\n");
+    return;
+  }
+
+  // Deduplicate (raw + hourly may overlap near rollup boundaries)
+  const tsSorted = [...new Set(rows.map(r => r.ts))].sort((a, b) => a - b);
+
+  const GAP_THRESHOLD_MS = 2 * 3_600_000; // > 2 hours
+  const gaps: { from: number; to: number; hrs: number }[] = [];
+
+  for (let i = 1; i < tsSorted.length; i++) {
+    const gapMs = tsSorted[i] - tsSorted[i - 1];
+    if (gapMs > GAP_THRESHOLD_MS) {
+      gaps.push({ from: tsSorted[i - 1], to: tsSorted[i], hrs: gapMs / 3_600_000 });
+    }
+  }
+
+  const span = `${new Date(tsSorted[0]).toISOString().slice(0, 10)} → ${new Date(tsSorted[tsSorted.length - 1]).toISOString().slice(0, 10)}`;
+  if (gaps.length === 0) {
+    console.log(`  ✓ No gaps > 2h found across ${tsSorted.length} rows  (${span})\n`);
+  } else {
+    const totalGapHrs = gaps.reduce((s, g) => s + g.hrs, 0);
+    console.log(`  ✗ ${gaps.length} gap(s) > 2h found across ${tsSorted.length} rows  (${span})`);
+    console.log(`    Total missing hours: ~${totalGapHrs.toFixed(0)}h`);
+    for (const g of gaps) {
+      const fromStr = new Date(g.from).toISOString().slice(0, 16);
+      const toStr   = new Date(g.to).toISOString().slice(0, 16);
+      console.log(`    ${fromStr} → ${toStr}  (${g.hrs.toFixed(1)}h)`);
+    }
+    console.log();
+    console.log("  To fill these gaps: npx tsx scripts/backfill-funding-signals.ts --repair");
+    console.log();
+  }
+}
