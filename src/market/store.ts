@@ -257,11 +257,12 @@ export class MarketStore {
   }
 
   /**
-   * Signal health for the overview tile: age of the latest snapshot and count
-   * of distinct metric keys that have a non-null value within the staleness
-   * window. "Warm" means the poller has produced at least one reading recently.
+   * Signal health for the overview tile.
+   * - latestSnapshotAgeMs: ms since the most-recent snapshot was captured (null = never polled).
+   * - warmSignalCount: distinct metric keys with a non-null value in that single latest
+   *   snapshot — i.e. the last completed poll cycle, not a rolling window.
    */
-  getSignalHealth(symbol = "HYPE", staleAfterMs = 300_000): {
+  getSignalHealth(symbol = "HYPE"): {
     latestSnapshotAgeMs: number | null;
     warmSignalCount: number;
   } {
@@ -271,15 +272,18 @@ export class MarketStore {
     const ts = latest?.ts ?? null;
     const latestSnapshotAgeMs = ts !== null ? Date.now() - ts : null;
 
-    const cutoff = Date.now() - staleAfterMs;
-    const warm = this.db.prepare(`
-      SELECT COUNT(DISTINCT sm.metric_key) AS cnt
-      FROM snapshot_metrics sm
-      JOIN snapshots s ON s.id = sm.snapshot_id
-      WHERE s.symbol = ? AND sm.captured_at >= ? AND sm.value IS NOT NULL
-    `).get(symbol, cutoff) as { cnt: number } | undefined;
+    let warmSignalCount = 0;
+    if (ts !== null) {
+      const warm = this.db.prepare(`
+        SELECT COUNT(DISTINCT sm.metric_key) AS cnt
+        FROM snapshot_metrics sm
+        JOIN snapshots s ON s.id = sm.snapshot_id
+        WHERE s.symbol = ? AND s.captured_at = ? AND sm.value IS NOT NULL
+      `).get(symbol, ts) as { cnt: number } | undefined;
+      warmSignalCount = warm?.cnt ?? 0;
+    }
 
-    return { latestSnapshotAgeMs, warmSignalCount: warm?.cnt ?? 0 };
+    return { latestSnapshotAgeMs, warmSignalCount };
   }
 
   close(): void {

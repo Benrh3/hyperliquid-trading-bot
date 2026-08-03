@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { join } from "path";
+import { readFileSync, writeFileSync } from "fs";
 import { RSI } from "technicalindicators";
 import { config, coins } from "../config.js";
 import { runBacktest, fetchCandles, fetchCandlesByRange, runFundingBasisBacktest, fetchFundingHistory, attachSignals, BACKTEST_INTERVAL_MS, resolveEffectiveStop } from "../backtest.js";
@@ -203,16 +204,32 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m ${s}s`;
 }
 
-// Most-recent walk-forward aggregate — updated on every successful POST
-// /api/backtest/walkforward.  In-memory only; cleared on restart.
-let lastWalkForward: {
+// Most-recent walk-forward aggregate — persisted to data/wf-cache.json so it
+// survives restarts.  Loaded once at module import time.
+const WF_CACHE_PATH = "data/wf-cache.json";
+
+type WfCache = {
   strategyId:    string;
   strategyName:  string;
   coin:          string;
   meanOosSharpe: number;
   pctBeatBH:     number;
   runAt:         number;
-} | null = null;
+};
+
+function loadWfCache(): WfCache | null {
+  try {
+    return JSON.parse(readFileSync(WF_CACHE_PATH, "utf-8")) as WfCache;
+  } catch {
+    return null;
+  }
+}
+
+function saveWfCache(v: WfCache): void {
+  try { writeFileSync(WF_CACHE_PATH, JSON.stringify(v)); } catch { /* ignore write errors */ }
+}
+
+let lastWalkForward: WfCache | null = loadWfCache();
 
 export function createRouter(
   logger: Logger,
@@ -985,8 +1002,10 @@ export function createRouter(
     const DEFAULT_RATE = 0.0001; // 0.01 %/hr
     const xDefault = hypeHlRate !== null ? hypeHlRate / DEFAULT_RATE : null;
 
-    // HYPE price from live state (WS-sourced)
-    const hypePrice = state.lastPrices["HYPE"]?.mid ?? null;
+    // HYPE price — prefer HYPE if WS-tracked, fall back to primary coin if it IS HYPE
+    const hypePrice = state.lastPrices["HYPE"]?.mid
+      ?? (coins[0] === "HYPE" ? state.lastPrices[coins[0]]?.mid : null)
+      ?? null;
 
     // Signal health from market store
     const signalHealth = marketStore?.getSignalHealth("HYPE") ?? { latestSnapshotAgeMs: null, warmSignalCount: 0 };
@@ -1363,11 +1382,12 @@ export function createRouter(
           rangeDays:  allCandles.length > 1 ? Math.round((allCandles[allCandles.length - 1].timestamp - allCandles[0].timestamp) / 86_400_000) : 0,
         },
       });
-      // Cache for the overview tile — in-memory, cleared on restart
+      // Cache for the overview tile — persisted to disk, survives restarts
       lastWalkForward = {
         strategyId, strategyName: entry.displayName, coin: coin.toUpperCase(),
         meanOosSharpe, pctBeatBH, runAt: Date.now(),
       };
+      saveWfCache(lastWalkForward);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[backtest/walkforward]", error.message);
