@@ -203,6 +203,17 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m ${s}s`;
 }
 
+// Most-recent walk-forward aggregate — updated on every successful POST
+// /api/backtest/walkforward.  In-memory only; cleared on restart.
+let lastWalkForward: {
+  strategyId:    string;
+  strategyName:  string;
+  coin:          string;
+  meanOosSharpe: number;
+  pctBeatBH:     number;
+  runAt:         number;
+} | null = null;
+
 export function createRouter(
   logger: Logger,
   state: BotState,
@@ -937,8 +948,75 @@ export function createRouter(
     });
   });
 
-  router.get("/api/events", (_req, res) => {
-    res.json(logger.getEventLog(20));
+  // ── Overview tile bundle ─────────────────────────────────────────────────────
+
+  router.get("/api/overview", (_req, res) => {
+    const bots      = laneManager?.getBotStates() ?? [];
+    const running   = bots.filter((b) => b.status === "running" && b.live).length;
+    const paper     = bots.filter((b) => b.status === "running" && !b.live).length;
+
+    // Shadow bot = paper bot whose strategy requiresSignals
+    const shadowBot = bots.find((b) => {
+      if (b.live || b.status !== "running") return false;
+      const entry = STRATEGY_REGISTRY.find((e) => e.id === b.strategyId);
+      return entry?.requiresSignals === true;
+    });
+
+    // Portfolio P&L
+    let sessionPnl = 0, allTimePnl = 0;
+    for (const b of bots) {
+      sessionPnl  += b.sessionPnl    ?? 0;
+      allTimePnl  += b.realisedPnl   ?? 0;
+    }
+
+    // HYPE from funding matrix (free — already polled)
+    let hypeHlRate:   number | null = null;
+    let hypeDydxRate: number | null = null;
+    let hypeSpread:   number | null = null;
+    const matrix = fundingMatrix?.getMatrix();
+    if (matrix) {
+      const hypeEntry = matrix.coins.find((c: { coin: string }) => c.coin === "HYPE");
+      if (hypeEntry) {
+        hypeHlRate   = (hypeEntry.rates?.hyperliquid   ?? null) as number | null;
+        hypeDydxRate = (hypeEntry.rates?.dydx          ?? null) as number | null;
+        hypeSpread   = (hypeEntry.spread               ?? null) as number | null;
+      }
+    }
+    const DEFAULT_RATE = 0.0001; // 0.01 %/hr
+    const xDefault = hypeHlRate !== null ? hypeHlRate / DEFAULT_RATE : null;
+
+    // HYPE price from live state (WS-sourced)
+    const hypePrice = state.lastPrices["HYPE"]?.mid ?? null;
+
+    // Signal health from market store
+    const signalHealth = marketStore?.getSignalHealth("HYPE") ?? { latestSnapshotAgeMs: null, warmSignalCount: 0 };
+
+    res.json({
+      hype: { price: hypePrice, hlRate: hypeHlRate, dydxRate: hypeDydxRate, spread: hypeSpread, xDefault },
+      bots: {
+        running, paper, hasShadow: !!shadowBot,
+        shadowStance:       shadowBot?.position?.side      ?? null,
+        shadowSignalAgeMs:  shadowBot?.lastSignalCapturedAt
+                              ? Date.now() - shadowBot.lastSignalCapturedAt : null,
+      },
+      portfolio: { sessionPnl, allTimePnl },
+      bestStrategy: lastWalkForward,
+      signalHealth,
+    });
+  });
+
+  router.get("/api/events", (req, res) => {
+    const raw    = logger.getEventLog(100);
+    const levels = typeof req.query["level"]  === "string"
+      ? new Set(req.query["level"].split(",").map((s) => s.trim()).filter(Boolean))
+      : null;
+    const mod    = typeof req.query["module"] === "string" ? req.query["module"].trim() : null;
+    const events = raw.filter((e) => {
+      if (levels && !levels.has(e.level)) return false;
+      if (mod && e.module !== mod)        return false;
+      return true;
+    });
+    res.json(events.slice(0, 50));
   });
 
   router.get("/api/funding-rate", (_req, res) => {
@@ -1285,6 +1363,11 @@ export function createRouter(
           rangeDays:  allCandles.length > 1 ? Math.round((allCandles[allCandles.length - 1].timestamp - allCandles[0].timestamp) / 86_400_000) : 0,
         },
       });
+      // Cache for the overview tile — in-memory, cleared on restart
+      lastWalkForward = {
+        strategyId, strategyName: entry.displayName, coin: coin.toUpperCase(),
+        meanOosSharpe, pctBeatBH, runAt: Date.now(),
+      };
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[backtest/walkforward]", error.message);

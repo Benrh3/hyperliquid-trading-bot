@@ -256,6 +256,32 @@ export class MarketStore {
     return { bootTime: row.boot_time, bucketsJson: row.buckets_json };
   }
 
+  /**
+   * Signal health for the overview tile: age of the latest snapshot and count
+   * of distinct metric keys that have a non-null value within the staleness
+   * window. "Warm" means the poller has produced at least one reading recently.
+   */
+  getSignalHealth(symbol = "HYPE", staleAfterMs = 300_000): {
+    latestSnapshotAgeMs: number | null;
+    warmSignalCount: number;
+  } {
+    const latest = this.db.prepare(
+      "SELECT MAX(captured_at) AS ts FROM snapshots WHERE symbol = ?",
+    ).get(symbol) as { ts: number | null } | undefined;
+    const ts = latest?.ts ?? null;
+    const latestSnapshotAgeMs = ts !== null ? Date.now() - ts : null;
+
+    const cutoff = Date.now() - staleAfterMs;
+    const warm = this.db.prepare(`
+      SELECT COUNT(DISTINCT sm.metric_key) AS cnt
+      FROM snapshot_metrics sm
+      JOIN snapshots s ON s.id = sm.snapshot_id
+      WHERE s.symbol = ? AND sm.captured_at >= ? AND sm.value IS NOT NULL
+    `).get(symbol, cutoff) as { cnt: number } | undefined;
+
+    return { latestSnapshotAgeMs, warmSignalCount: warm?.cnt ?? 0 };
+  }
+
   close(): void {
     this.db.close();
   }
