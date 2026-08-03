@@ -1,251 +1,338 @@
 <%- include('_head', { title: 'Backtest' }) %>
 
 <style>
-  /* ── Layout ── */
-  .bt-wrap {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: var(--sp-6);
+  /* ── Page container — fluid, matches Market section ── */
+  .bt-page {
+    padding: var(--sp-4) var(--sp-6);
   }
+
+  /* ── Two-column layout ── */
   .bt-layout {
-    display: grid;
-    grid-template-columns: 268px 1fr;
-    gap: var(--sp-5);
+    display: flex;
+    gap: var(--sp-4);
     align-items: start;
   }
   @media (max-width: 900px) {
-    .bt-layout { grid-template-columns: 1fr; }
-    .bt-sidebar { position: static; }
-  }
-  .bt-sidebar {
-    position: sticky; top: var(--sp-4);
-    max-height: calc(100vh - 4rem);
-    overflow-y: auto;
+    .bt-layout { flex-direction: column; }
+    .bt-sidebar { position: static; width: 100% !important; max-height: none; }
   }
 
-  /* ── Control panel ── */
-  .ctrl-panel {
+  /* ── Sidebar ── */
+  .bt-sidebar {
+    flex: 0 0 256px;
+    width: 256px;
+    position: sticky;
+    top: var(--sp-4);
+    max-height: calc(100vh - 5rem);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
     background: var(--surface);
-    border-radius: 8px; overflow: hidden;
+    border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
-  .ctrl-section {
+  .bt-sidebar::-webkit-scrollbar { width: 3px; }
+  .bt-sidebar::-webkit-scrollbar-track { background: transparent; }
+  .bt-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Collapsible sidebar sections ── */
+  .bt-section { border-bottom: 1px solid var(--border); }
+  .bt-section:last-child { border-bottom: none; }
+  .bt-sec-hd {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: var(--sp-3) var(--sp-4);
-    border-bottom: 1px solid var(--border);
+    font-size: var(--t-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    transition: color .1s;
   }
-  .ctrl-section:last-child { border-bottom: none; }
-  .ctrl-section-title {
-    font-size: var(--t-label); font-weight: 700;
-    color: var(--muted); text-transform: uppercase;
-    letter-spacing: .06em; margin-bottom: var(--sp-3);
+  .bt-sec-hd::-webkit-details-marker { display: none; }
+  .bt-sec-hd:hover { color: var(--text); }
+  .bt-sec-hd::after {
+    content: '▸';
+    font-size: 9px;
+    transition: transform .15s;
+    flex-shrink: 0;
   }
+  .bt-section[open] > .bt-sec-hd::after { transform: rotate(90deg); }
+  .bt-sec-body { padding: var(--sp-1) var(--sp-4) var(--sp-3); }
+
+  /* ── Sidebar form fields ── */
   .ctrl-field { margin-bottom: var(--sp-2); }
   .ctrl-field:last-child { margin-bottom: 0; }
   .ctrl-label {
-    display: block; font-size: var(--t-label); font-weight: 600;
-    text-transform: uppercase; letter-spacing: .04em;
-    color: var(--muted); margin-bottom: 2px;
+    display: block;
+    font-size: var(--t-label);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    margin-bottom: 2px;
   }
   .ctrl-sel, .ctrl-inp {
     width: 100%; box-sizing: border-box;
-    background: var(--bg); border: 1px solid var(--border);
-    color: var(--text); font-size: var(--t-label); font-family: inherit;
-    padding: var(--sp-1) var(--sp-2); border-radius: 4px;
-    transition: border-color 0.1s;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: var(--t-label);
+    font-family: inherit;
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: 4px;
+    transition: border-color .1s;
   }
   .ctrl-sel {
-    appearance: none; cursor: pointer;
+    appearance: none;
+    cursor: pointer;
     padding-right: var(--sp-6);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%233D5A78'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 7px center;
+    background-repeat: no-repeat;
+    background-position: right 7px center;
   }
-  .ctrl-sel:focus, .ctrl-inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+  .ctrl-sel:focus, .ctrl-inp:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-dim);
+  }
 
+  /* ── Run button + status ── */
+  .bt-run-wrap { padding: var(--sp-3) var(--sp-4); }
   .btn-run-bt {
-    width: 100%; background: var(--accent); color: #fff;
-    border: none; border-radius: 4px;
-    padding: var(--sp-2); font-size: var(--t-body); font-weight: 600; font-family: inherit;
-    cursor: pointer; transition: opacity .15s;
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: var(--sp-2);
+    font-size: var(--t-body);
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity .15s;
   }
   .btn-run-bt:disabled { opacity: 0.4; cursor: default; }
   .btn-run-bt:hover:not(:disabled) { opacity: 0.85; }
-  .bt-status { display: block; font-size: var(--t-label); color: var(--muted); margin-top: var(--sp-2); text-align: center; min-height: 1em; }
+  .bt-status {
+    display: block;
+    font-size: var(--t-label);
+    color: var(--muted);
+    margin-top: var(--sp-2);
+    text-align: center;
+    min-height: 1em;
+  }
 
-  /* ── Results area ── */
-  .bt-results { min-width: 0; }
+  /* ── Mode toggle ── */
+  .mode-toggle {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    width: fit-content;
+    margin-bottom: var(--sp-3);
+  }
+  .mode-toggle label {
+    padding: var(--sp-1) var(--sp-4);
+    font-size: var(--t-label);
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--muted);
+    transition: background .1s, color .1s;
+  }
+  .mode-toggle input[type="radio"] { display: none; }
+  .mode-toggle input:checked + span { background: var(--accent); color: #fff; }
+  .mode-toggle label:first-child { border-right: 1px solid var(--border); }
 
-  /* ── Run config block ── */
-  .run-cfg {
+  /* ── Results column ── */
+  .bt-results { flex: 1; min-width: 0; }
+
+  /* ── Placeholder ── */
+  .bt-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem var(--sp-4);
+    color: var(--muted);
+    font-size: var(--t-body);
+    text-align: center;
     background: var(--surface);
     border-radius: 8px;
-    padding: var(--sp-3) var(--sp-4);
-    margin-bottom: var(--sp-5);
-    display: flex; flex-wrap: wrap;
-    align-items: baseline; gap: var(--sp-1) 0;
+    gap: var(--sp-2);
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   }
-  .run-cfg-title {
-    font-size: var(--t-label); font-weight: 700;
-    text-transform: uppercase; letter-spacing: .06em;
-    color: var(--muted); width: 100%; margin-bottom: var(--sp-2);
-  }
-  .run-cfg-grid {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 2px var(--sp-3);
+  .bt-placeholder svg { opacity: 0.25; }
+
+  /* ── Run config banner ── */
+  .run-cfg {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+    padding: var(--sp-2) var(--sp-4);
+    background: var(--surface);
+    border-radius: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--sp-4);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
     font-size: var(--t-label);
   }
-  .rc-key { color: var(--muted); white-space: nowrap; }
-  .rc-val { font-family: 'SFMono-Regular', Consolas, monospace; font-size: var(--t-label); }
+  .run-cfg-label {
+    font-size: var(--t-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    margin-right: var(--sp-1);
+  }
+  .rc-pair { display: flex; gap: 3px; align-items: baseline; }
+  .rc-key { color: var(--muted); }
+  .rc-val { font-family: 'SFMono-Regular', Consolas, monospace; color: var(--text); }
+  .rc-sep { color: var(--border); }
 
-  /* ── Stats table ── */
-  .compare-table {
-    width: 100%; border-collapse: collapse; font-size: var(--t-body);
+  /* ── Signal-card stat grids ── */
+  .bt-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
   }
-  .compare-table th {
-    padding: var(--sp-2) var(--sp-3); text-align: right;
-    font-size: var(--t-label); font-weight: 600; color: var(--muted);
-    border-bottom: 1px solid var(--border); white-space: nowrap;
+  .bt-pnl-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
   }
-  .compare-table th:first-child { text-align: left; }
-  .compare-table td {
-    padding: var(--sp-2) var(--sp-3); text-align: right;
-    font-family: 'SFMono-Regular', Consolas, monospace;
+
+  /* ── WF headline tiles ── */
+  .wf-tiles-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+  }
+  .wf-hero-val {
+    font-size: var(--t-hero);
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
-    border-bottom: 1px solid var(--border); white-space: nowrap;
+    letter-spacing: -.02em;
+    line-height: 1;
+    margin-bottom: var(--sp-2);
   }
-  .compare-table td:first-child {
-    text-align: left; font-family: inherit; font-weight: 500;
+  /* Override for non-hero tiles in WF row */
+  .wf-tiles-row .signal-card:not(:first-child) .sc-value { font-size: var(--t-value); }
+
+  /* ── WF table — 7 primary columns, IS detail in expandable rows ── */
+  .wf-table { width: 100%; border-collapse: collapse; font-size: var(--t-label); }
+  .wf-table th {
+    padding: var(--sp-2) var(--sp-3);
+    text-align: right;
+    font-size: var(--t-label);
+    font-weight: 600;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
   }
-  .compare-table tbody tr.row-beats { background: rgba(63,185,80,0.07); }
-  .compare-table tbody tr.row-lags  { background: rgba(248,81,73,0.07); }
-  .compare-table tbody tr:last-child td { border-bottom: none; }
-  .strat-dot {
-    display: inline-block; width: 8px; height: 8px;
-    border-radius: 50%; margin-right: 6px; vertical-align: middle;
+  .wf-table th:first-child { text-align: left; }
+  .wf-table td {
+    padding: var(--sp-2) var(--sp-3);
+    text-align: right;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    font-size: var(--t-label);
+  }
+  .wf-table td:first-child { text-align: left; font-family: inherit; }
+  .wf-table tbody tr:last-child td { border-bottom: none; }
+  .wf-table tr.wf-beats { background: rgba(34,197,94,0.04); }
+  .wf-table tr.wf-lags  { background: rgba(239,68,68,0.04); }
+  /* Expand button in first cell */
+  .wf-expand-btn {
+    background: none; border: none;
+    color: var(--muted); cursor: pointer;
+    font-size: 9px; padding: 0 4px 0 0;
+    vertical-align: middle; line-height: 1;
+    transition: color .1s;
+  }
+  .wf-expand-btn:hover { color: var(--accent); }
+  /* Detail row */
+  .wf-row-detail td {
+    background: var(--surface2) !important;
+    padding: var(--sp-2) var(--sp-4) var(--sp-3);
+    text-align: left !important;
+    font-family: inherit !important;
+    border-bottom: 1px solid var(--border);
+  }
+  .wf-detail-inner {
+    display: flex;
+    gap: var(--sp-5);
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .wf-detail-item { display: flex; flex-direction: column; gap: 2px; }
+  .wf-detail-params { flex-basis: 100%; }
+  .wf-detail-lbl {
+    font-size: var(--t-label); text-transform: uppercase;
+    letter-spacing: .05em; color: var(--muted); font-weight: 600;
+  }
+  .wf-detail-val { font-size: var(--t-label); font-family: 'SFMono-Regular', Consolas, monospace; }
+  .param-pill {
+    display: inline-block;
+    font-size: 10px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border-radius: 3px;
+    padding: 1px var(--sp-2);
+    margin: 1px;
   }
 
-  /* ── Chart (uses global .chart-card) ── */
+  /* ── P&L colours ── */
+  .pnl-pos { color: var(--green); }
+  .pnl-neg { color: var(--red); }
+
+  /* ── Equity chart sizing ── */
   #bt-equity-chart { height: 250px; }
   .chart-legend { display: flex; gap: var(--sp-4); font-size: var(--t-label); color: var(--muted); }
   .chart-legend-item { display: flex; align-items: center; gap: var(--sp-1); }
   .legend-line { display: inline-block; width: 16px; height: 2px; border-radius: 1px; }
   .legend-line-dashed { border-top: 2px dashed; height: 0; border-radius: 0; }
 
-  /* ── P&L colours ── */
-  .pnl-pos { color: var(--green); }
-  .pnl-neg { color: var(--red); }
+  /* ── Trades section ── */
+  #bt-trades-wrap .section-title { margin-bottom: var(--sp-3); }
 
-  /* ── Mode toggle ── */
-  .mode-toggle {
-    display: flex; gap: 0; overflow: hidden;
-    border: 1px solid var(--border); border-radius: 4px; width: fit-content;
+  /* ── Responsive ── */
+  @media (max-width: 1100px) {
+    .wf-tiles-row { grid-template-columns: 1fr 1fr 1fr; }
+    .wf-tiles-row .signal-card:first-child .wf-hero-val { font-size: var(--t-value); }
   }
-  .mode-toggle label {
-    padding: var(--sp-1) var(--sp-4); font-size: var(--t-label); font-weight: 600; cursor: pointer;
-    color: var(--muted); transition: background .1s, color .1s;
-  }
-  .mode-toggle input[type="radio"] { display: none; }
-  .mode-toggle input:checked + span { background: var(--accent); color: #fff; }
-  .mode-toggle label:first-child { border-right: 1px solid var(--border); }
-
-  /* ── Walk-forward results ── */
-  .wf-headline {
-    background: var(--surface);
-    border-radius: 8px; padding: var(--sp-4) var(--sp-5); margin-bottom: var(--sp-5);
-    display: flex; gap: var(--sp-6); flex-wrap: wrap; align-items: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  }
-  .wf-stat { display: flex; flex-direction: column; gap: 2px; }
-  .wf-stat-lbl { font-size: var(--t-label); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
-  .wf-stat-val { font-size: var(--t-value-sm); font-weight: 600; font-family: 'SFMono-Regular', Consolas, monospace; }
-  .wf-curve-warn {
-    background: rgba(248,81,73,0.1); border: 1px solid rgba(248,81,73,0.3);
-    border-radius: 4px; padding: var(--sp-2) var(--sp-3); font-size: var(--t-label);
-    color: var(--red); flex-basis: 100%; margin-top: var(--sp-1);
-  }
-  .wf-table { width: 100%; border-collapse: collapse; font-size: var(--t-label); }
-  .wf-table th {
-    padding: var(--sp-2) var(--sp-3); text-align: right; font-size: var(--t-label); font-weight: 600;
-    color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap;
-  }
-  .wf-table th:first-child { text-align: left; }
-  .wf-table td {
-    padding: var(--sp-2) var(--sp-3); text-align: right;
-    font-family: 'SFMono-Regular', Consolas, monospace;
-    border-bottom: 1px solid var(--border); white-space: nowrap; font-size: var(--t-label);
-  }
-  .wf-table td:first-child { text-align: left; font-family: inherit; }
-  .wf-table tbody tr:last-child td { border-bottom: none; }
-  .wf-table tr.wf-beats { background: rgba(63,185,80,0.06); }
-  .wf-table tr.wf-lags  { background: rgba(248,81,73,0.06); }
-  .param-pill {
-    display: inline-block; font-size: 10px; background: var(--accent-dim);
-    color: var(--accent); border-radius: 3px; padding: 1px var(--sp-2); margin: 1px;
-  }
-
-  /* ── Funding basis card ── */
-  .funding-card {
-    background: var(--surface);
-    border-radius: 8px; overflow: hidden; margin-bottom: var(--sp-5);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  }
-  .funding-card-header {
-    padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border);
-    font-size: var(--t-body); font-weight: 600; color: var(--text);
-    display: flex; align-items: center; gap: var(--sp-2);
-  }
-  .funding-card-header .tag {
-    font-size: 10px; font-weight: 600; color: var(--muted);
-    background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 3px; padding: 1px var(--sp-2);
-    text-transform: uppercase; letter-spacing: .04em;
-  }
-  .funding-stats { display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
-  .funding-stat {
-    padding: var(--sp-3) var(--sp-4); border-right: 1px solid var(--border);
-    min-width: 140px; flex: 1;
-  }
-  .funding-stat:last-child { border-right: none; }
-  .funding-caveat {
-    padding: var(--sp-2) var(--sp-4); font-size: var(--t-label);
-    color: var(--muted); line-height: 1.5;
-  }
-  .funding-caveat::before { content: '⚠ '; }
-
-  /* ── Placeholder ── */
-  .bt-placeholder {
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: center; padding: var(--sp-6) var(--sp-4);
-    color: var(--muted); font-size: var(--t-body); text-align: center;
-    background: var(--surface);
-    border-radius: 8px; gap: var(--sp-2);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  }
-  .bt-placeholder svg { opacity: 0.3; }
-
   @media (max-width: 600px) {
-    .bt-wrap { padding: var(--sp-4) var(--sp-3); }
+    .bt-page { padding: var(--sp-4) var(--sp-3); }
+    .bt-pnl-grid { grid-template-columns: 1fr; }
+    .wf-tiles-row { grid-template-columns: 1fr; }
   }
 </style>
 
 <%- include('_nav') %>
 
-<div class="bt-wrap">
+<div class="bt-page">
 <div class="page-header">
   <h1 class="page-title">Backtest</h1>
   <p class="page-subtitle">Test a strategy against historical candles.</p>
 </div>
 <div class="bt-layout">
 
-  <!-- ── Sidebar controls ── -->
+  <!-- ── Sidebar ── -->
   <aside class="bt-sidebar">
-    <div class="ctrl-panel">
 
-      <!-- Setup -->
-      <div class="ctrl-section">
-        <div class="ctrl-section-title">Setup</div>
-
+    <!-- Setup -->
+    <details class="bt-section" open>
+      <summary class="bt-sec-hd"><span>Setup</span></summary>
+      <div class="bt-sec-body">
         <div class="ctrl-field">
           <label class="ctrl-label" for="bt-strategy">Strategy</label>
           <select class="ctrl-sel" id="bt-strategy">
@@ -254,14 +341,12 @@
             <% } %>
           </select>
         </div>
-
         <div class="ctrl-field">
           <label class="ctrl-label" for="bt-coin">Coin</label>
           <select class="ctrl-sel" id="bt-coin">
-            <option value="" disabled selected>Loading top coins…</option>
+            <option value="" disabled selected>Loading…</option>
           </select>
         </div>
-
         <div class="ctrl-field">
           <label class="ctrl-label" for="bt-tf">Timeframe</label>
           <select class="ctrl-sel" id="bt-tf">
@@ -273,7 +358,6 @@
             <option value="1d">1d</option>
           </select>
         </div>
-
         <div class="ctrl-field">
           <label class="ctrl-label" for="bt-range">Period</label>
           <select class="ctrl-sel" id="bt-range">
@@ -289,111 +373,79 @@
           <label class="ctrl-label" for="bt-limit">Candle count</label>
           <select class="ctrl-sel" id="bt-limit">
             <option value="500">500</option>
-            <option value="1000" selected>1000</option>
-            <option value="2000">2000</option>
-            <option value="5000">5000</option>
+            <option value="1000" selected>1 000</option>
+            <option value="2000">2 000</option>
+            <option value="5000">5 000</option>
           </select>
         </div>
       </div>
+    </details>
 
-      <!-- Strategy parameters (dynamic) -->
-      <div class="ctrl-section">
-        <div class="ctrl-section-title">Strategy Parameters</div>
+    <!-- Strategy Parameters -->
+    <details class="bt-section" open>
+      <summary class="bt-sec-hd"><span>Strategy Parameters</span></summary>
+      <div class="bt-sec-body">
         <div id="bt-params-section">
           <p style="font-size:12px;color:var(--muted);margin:0">No configurable parameters.</p>
         </div>
       </div>
+    </details>
 
-      <!-- General settings -->
-      <div class="ctrl-section">
-        <div class="ctrl-section-title">General Settings</div>
-
+    <!-- General Settings -->
+    <details class="bt-section">
+      <summary class="bt-sec-hd"><span>General Settings</span></summary>
+      <div class="bt-sec-body">
         <div class="ctrl-field">
           <label class="ctrl-label" for="bt-equity">Starting capital ($)</label>
           <input class="ctrl-inp" id="bt-equity" type="number" min="1" step="100" value="1000">
         </div>
-
         <div class="ctrl-field">
           <label class="ctrl-label" for="bt-commission">Commission per side (%)</label>
           <input class="ctrl-inp" id="bt-commission" type="number" min="0" step="0.001" value="0.05">
         </div>
-
         <div class="ctrl-field" id="bt-stoploss-field">
           <label class="ctrl-label" for="bt-stoploss">Stop-loss (%)</label>
           <input class="ctrl-inp" id="bt-stoploss" type="number" min="0" step="0.1" value="<%= defaultStopLoss %>">
         </div>
         <p class="ctrl-label" id="bt-stoploss-note" style="display:none;color:var(--muted);font-style:italic;margin-top:var(--sp-1)">Using strategy stop-loss param</p>
       </div>
+    </details>
 
-      <!-- Mode -->
-      <div class="ctrl-section">
-        <div class="ctrl-section-title">Mode</div>
+    <!-- Mode & Walk-Forward -->
+    <details class="bt-section" open>
+      <summary class="bt-sec-hd"><span>Mode &amp; Walk-Forward</span></summary>
+      <div class="bt-sec-body">
         <div class="mode-toggle">
           <label><input type="radio" name="bt-mode" value="single" id="mode-single" checked><span>Single Run</span></label>
           <label><input type="radio" name="bt-mode" value="walkforward" id="mode-wf"><span>Walk-Forward</span></label>
         </div>
-      </div>
-
-      <!-- Walk-forward controls (hidden by default) -->
-      <div class="ctrl-section" id="wf-controls" style="display:none">
-        <div class="ctrl-section-title">Walk-Forward Settings</div>
-        <div class="ctrl-field">
-          <label class="ctrl-label" for="wf-windows">Windows (3–10)</label>
-          <input class="ctrl-inp" id="wf-windows" type="number" min="3" max="10" value="5">
-        </div>
-        <div class="ctrl-field">
-          <label class="ctrl-label" for="wf-metric">Optimise by</label>
-          <select class="ctrl-sel" id="wf-metric">
-            <option value="sharpeRatio">Sharpe Ratio</option>
-            <option value="totalPnl">Total PnL</option>
-            <option value="profitFactor">Profit Factor</option>
-          </select>
+        <div id="wf-controls" style="display:none">
+          <div class="ctrl-field">
+            <label class="ctrl-label" for="wf-windows">Windows (3–10)</label>
+            <input class="ctrl-inp" id="wf-windows" type="number" min="3" max="10" value="5">
+          </div>
+          <div class="ctrl-field">
+            <label class="ctrl-label" for="wf-metric">Optimise by</label>
+            <select class="ctrl-sel" id="wf-metric">
+              <option value="sharpeRatio">Sharpe Ratio</option>
+              <option value="totalPnl">Total PnL</option>
+              <option value="profitFactor">Profit Factor</option>
+            </select>
+          </div>
         </div>
       </div>
+    </details>
 
-      <!-- Run -->
-      <div class="ctrl-section">
-        <button class="btn-run-bt" id="bt-run">Run Backtest</button>
-        <span class="bt-status" id="bt-status"></span>
-      </div>
-
+    <!-- Run -->
+    <div class="bt-run-wrap">
+      <button class="btn-run-bt" id="bt-run">Run Backtest</button>
+      <span class="bt-status" id="bt-status"></span>
     </div>
-  </aside>
 
-  <!-- ── Results area ── -->
+  </aside><!-- /.bt-sidebar -->
+
+  <!-- ── Results ── -->
   <div class="bt-results">
-
-    <!-- Walk-forward results (hidden until WF run) -->
-    <div id="wf-results" style="display:none">
-      <div class="wf-headline" id="wf-headline"></div>
-      <div class="table-wrap" style="margin-bottom:1.5rem">
-        <table class="wf-table" id="wf-table">
-          <thead>
-            <tr>
-              <th style="text-align:left">Win.</th>
-              <th>IS Period</th>
-              <th>Best Params</th>
-              <th>IS Sharpe</th>
-              <th>IS Return</th>
-              <th>OOS Period</th>
-              <th>OOS Sharpe</th>
-              <th>OOS Return</th>
-              <th>B&amp;H</th>
-              <th>Gap (IS−OOS)</th>
-              <th>Signals</th>
-            </tr>
-          </thead>
-          <tbody id="wf-tbody"></tbody>
-        </table>
-      </div>
-      <div class="chart-card" id="wf-chart-panel" style="margin:0 0 var(--sp-5)">
-        <div class="chart-card-toolbar">
-          <span class="chart-card-title">Walk-Forward Equity Track Record</span>
-          <span class="chart-card-meta">OOS windows stitched end-to-end</span>
-        </div>
-        <div id="wf-equity-chart" style="height:200px"></div>
-      </div>
-    </div>
 
     <!-- Placeholder shown before first run -->
     <div class="bt-placeholder" id="bt-placeholder">
@@ -403,23 +455,54 @@
       <span>Configure a strategy and click <strong>Run Backtest</strong></span>
     </div>
 
+    <!-- Walk-forward results -->
+    <div id="wf-results" style="display:none">
+      <!-- WF headline signal-card tiles + caveat rendered by JS into #wf-headline -->
+      <div id="wf-headline"></div>
+
+      <!-- WF window table -->
+      <div class="table-wrap" style="margin-bottom:var(--sp-4)">
+        <table class="wf-table" id="wf-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;width:44px"></th>
+              <th>OOS Period</th>
+              <th>OOS Sharpe</th>
+              <th>OOS Return</th>
+              <th>vs B&amp;H</th>
+              <th>Gap IS−OOS</th>
+              <th>Signals</th>
+            </tr>
+          </thead>
+          <tbody id="wf-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- WF equity chart -->
+      <div class="chart-card" id="wf-chart-panel" style="margin:0 0 var(--sp-4)">
+        <div class="chart-card-toolbar">
+          <span class="chart-card-title">Walk-Forward Equity Track Record</span>
+          <span class="chart-card-meta">OOS windows stitched end-to-end</span>
+        </div>
+        <div id="wf-equity-chart" style="height:200px"></div>
+      </div>
+    </div>
+
     <!-- Run config (hidden until run) -->
     <div id="bt-run-config-wrap" style="display:none">
       <div class="run-cfg">
-        <div class="run-cfg-title">Run Config</div>
-        <div class="run-cfg-grid" id="bt-run-config"></div>
+        <span class="run-cfg-label">Run</span>
+        <div id="bt-run-config" style="display:contents"></div>
       </div>
     </div>
 
-    <!-- Stats table (hidden until run) -->
-    <div id="bt-stats-wrap" style="display:none;margin-bottom:1.5rem">
-      <div class="table-wrap">
-        <div id="bt-stats-content"></div>
-      </div>
+    <!-- Stats (signal-card tiles, hidden until run) -->
+    <div id="bt-stats-wrap" style="display:none;margin-bottom:var(--sp-4)">
+      <div id="bt-stats-content"></div>
     </div>
 
     <!-- Equity chart (hidden until run) -->
-    <div class="chart-card" id="bt-chart-panel" style="display:none;margin:0 0 var(--sp-5)">
+    <div class="chart-card" id="bt-chart-panel" style="display:none;margin:0 0 var(--sp-4)">
       <div class="chart-card-toolbar">
         <span class="chart-card-title">Equity Curve</span>
         <div class="chart-legend">
@@ -436,7 +519,7 @@
       <div id="bt-equity-chart"></div>
     </div>
 
-    <!-- Trades table (hidden until run) -->
+    <!-- Trades (hidden until run) -->
     <div id="bt-trades-wrap" style="display:none">
       <p class="section-title" id="bt-trades-title">Simulated Trades</p>
       <div class="table-wrap" style="margin-bottom:2rem">
@@ -447,70 +530,66 @@
   </div><!-- /.bt-results -->
 </div><!-- /.bt-layout -->
 
-<!-- ── Funding basis (full-width below) ── -->
-<div id="bt-funding-section" style="margin-top:2rem"></div>
+<!-- Funding basis (full-width below layout) -->
+<div id="bt-funding-section" style="margin-top:var(--sp-4)"></div>
 
-</div><!-- /.bt-wrap -->
+</div><!-- /.bt-page -->
 
 <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function () {
   'use strict';
-  const LC = LightweightCharts;
+  var LC = LightweightCharts;
 
   // ── Registry (server-seeded) ──────────────────────────────────────────────
-  const strategies = <%- JSON.stringify(registry.filter(e => e.isCandleStrategy).map(e => ({
+  var strategies = <%- JSON.stringify(registry.filter(e => e.isCandleStrategy).map(e => ({
     id: e.id, displayName: e.displayName,
     params: e.params.map(p => ({ key: p.key, label: p.label, default: p.default, min: p.min, max: p.max, step: p.step }))
   }))) %>;
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let topCoins   = [];
-  let equityChart = null;
-  let stratSeries = null;
-  let bhSeries    = null;
+  var topCoins   = [];
+  var equityChart = null;
+  var stratSeries = null;
+  var bhSeries    = null;
 
   // ── Elements ─────────────────────────────────────────────────────────────
-  const stratSel    = document.getElementById('bt-strategy');
-  const coinSel     = document.getElementById('bt-coin');
-  const paramsEl    = document.getElementById('bt-params-section');
-  const runBtn      = document.getElementById('bt-run');
-  const statusEl    = document.getElementById('bt-status');
+  var stratSel = document.getElementById('bt-strategy');
+  var coinSel  = document.getElementById('bt-coin');
+  var paramsEl = document.getElementById('bt-params-section');
+  var runBtn   = document.getElementById('bt-run');
+  var statusEl = document.getElementById('bt-status');
 
   // ── Formatters ────────────────────────────────────────────────────────────
   function fmtTime(ms) { return new Date(ms).toLocaleString(); }
   function fmtPnl(pnl) {
-    const sign = pnl >= 0 ? '+' : '';
-    const cls  = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
-    return `<span class="${cls}">${sign}$${Math.abs(pnl).toFixed(2)}</span>`;
+    var sign = pnl >= 0 ? '+' : '';
+    var cls  = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    return '<span class="' + cls + '">' + sign + '$' + Math.abs(pnl).toFixed(2) + '</span>';
+  }
+  function getCssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
-  // ── Strategy params (re-render when strategy changes) ─────────────────────
+  // ── Strategy params ───────────────────────────────────────────────────────
   function renderParams() {
-    const strat = strategies.find(s => s.id === stratSel.value);
-
-    // Hide general stop-loss field when the strategy has its own stopLossPct param;
-    // show the note instead so the user knows which field is active.
-    const hasOwnStop = strat && strat.params.some(function(p) { return p.key === 'stopLossPct'; });
+    var strat = strategies.find(function(s) { return s.id === stratSel.value; });
+    var hasOwnStop = strat && strat.params.some(function(p) { return p.key === 'stopLossPct'; });
     document.getElementById('bt-stoploss-field').style.display = hasOwnStop ? 'none' : '';
     document.getElementById('bt-stoploss-note').style.display  = hasOwnStop ? '' : 'none';
-
     if (!strat || !strat.params || strat.params.length === 0) {
       paramsEl.innerHTML = '<p style="font-size:12px;color:var(--muted);margin:0">No configurable parameters.</p>';
       return;
     }
-    paramsEl.innerHTML = strat.params.map(p => `
-      <div class="ctrl-field">
-        <label class="ctrl-label">${p.label}</label>
-        <input class="ctrl-inp" type="number" name="${p.key}"
-               value="${p.default}" min="${p.min}" max="${p.max}" step="${p.step}">
-      </div>
-    `).join('');
+    paramsEl.innerHTML = strat.params.map(function(p) {
+      return '<div class="ctrl-field">'
+        + '<label class="ctrl-label">' + p.label + '</label>'
+        + '<input class="ctrl-inp" type="number" name="' + p.key + '"'
+        + ' value="' + p.default + '" min="' + p.min + '" max="' + p.max + '" step="' + p.step + '">'
+        + '</div>';
+    }).join('');
   }
 
-  // Returns the effective stop-loss % for the currently selected strategy.
-  // If the strategy has its own stopLossPct param, reads from the strategy
-  // param input; otherwise reads from the general bt-stoploss field.
   function getEffectiveStop() {
     var strat = strategies.find(function(s) { return s.id === stratSel.value; });
     var ownStopParam = strat && strat.params.find(function(p) { return p.key === 'stopLossPct'; });
@@ -522,61 +601,49 @@
   }
 
   stratSel.addEventListener('change', renderParams);
-  renderParams(); // render on load for the default strategy
+  renderParams();
 
   // ── Coin list ─────────────────────────────────────────────────────────────
-  async function loadCoins() {
-    try {
-      const resp = await fetch('/api/funding/top');
-      if (!resp.ok) throw new Error(resp.statusText);
-      topCoins = await resp.json();
-      coinSel.innerHTML = topCoins.map(c =>
-        `<option value="${c.coin}">${c.displayName || c.coin}</option>`
-      ).join('');
-      coinSel.value = topCoins[0]?.coin || 'BTC';
-    } catch (_) {
+  function loadCoins() {
+    fetch('/api/funding/top').then(function(r) {
+      if (!r.ok) throw new Error(r.statusText);
+      return r.json();
+    }).then(function(coins) {
+      topCoins = coins;
+      coinSel.innerHTML = coins.map(function(c) {
+        return '<option value="' + c.coin + '">' + (c.displayName || c.coin) + '</option>';
+      }).join('');
+      coinSel.value = coins[0] ? coins[0].coin : 'BTC';
+    }).catch(function() {
       coinSel.innerHTML = '<option value="BTC">BTC</option>';
-    }
+    });
   }
 
   // ── Chart init ────────────────────────────────────────────────────────────
-  function getCssVar(name) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  }
-
   function initChart() {
     if (equityChart) return;
-    const border = getCssVar('--border') || '#30363d';
+    var border = getCssVar('--border') || '#30363d';
     equityChart = LC.createChart(document.getElementById('bt-equity-chart'), {
-      layout: {
-        background: { type: 'solid', color: getCssVar('--surface') || '#161b22' },
-        textColor:  getCssVar('--muted') || '#8b949e',
-        attributionLogo: false,
-      },
-      grid:       { vertLines: { color: border }, horzLines: { color: border } },
-      crosshair:  { mode: 1 },
+      layout: { background: { type: 'solid', color: getCssVar('--surface') || '#161b22' }, textColor: getCssVar('--muted') || '#8b949e', attributionLogo: false },
+      grid:      { vertLines: { color: border }, horzLines: { color: border } },
+      crosshair: { mode: 1 },
       rightPriceScale: { borderColor: border },
-      timeScale:  { borderColor: border, timeVisible: true },
+      timeScale: { borderColor: border, timeVisible: true },
       height: 250,
     });
-    // B&H drawn first so it sits behind the strategy curve
     bhSeries = equityChart.addLineSeries({
-      color:            'rgba(210,153,34,0.6)',
-      lineWidth:        1,
-      lineStyle:        2,
-      lastValueVisible: false,
-      priceLineVisible: false,
+      color: 'rgba(210,153,34,0.6)', lineWidth: 1, lineStyle: 2,
+      lastValueVisible: false, priceLineVisible: false,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
     stratSeries = equityChart.addAreaSeries({
-      lineColor:   getCssVar('--accent') || '#818CF8',
-      topColor:    'rgba(129,140,248,0.14)',
-      bottomColor: 'rgba(129,140,248,0)',
-      lineWidth:   1,
+      lineColor: getCssVar('--accent') || '#818CF8',
+      topColor: 'rgba(129,140,248,0.14)', bottomColor: 'rgba(129,140,248,0)',
+      lineWidth: 1,
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
     if (typeof ResizeObserver !== 'undefined') {
-      const ro = new ResizeObserver(() => equityChart.applyOptions({ width: 0 }));
+      var ro = new ResizeObserver(function() { equityChart.applyOptions({ width: 0 }); });
       ro.observe(document.getElementById('bt-chart-panel'));
     }
   }
@@ -584,164 +651,184 @@
   // ── Render helpers ────────────────────────────────────────────────────────
 
   function renderRunConfig(rc) {
-    const strat = strategies.find(s => s.id === rc.strategyId);
-    const paramRows = Object.entries(rc.strategyParams || {}).map(([k, v]) => {
-      const p = strat?.params?.find(q => q.key === k);
-      return `<span class="rc-key">${p?.label ?? k}</span><span class="rc-val">${v}</span>`;
-    }).join('');
-
+    var strat = strategies.find(function(s) { return s.id === rc.strategyId; });
     var rangeStr = rc.rangeStart && rc.rangeEnd
       ? rc.rangeStart.slice(0,10) + ' → ' + rc.rangeEnd.slice(0,10) + ' (' + rc.rangeDays + 'd)'
       : rc.fetchedCandles + ' bars';
+
+    function pair(k, v) {
+      return '<span class="rc-pair"><span class="rc-key">' + k + '</span><span class="rc-val">&nbsp;' + v + '</span></span><span class="rc-sep">&thinsp;·&thinsp;</span>';
+    }
+
+    var paramPairs = Object.entries(rc.strategyParams || {}).map(function(kv) {
+      var p = strat && strat.params && strat.params.find(function(q) { return q.key === kv[0]; });
+      return pair(p ? p.label : kv[0], kv[1]);
+    }).join('');
+
     document.getElementById('bt-run-config').innerHTML =
-      '<span class="rc-key">Strategy</span><span class="rc-val">' + rc.strategyName + '</span>' +
-      '<span class="rc-key">Coin</span><span class="rc-val">' + rc.coin + '</span>' +
-      '<span class="rc-key">Timeframe</span><span class="rc-val">' + rc.interval + '</span>' +
-      '<span class="rc-key">Period</span><span class="rc-val">' + rangeStr + '</span>' +
-      '<span class="rc-key">Candles</span><span class="rc-val">' + rc.fetchedCandles.toLocaleString() + '</span>' +
-      '<span class="rc-key">Equity</span><span class="rc-val">$' + rc.initialEquity.toLocaleString() + '</span>' +
-      '<span class="rc-key">Commission</span><span class="rc-val">' + rc.commissionPct.toFixed(4) + '%/side</span>' +
-      '<span class="rc-key">Stop-loss</span><span class="rc-val">' + rc.stopLossPct + '%</span>' +
-      paramRows;
+      pair(rc.strategyName, rc.coin + ' ' + rc.interval) +
+      pair('Period', rangeStr) +
+      pair('Equity', '$' + rc.initialEquity.toLocaleString()) +
+      pair('Commission', rc.commissionPct.toFixed(4) + '%') +
+      pair('Stop-loss', rc.stopLossPct + '%') +
+      paramPairs;
 
     document.getElementById('bt-run-config-wrap').style.display = '';
   }
 
+  function scTile(label, val, cls, sub) {
+    return '<div class="signal-card">'
+      + '<div class="sc-header"><span class="sc-label">' + label + '</span></div>'
+      + '<div class="sc-value' + (cls ? ' ' + cls : '') + '">' + val + '</div>'
+      + (sub ? '<div class="sc-subline">' + sub + '</div>' : '')
+      + '</div>';
+  }
+
   function renderStats(result) {
-    const bh      = result.buyHold;
-    const retPct  = result.returnPct;
-    const beats   = retPct > bh.returnPct;
-    const retCls  = retPct >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const bhCls   = bh.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const retSign = retPct >= 0 ? '+' : '';
-    const bhSign  = bh.returnPct >= 0 ? '+' : '';
-    const pf      = result.profitFactor >= 999 ? '∞' : result.profitFactor.toFixed(2);
+    var bh     = result.buyHold;
+    var ret    = result.returnPct;
+    var beats  = ret > bh.returnPct;
+    var retCls = ret >= 0 ? 'val-pos' : 'val-neg';
+    var bhCls  = bh.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg';
+    var pf     = result.profitFactor >= 999 ? '∞' : result.profitFactor.toFixed(2);
 
-    document.getElementById('bt-stats-content').innerHTML =
-      `<table class="compare-table">
-        <thead><tr>
-          <th>Strategy</th>
-          <th>Return</th>
-          <th>Max DD</th>
-          <th>Sharpe</th>
-          <th>Profit Factor</th>
-          <th>Trades</th>
-          <th>Win Rate</th>
-        </tr></thead>
-        <tbody>
-          <tr class="${beats ? 'row-beats' : 'row-lags'}">
-            <td><span class="strat-dot" style="background:var(--accent)"></span>${result.runConfig.strategyName}</td>
-            <td><span class="${retCls}">${retSign}${retPct.toFixed(2)}%</span></td>
-            <td><span class="pnl-neg">${result.maxDrawdownPct.toFixed(2)}%</span></td>
-            <td>${result.sharpeRatio.toFixed(2)}</td>
-            <td>${pf}</td>
-            <td>${result.tradeCount}</td>
-            <td>${(result.winRate * 100).toFixed(1)}%</td>
-          </tr>
-          <tr>
-            <td><span class="strat-dot" style="background:rgba(210,153,34,0.7)"></span>Buy &amp; Hold</td>
-            <td><span class="${bhCls}">${bhSign}${bh.returnPct.toFixed(2)}%</span></td>
-            <td><span class="pnl-neg">${bh.maxDrawdownPct.toFixed(2)}%</span></td>
-            <td>—</td><td>—</td><td>—</td><td>—</td>
-          </tr>
-        </tbody>
-      </table>`;
+    var html = '<div class="bt-stat-grid">';
+    html += scTile('Return',
+      (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%',
+      retCls,
+      (beats ? '▲' : '▼') + ' B&amp;H <span class="' + bhCls + '">' + (bh.returnPct >= 0 ? '+' : '') + bh.returnPct.toFixed(2) + '%</span>');
+    html += scTile('Max Drawdown', result.maxDrawdownPct.toFixed(2) + '%', 'val-neg', 'strategy');
+    html += scTile('Sharpe Ratio', result.sharpeRatio.toFixed(2), '', '');
+    html += scTile('Profit Factor', pf, '', '');
+    html += scTile('Trades', result.tradeCount, '', (result.winRate * 100).toFixed(1) + '% win rate');
+    html += scTile('Win Rate', (result.winRate * 100).toFixed(1) + '%', '', result.tradeCount + ' trades');
+    html += '</div>';
 
+    // Price / Funding / Total P&L decomposition (shown when funding accrual is active)
+    var hasFunding = (result.totalFundingPnl !== undefined && result.totalFundingPnl !== 0);
+    if (hasFunding) {
+      var eq = (result.runConfig && result.runConfig.initialEquity) || 1000;
+      function pct(v) { return eq > 0 ? ' (' + (v / eq * 100).toFixed(2) + '%)' : ''; }
+      html += '<div class="bt-pnl-grid">';
+      html += scTile('Price P&amp;L',
+        (result.totalPricePnl >= 0 ? '+' : '') + '$' + result.totalPricePnl.toFixed(2),
+        result.totalPricePnl >= 0 ? 'val-pos' : 'val-neg',
+        'price-move net of commission' + pct(result.totalPricePnl));
+      html += scTile('Funding P&amp;L',
+        (result.totalFundingPnl >= 0 ? '+' : '') + '$' + result.totalFundingPnl.toFixed(4),
+        result.totalFundingPnl >= 0 ? 'val-pos' : 'val-neg',
+        'carry accrual' + pct(result.totalFundingPnl));
+      html += scTile('Total P&amp;L',
+        (result.totalPnl >= 0 ? '+' : '') + '$' + result.totalPnl.toFixed(2),
+        result.totalPnl >= 0 ? 'val-pos' : 'val-neg',
+        'price + funding' + pct(result.totalPnl));
+      html += '</div>';
+    }
+
+    // B&H comparison caveat
+    html += '<div class="caveat" style="margin:0 0 var(--sp-4)">'
+      + '<strong>Buy &amp; Hold over same period:</strong> '
+      + '<span class="' + bhCls + '">' + (bh.returnPct >= 0 ? '+' : '') + bh.returnPct.toFixed(2) + '%</span>'
+      + ' return &nbsp;·&nbsp; '
+      + bh.maxDrawdownPct.toFixed(2) + '% max drawdown.'
+      + '</div>';
+
+    // Signal-coverage warning
+    if (result.signalCoverage && result.signalCoverage.length > 0) {
+      var zeroCov = result.signalCoverage.filter(function(sc) { return sc.filled === 0 && sc.total > 0; });
+      if (zeroCov.length > 0) {
+        html += '<div class="caveat" style="margin:0 0 var(--sp-4)">'
+          + '<strong>&#9888; 0% signal coverage</strong> for '
+          + zeroCov.map(function(sc) { return sc.key; }).join(', ')
+          + ' — this strategy requires Market signal data (HYPE, backfilled). '
+          + 'Run <code>scripts/backfill-funding-signals.ts</code> to populate it.'
+          + '</div>';
+      }
+    }
+
+    document.getElementById('bt-stats-content').innerHTML = html;
     document.getElementById('bt-stats-wrap').style.display = '';
   }
 
   function renderChart(result) {
     initChart();
-    stratSeries.setData(result.equityCurve.map(p => ({ time: Math.floor(p.time / 1000), value: p.equity })));
-    bhSeries.setData(result.buyHold.equityCurve.map(p => ({ time: Math.floor(p.time / 1000), value: p.equity })));
+    stratSeries.setData(result.equityCurve.map(function(p) { return { time: Math.floor(p.time / 1000), value: p.equity }; }));
+    bhSeries.setData(result.buyHold.equityCurve.map(function(p) { return { time: Math.floor(p.time / 1000), value: p.equity }; }));
     equityChart.timeScale().fitContent();
     document.getElementById('bt-legend-strat').textContent = result.runConfig.strategyName;
     document.getElementById('bt-chart-panel').style.display = '';
   }
 
   function renderTrades(trades, stratName) {
-    const titleEl = document.getElementById('bt-trades-title');
-    titleEl.textContent = `${stratName} — Simulated Trades (${trades.length})`;
-
+    var titleEl = document.getElementById('bt-trades-title');
+    titleEl.textContent = stratName + ' — Simulated Trades (' + trades.length + ')';
     if (!trades.length) {
-      document.getElementById('bt-trades-content').innerHTML =
-        '<p class="empty">No trades in this backtest.</p>';
+      document.getElementById('bt-trades-content').innerHTML = '<p class="empty">No trades in this backtest.</p>';
     } else {
-      const rows = trades.map(t =>
-        '<tr>' +
-        '<td class="text-muted">' + (t.index + 1) + '</td>' +
-        '<td><span class="badge badge-' + t.side + '">' + t.side.toUpperCase() + '</span></td>' +
-        '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.entryTime) + '</td>' +
-        '<td class="mono">$' + t.entryPrice.toFixed(2) + '</td>' +
-        '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.exitTime) + '</td>' +
-        '<td class="mono">$' + t.exitPrice.toFixed(2) + '</td>' +
-        '<td class="mono text-muted">' + t.size.toFixed(5) + '</td>' +
-        '<td class="mono">' + fmtPnl(t.pnl) + '</td>' +
-        '<td class="text-muted" style="font-size:12px">' + t.reason + '</td>' +
-        '</tr>'
-      ).join('');
+      var rows = trades.map(function(t) {
+        return '<tr>'
+          + '<td class="text-muted">' + (t.index + 1) + '</td>'
+          + '<td><span class="badge badge-' + t.side + '">' + t.side.toUpperCase() + '</span></td>'
+          + '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.entryTime) + '</td>'
+          + '<td class="mono">$' + t.entryPrice.toFixed(2) + '</td>'
+          + '<td class="mono text-muted" style="white-space:nowrap;font-size:11px">' + fmtTime(t.exitTime) + '</td>'
+          + '<td class="mono">$' + t.exitPrice.toFixed(2) + '</td>'
+          + '<td class="mono text-muted">' + t.size.toFixed(5) + '</td>'
+          + '<td class="mono">' + fmtPnl(t.pnl) + '</td>'
+          + '<td class="text-muted" style="font-size:12px">' + t.reason + '</td>'
+          + '</tr>';
+      }).join('');
       document.getElementById('bt-trades-content').innerHTML =
-        '<table><thead><tr>' +
-        '<th>#</th><th>Side</th><th>Entry Time</th><th>Entry $</th>' +
-        '<th>Exit Time</th><th>Exit $</th><th>Size</th><th>P&amp;L</th><th>Reason</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table>';
+        '<table><thead><tr>'
+        + '<th>#</th><th>Side</th><th>Entry Time</th><th>Entry $</th>'
+        + '<th>Exit Time</th><th>Exit $</th><th>Size</th><th>P&amp;L</th><th>Reason</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table>';
     }
     document.getElementById('bt-trades-wrap').style.display = '';
   }
 
   function renderFunding(funding, coin, interval) {
-    const fundingSection = document.getElementById('bt-funding-section');
+    var fundingSection = document.getElementById('bt-funding-section');
     if (!funding || funding.error) { fundingSection.innerHTML = ''; return; }
-    const f       = funding;
-    const retCls  = f.netReturnPct  >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const annCls  = f.annualisedPct >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const gfCls   = f.grossFundingPct >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const retSign = f.netReturnPct  >= 0 ? '+' : '';
-    const annSign = f.annualisedPct >= 0 ? '+' : '';
-    const gfSign  = f.grossFundingPct >= 0 ? '+' : '';
-    fundingSection.innerHTML =
-      '<div class="funding-card">' +
-        '<div class="funding-card-header">' +
-          'Funding Basis' +
-          '<span class="tag">Delta-Neutral</span>' +
-          '<span class="text-muted" style="font-weight:400;font-size:11px;margin-left:auto">' +
-            f.fetchedPeriods + ' hourly periods · ' + coin +
-          '</span>' +
-        '</div>' +
-        '<div class="funding-stats">' +
-          '<div class="funding-stat">' +
-            '<div class="card-label">Net Return</div>' +
-            '<div class="card-value mono" style="font-size:1.4rem"><span class="' + retCls + '">' + retSign + f.netReturnPct.toFixed(2) + '%</span></div>' +
-            '<div class="card-sub mono"><span class="' + retCls + '">' + (f.netPnlUsd >= 0 ? '+' : '') + '$' + f.netPnlUsd.toFixed(2) + '</span></div>' +
-          '</div>' +
-          '<div class="funding-stat">' +
-            '<div class="card-label">Annualised</div>' +
-            '<div class="card-value mono"><span class="' + annCls + '">' + annSign + f.annualisedPct.toFixed(1) + '%/yr</span></div>' +
-          '</div>' +
-          '<div class="funding-stat">' +
-            '<div class="card-label">Gross Funding</div>' +
-            '<div class="card-value mono"><span class="' + gfCls + '">' + gfSign + f.grossFundingPct.toFixed(2) + '%</span></div>' +
-          '</div>' +
-          '<div class="funding-stat">' +
-            '<div class="card-label">Fee Drag</div>' +
-            '<div class="card-value mono"><span class="pnl-neg">−' + f.feeDragPct.toFixed(3) + '%</span></div>' +
-            '<div class="card-sub">4 × 0.05% taker</div>' +
-          '</div>' +
-          '<div class="funding-stat">' +
-            '<div class="card-label">Periods</div>' +
-            '<div class="card-value">' + f.fundingPeriods.toLocaleString() + '</div>' +
-            '<div class="card-sub">hourly accrual</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="funding-caveat">' +
-          'Models perfect hedge; ignores liquidation risk on the short leg, spot-borrow/financing cost, ' +
-          'and assumes spot is available to hold. Real yield will be lower.' +
-        '</div>' +
-      '</div>';
+    var f      = funding;
+    var rCls   = f.netReturnPct  >= 0 ? 'val-pos' : 'val-neg';
+    var aCls   = f.annualisedPct >= 0 ? 'val-pos' : 'val-neg';
+    var gfCls  = f.grossFundingPct >= 0 ? 'val-pos' : 'val-neg';
+
+    var html = '<div style="margin-bottom:var(--sp-2)">'
+      + '<span class="section-title">Funding Basis</span>'
+      + '<span style="font-size:var(--t-label);color:var(--muted);margin-left:var(--sp-3)">'
+      + 'Delta-neutral hold · ' + f.fetchedPeriods + ' hourly periods · ' + coin
+      + '</span></div>';
+
+    html += '<div class="bt-stat-grid">';
+    html += scTile('Net Return',
+      (f.netReturnPct >= 0 ? '+' : '') + f.netReturnPct.toFixed(2) + '%',
+      rCls,
+      (f.netPnlUsd >= 0 ? '+' : '') + '$' + f.netPnlUsd.toFixed(2));
+    html += scTile('Annualised',
+      (f.annualisedPct >= 0 ? '+' : '') + f.annualisedPct.toFixed(1) + '%/yr',
+      aCls, '');
+    html += scTile('Gross Funding',
+      (f.grossFundingPct >= 0 ? '+' : '') + f.grossFundingPct.toFixed(2) + '%',
+      gfCls, '');
+    html += scTile('Fee Drag',
+      '−' + f.feeDragPct.toFixed(3) + '%',
+      'val-neg', '4 × 0.05% taker');
+    html += scTile('Periods',
+      f.fundingPeriods.toLocaleString(),
+      '', 'hourly accrual');
+    html += '</div>';
+
+    html += '<div class="caveat" style="margin:0 0 var(--sp-4)">'
+      + 'Models perfect hedge; ignores liquidation risk on the short leg, spot-borrow / financing cost, '
+      + 'and assumes spot is available to hold. Real yield will be lower.'
+      + '</div>';
+
+    fundingSection.innerHTML = html;
   }
 
-  // ── Run backtest ──────────────────────────────────────────────────────────
-  // Range selector toggle
+  // ── Range selector toggle ─────────────────────────────────────────────────
   document.getElementById('bt-range').addEventListener('change', function () {
     document.getElementById('bt-limit-field').style.display = this.value === 'custom' ? '' : 'none';
   });
@@ -752,54 +839,52 @@
       return { candles: parseInt(document.getElementById('bt-limit').value) || 1000 };
     }
     var days = parseInt(rangeVal) || 0;
-    if (days === 0) return { rangeDays: 730 }; // "All" → request 2 years, exchange caps to its depth
+    if (days === 0) return { rangeDays: 730 };
     return { rangeDays: days };
   }
 
-  async function run() {
-    var strategyId     = stratSel.value;
-    var coin           = coinSel.value;
-    var interval       = document.getElementById('bt-tf').value;
-    var rangeParams    = getRangeParams();
-    var initialEquity  = parseFloat(document.getElementById('bt-equity').value) || 1000;
-    var commissionPct  = parseFloat(document.getElementById('bt-commission').value) || 0.05;
-    var stopLossPct    = getEffectiveStop();
+  // ── Single run ────────────────────────────────────────────────────────────
+  function run() {
+    var strategyId    = stratSel.value;
+    var coin          = coinSel.value;
+    var interval      = document.getElementById('bt-tf').value;
+    var rangeParams   = getRangeParams();
+    var initialEquity = parseFloat(document.getElementById('bt-equity').value) || 1000;
+    var commissionPct = parseFloat(document.getElementById('bt-commission').value) || 0.05;
+    var stopLossPct   = getEffectiveStop();
 
-    // Collect strategy params from dynamic inputs
     var strategyParams = {};
     paramsEl.querySelectorAll('input[name]').forEach(function (inp) {
       var v = parseFloat(inp.value);
       if (!isNaN(v)) strategyParams[inp.name] = v;
     });
 
-    runBtn.disabled    = true;
+    runBtn.disabled = true;
     statusEl.textContent = 'Fetching candles & running…';
 
     if (!coin) { statusEl.textContent = 'Select a coin first'; runBtn.disabled = false; return; }
 
-    try {
-      var body = Object.assign({ strategyId: strategyId, coin: coin, interval: interval, strategyParams: strategyParams, initialEquity: initialEquity, commissionPct: commissionPct, stopLossPct: stopLossPct }, rangeParams);
-      var [res, fundingRes] = await Promise.all([
-        fetch('/api/backtest/run', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify(body),
-        }),
-        fetch('/api/backtest/funding?interval=' + interval + '&limit=' + (rangeParams.candles || 2000)),
-      ]);
+    var body = Object.assign({ strategyId: strategyId, coin: coin, interval: interval, strategyParams: strategyParams, initialEquity: initialEquity, commissionPct: commissionPct, stopLossPct: stopLossPct }, rangeParams);
 
+    Promise.all([
+      fetch('/api/backtest/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      fetch('/api/backtest/funding?interval=' + interval + '&limit=' + (rangeParams.candles || 2000)),
+    ]).then(function(responses) {
+      var res        = responses[0];
+      var fundingRes = responses[1];
       if (!res.ok) {
-        var errText = await res.text();
-        try { var errJson = JSON.parse(errText); throw new Error(errJson.error || res.statusText); }
-        catch (pe) { if (pe instanceof SyntaxError) throw new Error('Server error (HTTP ' + res.status + ')'); throw pe; }
+        return res.text().then(function(t) {
+          try { var j = JSON.parse(t); throw new Error(j.error || res.statusText); }
+          catch (pe) { if (pe instanceof SyntaxError) throw new Error('Server error (HTTP ' + res.status + ')'); throw pe; }
+        });
       }
-      var result  = await res.json();
-      var funding = fundingRes.ok ? await fundingRes.json() : null;
-
+      return Promise.all([res.json(), fundingRes.ok ? fundingRes.json() : Promise.resolve(null)]);
+    }).then(function(data) {
+      var result  = data[0];
+      var funding = data[1];
       if (result.error) throw new Error(result.error);
 
       statusEl.textContent = result.runConfig.fetchedCandles.toLocaleString() + ' candles · ' + interval;
-
       document.getElementById('bt-placeholder').style.display = 'none';
 
       renderRunConfig(result.runConfig);
@@ -807,30 +892,29 @@
       renderChart(result);
       renderTrades(result.trades, result.runConfig.strategyName);
       renderFunding(funding, coin, interval);
-
-    } catch (err) {
+    }).catch(function(err) {
       statusEl.textContent = 'Error: ' + err.message;
-    } finally {
+    }).finally(function() {
       runBtn.disabled = false;
-    }
+    });
   }
 
   // ── Mode toggle ───────────────────────────────────────────────────────────
-  document.querySelectorAll('input[name="bt-mode"]').forEach(radio => {
+  document.querySelectorAll('input[name="bt-mode"]').forEach(function(radio) {
     radio.addEventListener('change', function () {
-      const isWF = this.value === 'walkforward';
+      var isWF = this.value === 'walkforward';
       document.getElementById('wf-controls').style.display = isWF ? '' : 'none';
       runBtn.textContent = isWF ? 'Run Walk-Forward' : 'Run Backtest';
     });
   });
 
   // ── Walk-forward chart (lazy init) ────────────────────────────────────────
-  let wfChart = null;
-  let wfSeries = null;
+  var wfChart = null;
+  var wfSeries = null;
 
   function initWFChart() {
     if (wfChart) return;
-    const border = getCssVar('--border') || '#30363d';
+    var border = getCssVar('--border') || '#30363d';
     wfChart = LC.createChart(document.getElementById('wf-equity-chart'), {
       layout: { background: { type: 'solid', color: getCssVar('--surface') || '#161b22' }, textColor: getCssVar('--muted') || '#8b949e', attributionLogo: false },
       grid: { vertLines: { color: border }, horzLines: { color: border } },
@@ -843,26 +927,25 @@
       priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
     });
     if (typeof ResizeObserver !== 'undefined') {
-      const ro = new ResizeObserver(() => wfChart.applyOptions({ width: 0 }));
-      ro.observe(document.getElementById('wf-chart-panel'));
+      var ro2 = new ResizeObserver(function() { wfChart.applyOptions({ width: 0 }); });
+      ro2.observe(document.getElementById('wf-chart-panel'));
     }
   }
 
   // ── Walk-forward run ──────────────────────────────────────────────────────
-  async function runWalkForward() {
-    var strategyId  = stratSel.value;
-    var coin        = coinSel.value;
-    var interval    = document.getElementById('bt-tf').value;
-    var rangeParams = getRangeParams();
-    var windows     = parseInt(document.getElementById('wf-windows').value) || 5;
-    var optimiseBy  = document.getElementById('wf-metric').value;
+  function runWalkForward() {
+    var strategyId    = stratSel.value;
+    var coin          = coinSel.value;
+    var interval      = document.getElementById('bt-tf').value;
+    var rangeParams   = getRangeParams();
+    var windows       = parseInt(document.getElementById('wf-windows').value) || 5;
+    var optimiseBy    = document.getElementById('wf-metric').value;
     var initialEquity = parseFloat(document.getElementById('bt-equity').value) || 1000;
     var commissionPct = parseFloat(document.getElementById('bt-commission').value) || 0.05;
     var stopLossPct   = getEffectiveStop();
 
     if (!coin) { statusEl.textContent = 'Select a coin first'; runBtn.disabled = false; return; }
 
-    // Collect sidebar strategy params so fixed params thread through unchanged
     var strategyParams = {};
     paramsEl.querySelectorAll('input[name]').forEach(function (inp) {
       var v = parseFloat(inp.value);
@@ -872,90 +955,167 @@
     runBtn.disabled = true;
     statusEl.textContent = 'Running walk-forward (' + windows + ' windows)…';
 
-    try {
-      var wfBody = Object.assign({
-        strategyId: strategyId, coin: coin, interval: interval, windows: windows,
-        optimiseBy: optimiseBy, commissionPct: commissionPct, stopLossPct: stopLossPct, initialEquity: initialEquity,
-        strategyParams: strategyParams,
-      }, rangeParams.candles ? { totalCandles: rangeParams.candles } : { rangeDays: rangeParams.rangeDays });
-      var resp = await fetch('/api/backtest/walkforward', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(wfBody),
-      });
+    var wfBody = Object.assign({
+      strategyId: strategyId, coin: coin, interval: interval, windows: windows,
+      optimiseBy: optimiseBy, commissionPct: commissionPct, stopLossPct: stopLossPct,
+      initialEquity: initialEquity, strategyParams: strategyParams,
+    }, rangeParams.candles ? { totalCandles: rangeParams.candles } : { rangeDays: rangeParams.rangeDays });
+
+    fetch('/api/backtest/walkforward', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(wfBody),
+    }).then(function(resp) {
       if (!resp.ok) {
-        var wfErrText = await resp.text();
-        try { var wfErrJson = JSON.parse(wfErrText); throw new Error(wfErrJson.error || resp.statusText); }
-        catch (wpe) { if (wpe instanceof SyntaxError) throw new Error('Server error (HTTP ' + resp.status + ')'); throw wpe; }
+        return resp.text().then(function(t) {
+          try { var j = JSON.parse(t); throw new Error(j.error || resp.statusText); }
+          catch (wpe) { if (wpe instanceof SyntaxError) throw new Error('Server error (HTTP ' + resp.status + ')'); throw wpe; }
+        });
       }
-      var data = await resp.json();
+      return resp.json();
+    }).then(function(data) {
       if (data.error) throw new Error(data.error);
 
       statusEl.textContent = data.windows.length + ' OOS windows completed';
       document.getElementById('bt-placeholder').style.display = 'none';
       document.getElementById('wf-results').style.display = '';
 
-      // Headline
-      const agg  = data.aggregate;
-      const warn = agg.curveFitWarning;
-      const moos  = agg.meanOosSharpe.toFixed(3);
-      const mis   = agg.meanIsSharpe.toFixed(3);
-      const oosCls = agg.meanOosSharpe >= 0 ? 'pnl-pos' : 'pnl-neg';
-      document.getElementById('wf-headline').innerHTML =
-        `<div class="wf-stat"><span class="wf-stat-lbl">Mean OOS Sharpe (honest number)</span><span class="wf-stat-val ${oosCls}">${moos}</span></div>` +
-        `<div class="wf-stat"><span class="wf-stat-lbl">Mean IS Sharpe</span><span class="wf-stat-val">${mis}</span></div>` +
-        `<div class="wf-stat"><span class="wf-stat-lbl">OOS windows beating B&amp;H</span><span class="wf-stat-val">${agg.pctBeatBH.toFixed(0)}%</span></div>` +
-        (warn ? `<div class="wf-curve-warn">⚠ Curve-fit warning: OOS Sharpe (${moos}) is less than half of IS Sharpe (${mis}). The strategy may be over-optimised to historical data.</div>` : '');
+      // ── WF headline: signal-card tiles ─────────────────────────────────
+      var agg  = data.aggregate;
+      var warn = agg.curveFitWarning;
+      var moos = agg.meanOosSharpe.toFixed(3);
+      var mis  = agg.meanIsSharpe.toFixed(3);
+      var oosCls2 = agg.meanOosSharpe >= 0 ? 'val-pos' : 'val-neg';
+      var beatCount = data.windows.filter(function(r) { return r.beatsBH; }).length;
 
-      // Table
-      const rows = data.windows.map(w => {
-        const paramStr = Object.entries(w.bestParams || {}).map(([k, v]) =>
-          `<span class="param-pill">${k}=${v}</span>`
-        ).join('');
-        const oosSign = w.oosMetrics.returnPct >= 0 ? '+' : '';
-        const isSign  = w.isMetrics.returnPct  >= 0 ? '+' : '';
-        const gap     = (w.isMetrics.sharpeRatio - w.oosMetrics.sharpeRatio).toFixed(3);
-        const gapCls  = parseFloat(gap) < 0.5 ? 'pnl-pos' : 'pnl-neg';
-        const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
-        const sc = w.signalCoverage;
-        const isPct  = sc && sc.isTotal  > 0 ? Math.round(sc.isFilled  / sc.isTotal  * 100) : 0;
-        const oosPct = sc && sc.oosTotal > 0 ? Math.round(sc.oosFilled / sc.oosTotal * 100) : 0;
-        const sigCls = (isPct === 0 && oosPct === 0) ? 'color:var(--muted)' : '';
-        const sigCell = sc
-          ? `<span style="${sigCls}" title="IS: ${sc.isFilled}/${sc.isTotal} OOS: ${sc.oosFilled}/${sc.oosTotal}">IS ${isPct}% / OOS ${oosPct}%</span>`
+      var headlineHtml = '<div class="wf-tiles-row">'
+        + '<div class="signal-card">'
+        +   '<div class="sc-header"><span class="sc-label">Mean OOS Sharpe</span><span style="margin-left:auto;font-size:var(--t-label);color:var(--muted)">honest number</span></div>'
+        +   '<div class="wf-hero-val sc-value ' + oosCls2 + '">' + moos + '</div>'
+        +   '<div class="sc-subline">out-of-sample · not optimised</div>'
+        + '</div>'
+        + '<div class="signal-card">'
+        +   '<div class="sc-header"><span class="sc-label">Mean IS Sharpe</span></div>'
+        +   '<div class="sc-value">' + mis + '</div>'
+        +   '<div class="sc-subline">in-sample · optimised</div>'
+        + '</div>'
+        + '<div class="signal-card">'
+        +   '<div class="sc-header"><span class="sc-label">Windows Beat B&amp;H</span></div>'
+        +   '<div class="sc-value">' + agg.pctBeatBH.toFixed(0) + '%</div>'
+        +   '<div class="sc-subline">' + beatCount + ' of ' + data.windows.length + ' OOS windows</div>'
+        + '</div>'
+        + '</div>';
+
+      if (warn) {
+        headlineHtml += '<div class="caveat" style="margin:0 0 var(--sp-4)">'
+          + '<strong>&#9888; Curve-fit warning:</strong> OOS Sharpe (' + moos + ') is less than half of IS Sharpe (' + mis + '). The strategy may be over-optimised to historical data.'
+          + '</div>';
+      }
+
+      // Signal-coverage warning for WF
+      if (data.signalCoverage && data.signalCoverage.length > 0) {
+        var wfZero = data.signalCoverage.filter(function(sc) { return sc.filled === 0 && sc.total > 0; });
+        if (wfZero.length > 0) {
+          headlineHtml += '<div class="caveat" style="margin:0 0 var(--sp-4)">'
+            + '<strong>&#9888; 0% signal coverage</strong> for '
+            + wfZero.map(function(sc) { return sc.key; }).join(', ')
+            + ' — signal strategies require backfilled Market data (HYPE).'
+            + '</div>';
+        }
+      }
+
+      document.getElementById('wf-headline').innerHTML = headlineHtml;
+
+      // ── WF table rows: 7 primary cols + expandable IS detail ───────────
+      var rows = data.windows.map(function(w) {
+        var oosSign = w.oosMetrics.returnPct >= 0 ? '+' : '';
+        var isSign  = w.isMetrics.returnPct  >= 0 ? '+' : '';
+        var gap     = (w.isMetrics.sharpeRatio - w.oosMetrics.sharpeRatio).toFixed(3);
+        var gapCls  = parseFloat(gap) < 0.5 ? 'pnl-pos' : 'pnl-neg';
+        var fmtDate = function(ts) { return ts ? new Date(ts).toLocaleDateString() : '—'; };
+
+        var sc     = w.signalCoverage;
+        var isPct  = sc && sc.isTotal  > 0 ? Math.round(sc.isFilled  / sc.isTotal  * 100) : 0;
+        var oosPct = sc && sc.oosTotal > 0 ? Math.round(sc.oosFilled / sc.oosTotal * 100) : 0;
+        var sigStyle = (isPct === 0 && oosPct === 0) ? 'color:var(--muted)' : '';
+        var sigCell  = sc
+          ? '<span style="' + sigStyle + '" title="IS: ' + sc.isFilled + '/' + sc.isTotal + ' OOS: ' + sc.oosFilled + '/' + sc.oosTotal + '">'
+            + 'IS ' + isPct + '% / OOS ' + oosPct + '%</span>'
           : '—';
-        return `<tr class="${w.beatsBH ? 'wf-beats' : 'wf-lags'}">
-          <td>#${w.window}</td>
-          <td>${fmtDate(w.isStart)}–${fmtDate(w.isEnd)} (${w.isCandles})</td>
-          <td style="max-width:160px;white-space:normal">${paramStr || '—'}</td>
-          <td>${w.isMetrics.sharpeRatio.toFixed(3)}</td>
-          <td class="${w.isMetrics.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg'}">${isSign}${w.isMetrics.returnPct.toFixed(2)}%</td>
-          <td>${fmtDate(w.oosStart)}–${fmtDate(w.oosEnd)} (${w.oosCandles})</td>
-          <td class="${w.oosMetrics.sharpeRatio >= 0 ? 'pnl-pos' : 'pnl-neg'}">${w.oosMetrics.sharpeRatio.toFixed(3)}</td>
-          <td class="${w.oosMetrics.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg'}">${oosSign}${w.oosMetrics.returnPct.toFixed(2)}%</td>
-          <td class="${parseFloat(w.bhOosReturnPct) >= 0 ? 'pnl-pos' : 'pnl-neg'}">${(w.bhOosReturnPct >= 0 ? '+' : '')}${w.bhOosReturnPct.toFixed(2)}%</td>
-          <td class="${gapCls}">${gap}</td>
-          <td>${sigCell}</td>
-        </tr>`;
+
+        var paramStr = Object.entries(w.bestParams || {}).map(function(kv) {
+          return '<span class="param-pill">' + kv[0] + '=' + kv[1] + '</span>';
+        }).join('');
+
+        var mainRow = '<tr class="wf-row-main ' + (w.beatsBH ? 'wf-beats' : 'wf-lags') + '">'
+          + '<td><button class="wf-expand-btn" data-win="' + w.window + '">&#9658;</button>#' + w.window + '</td>'
+          + '<td>' + fmtDate(w.oosStart) + '–' + fmtDate(w.oosEnd)
+          +   ' <span class="text-muted" style="font-family:inherit">(' + w.oosCandles + ')</span></td>'
+          + '<td class="' + (w.oosMetrics.sharpeRatio >= 0 ? 'pnl-pos' : 'pnl-neg') + '">' + w.oosMetrics.sharpeRatio.toFixed(3) + '</td>'
+          + '<td class="' + (w.oosMetrics.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg') + '">' + oosSign + w.oosMetrics.returnPct.toFixed(2) + '%</td>'
+          + '<td class="' + (w.bhOosReturnPct >= 0 ? 'pnl-pos' : 'pnl-neg') + '">' + (w.bhOosReturnPct >= 0 ? '+' : '') + w.bhOosReturnPct.toFixed(2) + '%</td>'
+          + '<td class="' + gapCls + '">' + gap + '</td>'
+          + '<td>' + sigCell + '</td>'
+          + '</tr>';
+
+        var detailRow = '<tr id="wf-detail-' + w.window + '" class="wf-row-detail" style="display:none">'
+          + '<td colspan="7">'
+          + '<div class="wf-detail-inner">'
+          + '<div class="wf-detail-item">'
+          +   '<span class="wf-detail-lbl">IS Period</span>'
+          +   '<span class="wf-detail-val">' + fmtDate(w.isStart) + '–' + fmtDate(w.isEnd) + ' (' + w.isCandles + ')</span>'
+          + '</div>'
+          + '<div class="wf-detail-item">'
+          +   '<span class="wf-detail-lbl">IS Sharpe</span>'
+          +   '<span class="wf-detail-val">' + w.isMetrics.sharpeRatio.toFixed(3) + '</span>'
+          + '</div>'
+          + '<div class="wf-detail-item">'
+          +   '<span class="wf-detail-lbl">IS Return</span>'
+          +   '<span class="wf-detail-val ' + (w.isMetrics.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg') + '">'
+          +     isSign + w.isMetrics.returnPct.toFixed(2) + '%</span>'
+          + '</div>'
+          + '<div class="wf-detail-item">'
+          +   '<span class="wf-detail-lbl">IS Trades</span>'
+          +   '<span class="wf-detail-val">' + w.isMetrics.tradeCount + '</span>'
+          + '</div>'
+          + (paramStr ? '<div class="wf-detail-item wf-detail-params">'
+          +   '<span class="wf-detail-lbl">Best Params</span>'
+          +   '<div>' + paramStr + '</div>'
+          + '</div>' : '')
+          + '</div></td></tr>';
+
+        return mainRow + detailRow;
       }).join('');
+
       document.getElementById('wf-tbody').innerHTML = rows;
+
+      // Expand-toggle handler (event delegation, one listener for all rows)
+      document.getElementById('wf-tbody').addEventListener('click', function(e) {
+        var btn = e.target.closest('.wf-expand-btn');
+        if (!btn) return;
+        var det = document.getElementById('wf-detail-' + btn.dataset.win);
+        if (!det) return;
+        var open = det.style.display !== 'none' && det.style.display !== '';
+        det.style.display = open ? 'none' : '';
+        btn.innerHTML = open ? '&#9658;' : '&#9660;';
+      });
 
       // Stitched equity chart
       if (data.stitchedEquity && data.stitchedEquity.length > 0) {
         initWFChart();
-        wfSeries.setData(data.stitchedEquity.map(p => ({ time: Math.floor(p.time / 1000), value: p.equity })));
+        wfSeries.setData(data.stitchedEquity.map(function(p) { return { time: Math.floor(p.time / 1000), value: p.equity }; }));
         wfChart.timeScale().fitContent();
       }
 
-    } catch (err) {
+    }).catch(function(err) {
       statusEl.textContent = 'Error: ' + err.message;
-    } finally {
+    }).finally(function() {
       runBtn.disabled = false;
-    }
+    });
   }
 
-  runBtn.addEventListener('click', () => {
-    const mode = document.querySelector('input[name="bt-mode"]:checked').value;
+  runBtn.addEventListener('click', function() {
+    var mode = document.querySelector('input[name="bt-mode"]:checked').value;
     if (mode === 'walkforward') runWalkForward();
     else run();
   });
