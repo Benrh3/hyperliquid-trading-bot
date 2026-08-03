@@ -1109,6 +1109,26 @@ export function createRouter(
         return;
       }
 
+      // Attach Market signals ONCE to the full candle array BEFORE slicing into IS/OOS.
+      // Slicing preserves object references, so signal data on each candle survives into
+      // every window segment and warmup prepend without re-attachment.
+      let wfSignalCoverage: { key: string; filled: number; total: number }[] = [];
+      if (marketStore && coin.toUpperCase() === "HYPE") {
+        try {
+          const { loadManifest } = await import("../market/manifest.js");
+          const manifest   = loadManifest();
+          const signalKeys = manifest.metrics
+            .filter((m) => m.signalForScoring)
+            .map((m) => m.key);
+          const signalMap  = new Map<string, Array<{ capturedAt: number; value: number | null }>>();
+          for (const key of signalKeys) {
+            const series = marketStore.getMetricTimeSeries("HYPE", key);
+            if (series.length > 0) signalMap.set(key, series);
+          }
+          wfSignalCoverage = attachSignals(allCandles, signalMap);
+        } catch { /* signal attachment is best-effort */ }
+      }
+
       const nWin    = Math.min(Math.max(parseInt(String(windows)) || 5, 2), 10);
       const segSize = Math.floor(allCandles.length / nWin);
       // Base opts without stopLossPct — resolved per run via resolveEffectiveStop.
@@ -1197,6 +1217,18 @@ export function createRouter(
           ? (rawOos[rawOos.length - 1].close - rawOos[0].close) / rawOos[0].close * 100
           : 0;
 
+        // Per-window signal coverage: count candles that have at least one signal key.
+        // Signals are attached to objects in allCandles, so sliced arrays share the same
+        // references — no re-attachment needed.
+        const countFilled = (arr: typeof allCandles) =>
+          arr.filter(c => c.signals !== undefined && Object.keys(c.signals).length > 0).length;
+        const winSignalCoverage = {
+          isFilled:  countFilled(isSamples),
+          isTotal:   isSamples.length,
+          oosFilled: countFilled(rawOos),
+          oosTotal:  rawOos.length,
+        };
+
         windowResults.push({
           window:     i,
           isStart:    isSamples[0]?.timestamp,
@@ -1210,6 +1242,7 @@ export function createRouter(
           oosMetrics: { sharpeRatio: oosResult.sharpeRatio, returnPct: oosReturn, tradeCount: oosResult.tradeCount },
           bhOosReturnPct: bhOos,
           beatsBH:    oosReturn > bhOos,
+          signalCoverage: winSignalCoverage,
         });
       }
 
@@ -1228,6 +1261,7 @@ export function createRouter(
         windows: windowResults,
         aggregate: { meanIsSharpe, meanOosSharpe, pctBeatBH, curveFitWarning: curveFit },
         stitchedEquity,
+        signalCoverage: wfSignalCoverage,
         runConfig: {
           strategyId, strategyName: entry.displayName, coin, interval,
           totalCandles: allCandles.length, windows: nWin, optimiseBy, initialEquity,

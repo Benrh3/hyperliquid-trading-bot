@@ -380,6 +380,7 @@
               <th>OOS Return</th>
               <th>B&amp;H</th>
               <th>Gap (IS−OOS)</th>
+              <th>Signals</th>
             </tr>
           </thead>
           <tbody id="wf-tbody"></tbody>
@@ -916,6 +917,13 @@
         const gap     = (w.isMetrics.sharpeRatio - w.oosMetrics.sharpeRatio).toFixed(3);
         const gapCls  = parseFloat(gap) < 0.5 ? 'pnl-pos' : 'pnl-neg';
         const fmtDate = ts => ts ? new Date(ts).toLocaleDateString() : '—';
+        const sc = w.signalCoverage;
+        const isPct  = sc && sc.isTotal  > 0 ? Math.round(sc.isFilled  / sc.isTotal  * 100) : 0;
+        const oosPct = sc && sc.oosTotal > 0 ? Math.round(sc.oosFilled / sc.oosTotal * 100) : 0;
+        const sigCls = (isPct === 0 && oosPct === 0) ? 'color:var(--muted)' : '';
+        const sigCell = sc
+          ? `<span style="${sigCls}" title="IS: ${sc.isFilled}/${sc.isTotal} OOS: ${sc.oosFilled}/${sc.oosTotal}">IS ${isPct}% / OOS ${oosPct}%</span>`
+          : '—';
         return `<tr class="${w.beatsBH ? 'wf-beats' : 'wf-lags'}">
           <td>#${w.window}</td>
           <td>${fmtDate(w.isStart)}–${fmtDate(w.isEnd)} (${w.isCandles})</td>
@@ -927,6 +935,7 @@
           <td class="${w.oosMetrics.returnPct >= 0 ? 'pnl-pos' : 'pnl-neg'}">${oosSign}${w.oosMetrics.returnPct.toFixed(2)}%</td>
           <td class="${parseFloat(w.bhOosReturnPct) >= 0 ? 'pnl-pos' : 'pnl-neg'}">${(w.bhOosReturnPct >= 0 ? '+' : '')}${w.bhOosReturnPct.toFixed(2)}%</td>
           <td class="${gapCls}">${gap}</td>
+          <td>${sigCell}</td>
         </tr>`;
       }).join('');
       document.getElementById('wf-tbody').innerHTML = rows;
