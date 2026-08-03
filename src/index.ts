@@ -30,6 +30,7 @@ import { STRATEGY_REGISTRY } from "./strategy/registry.js";
 import { RiskManager } from "./risk.js";
 import Database from "better-sqlite3";
 import { CvStateStore } from "./cv-state-store.js";
+import { LiveSignalProvider } from "./market/live-signal-provider.js";
 import { initNotifications } from "./notifications.js";
 import type { Signal } from "./events.js";
 import type { Strategy } from "./strategy/base.js";
@@ -96,7 +97,15 @@ const cvDb = new Database("data/bot.db");
 cvDb.pragma("journal_mode = WAL");
 cvDb.pragma("busy_timeout = 5000");
 const cvStateStore = new CvStateStore(cvDb);
-const laneManager = new BotManager(hlVenue, dydxVenue, logger, cvStateStore);
+
+// Separate WAL-mode connection for live signal lookups (shadow bots).
+// WAL allows multiple readers alongside the writer (snapshot-poller) without blocking.
+const signalDb = new Database("data/bot.db");
+signalDb.pragma("journal_mode = WAL");
+signalDb.pragma("busy_timeout = 5000");
+const signalProvider = new LiveSignalProvider(signalDb);
+
+const laneManager = new BotManager(hlVenue, dydxVenue, logger, cvStateStore, signalProvider);
 
 // 6. dYdX funding poller (cross-exchange comparison on Strategies page)
 const dydxPoller = new DydxFundingPoller();

@@ -594,8 +594,9 @@ export function createRouter(
     res.render("bots", {
       network:  config.exchange.network,
       coin:     config.exchange.coin,
-      // Exclude backtest-only strategies — they cannot be deployed as bots
-      registry: STRATEGY_REGISTRY.filter(e => !e.requiresSignals),
+      // Signal strategies are included: shadow (paper-only) mode is now supported.
+      // Live mode is blocked in addBot() for requiresSignals entries.
+      registry: STRATEGY_REGISTRY.filter(e => e.isCandleStrategy || e.id === "cross-venue-funding-basis"),
     });
   });
 

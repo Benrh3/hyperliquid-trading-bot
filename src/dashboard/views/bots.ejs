@@ -89,7 +89,13 @@
     border: 1px solid var(--border);
     padding: 1px var(--sp-2); border-radius: 3px;
   }
-  .bc-live { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--green); }
+  .bc-live   { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--green); }
+  .bc-shadow {
+    font-size: 10px; font-weight: 700; letter-spacing: .05em;
+    padding: 2px 6px; border-radius: 99px;
+    background: rgba(129,140,248,.12); color: var(--accent);
+    border: 1px solid rgba(129,140,248,.25);
+  }
   .bc-status {
     margin-left: auto; font-size: 10px; font-weight: 600;
     letter-spacing: .03em; padding: 2px var(--sp-2); border-radius: 99px;
@@ -423,6 +429,7 @@
 
   const IS_ADMIN = <%= isAdmin %>;
   const STRATEGY_SUMMARIES = <%- JSON.stringify(Object.fromEntries(registry.map(e => [e.id, e.summary]))) %>;
+  const STRATEGY_REQUIRES_SIGNALS = <%- JSON.stringify(Object.fromEntries(registry.map(e => [e.id, !!e.requiresSignals]))) %>;
 
   // ── State ─────────────────────────────────────────────────────────────────
   let allBots    = [];   // most recent /api/bots response (used by modal)
@@ -500,6 +507,9 @@
   }
 
   function renderStandardDetail(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml) {
+    const signalAgeHtml = b.lastSignalCapturedAt
+      ? `<div class="bc-row"><span class="bc-lbl">Signal age</span><span class="bc-val" style="color:var(--muted)">${timeAgo(b.lastSignalCapturedAt)}</span></div>`
+      : '';
     return `
       ${entryHtml}
       <div class="bc-row"><span class="bc-lbl">Current price</span><span class="bc-val">${fmtPrice(b.lastPrice)}</span></div>
@@ -508,6 +518,7 @@
       <div class="bc-divider"></div>
       <div class="bc-row"><span class="bc-lbl">Realised P&amp;L</span><span class="bc-val ${pnlCls(b.realisedPnl || 0)}">${fmtPnl(b.realisedPnl || 0)}</span></div>
       <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.realisedTrades || 0}</span></div>
+      ${signalAgeHtml}
       <div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">${fmtRate(b.fundingRate)}</span></div>
       ${isFunding && b.fundingDirection ? `
       <div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:var(--t-label)">${esc(b.fundingDirection)}</span></div>
@@ -611,7 +622,9 @@
       ? `<div class="bc-row"><span class="bc-lbl">Time in pos</span><span class="bc-val">${timeSince(pos.entryTime)}</span></div>`
       : '';
 
-    const liveBadge   = b.live ? '<span class="bc-live">LIVE</span>' : '';
+    const liveBadge    = b.live ? '<span class="bc-live">LIVE</span>' : '';
+    const isShadow     = !b.live && !!STRATEGY_REQUIRES_SIGNALS[b.strategyId];
+    const shadowBadge  = isShadow ? '<span class="bc-shadow">SHADOW</span>' : '';
     const statusLabel = b.status === 'running' ? 'Running' : b.status === 'error' ? 'Error' : 'Paused';
     const statusCls   = b.status === 'running' ? 'running' : b.status === 'error' ? 'error' : 'paused';
     const tfBadge     = b.timeframe !== '—' ? `<span class="bc-tf">${b.timeframe}</span>` : '';
@@ -640,7 +653,7 @@
       <div class="bc-header">
         <span class="bc-name">${b.displayName}</span>
         <span class="bc-coin">${b.coin}</span>
-        ${tfBadge}${liveBadge}
+        ${tfBadge}${liveBadge}${shadowBadge}
         <span class="bc-status ${statusCls}">${statusLabel}</span>
       </div>
       ${errorBanner}${reconcileBanner}
@@ -833,6 +846,16 @@
 
   function populateCoinDropdown() {
     const crossVenue = isCrossVenueSelected();
+    const stratId = document.getElementById('m-strategy').value;
+    const requiresSignals = STRATEGY_REQUIRES_SIGNALS[stratId] || false;
+
+    if (requiresSignals) {
+      mCoin.innerHTML = '<option value="HYPE">HYPE</option>';
+      mCoin.value = 'HYPE';
+      mCoinH.textContent = 'Signal strategies are HYPE-only — all Market signals are HYPE metrics.';
+      checkLiveConflict();
+      return;
+    }
 
     if (crossVenue) {
       // Intersection of HL top coins and dYdX universe
@@ -886,11 +909,23 @@
     mNotionalF.style.display    = crossVenue ? '' : 'none';
     mAcctEquityF.style.display  = crossVenue ? 'none' : '';
 
-    // ── Live mode hint text ────────────────────────────────────────────────
-    if (crossVenue) {
+    // ── Live mode hint text / lock for signal strategies ─────────────────
+    const stratId = document.getElementById('m-strategy').value;
+    const requiresSignals = STRATEGY_REQUIRES_SIGNALS[stratId] || false;
+    if (requiresSignals) {
+      mLive.checked  = false;
+      mLive.disabled = true;
+      mLiveH.textContent = 'Shadow mode only — live deployment is not available for signal-driven strategies.';
+      mLiveW.textContent = 'This strategy reads Market Signal data and can only run as a shadow (paper) bot.';
+      mLiveW.style.display = 'block';
+    } else if (crossVenue) {
+      mLive.disabled = false;
+      mLiveW.style.display = 'none';
       mLiveH.textContent =
         'Switch to LIVE mode (places real orders on Hyperliquid and dYdX testnet — requires DYDX_TESTNET_MNEMONIC)';
     } else {
+      mLive.disabled = false;
+      mLiveW.style.display = 'none';
       mLiveH.textContent = 'Switch to LIVE mode (places real testnet orders on Hyperliquid)';
     }
 

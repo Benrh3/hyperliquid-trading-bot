@@ -16,10 +16,11 @@ import { STRATEGY_REGISTRY, getStrategyEntry } from "./strategy/registry.js";
 import { CrossVenueFundingBasis } from "./cross-venue-funding.js";
 import type { ExecutionMode } from "./cross-venue-funding.js";
 import type { Strategy } from "./strategy/base.js";
-import type { Candle, Signal } from "./events.js";
+import type { Candle, Signal, TradeResult } from "./events.js";
 import type { Venue } from "./venue.js";
 import type { Logger } from "./logger.js";
 import type { CvStateStore } from "./cv-state-store.js";
+import { LiveSignalProvider } from "./market/live-signal-provider.js";
 
 const BOTS_PATH      = resolve(process.cwd(), "config", "bots.json");
 const INITIAL_EQUITY = 1000;
@@ -108,6 +109,8 @@ export interface BotState {
   hadRecentMismatch?:  boolean;
   /** Human-readable description of the most recent reconcile event. */
   lastReconcileEvent?: string;
+  /** For shadow (requiresSignals paper) bots: capturedAt of the last signal value used. */
+  lastSignalCapturedAt?: number;
 }
 
 // ── Orphaned position (on exchange, no live bot owns it) ──────────────────────
@@ -165,6 +168,8 @@ interface BotRuntime {
   error?:             string;
   hadRecentMismatch?: boolean;
   lastReconcileEvent?: string;
+  /** For shadow (requiresSignals paper) bots: capturedAt of the last signal value used. */
+  lastSignalCapturedAt?: number;
   /**
    * Set to true at the very start of deleteBot() — before any async cleanup.
    * Every in-flight async method (executeLiveSignal/Open/Close, reconcileBot)
@@ -205,12 +210,15 @@ export class BotManager {
   private orphans = new Map<string, OrphanedPosition>();
   /** Reconcile loop timer handle. */
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
+  /** Live signal provider for shadow (requiresSignals paper) bots. */
+  private readonly signalProvider?: LiveSignalProvider;
 
-  constructor(venue?: Venue, dydxVenue?: Venue, logger?: Logger, cvStateStore?: CvStateStore) {
-    this.venue        = venue;
-    this.dydxVenue    = dydxVenue;
-    this.logger       = logger;
-    this.cvStateStore = cvStateStore;
+  constructor(venue?: Venue, dydxVenue?: Venue, logger?: Logger, cvStateStore?: CvStateStore, signalProvider?: LiveSignalProvider) {
+    this.venue          = venue;
+    this.dydxVenue      = dydxVenue;
+    this.logger         = logger;
+    this.cvStateStore   = cvStateStore;
+    this.signalProvider = signalProvider;
     const isTestnet = config.exchange.network === "testnet";
     this.info        = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
     this.botsFile    = this.loadFile();
@@ -383,8 +391,9 @@ export class BotManager {
         hlClosedPnl:   bot.hlClosedPnl,
         startedAt:     bot.startedAt,
         error:         bot.error,
-        hadRecentMismatch:  bot.hadRecentMismatch,
-        lastReconcileEvent: bot.lastReconcileEvent,
+        hadRecentMismatch:   bot.hadRecentMismatch,
+        lastReconcileEvent:  bot.lastReconcileEvent,
+        lastSignalCapturedAt: bot.lastSignalCapturedAt,
       });
     }
 
@@ -703,6 +712,38 @@ export class BotManager {
     cd.hist1m.push(candle);
     if (cd.hist1m.length > MAX_HISTORY) cd.hist1m.shift();
 
+    // ── Signal injection for 1m shadow bots ────────────────────────────────
+    const signal1mCutoff = candle.timestamp + 60_000;
+    let freshest1mCapturedAt: number | null = null;
+    if (this.signalProvider) {
+      const neededKeys1m = new Set<string>();
+      for (const bot of this.botsForCoin(coin)) {
+        if (bot.config.timeframe !== "1m") continue;
+        const e = getStrategyEntry(bot.config.strategyId);
+        if (e?.requiresSignals && e.signalKeys?.length) {
+          for (const k of e.signalKeys) neededKeys1m.add(k);
+        }
+      }
+      if (neededKeys1m.size > 0) {
+        candle.signals = {};
+        for (const key of neededKeys1m) {
+          const r = this.signalProvider.get(coin, key, signal1mCutoff);
+          candle.signals[key] = r.stale ? NaN : (r.value ?? NaN);
+          if (r.stale) {
+            const ageMin = r.capturedAt != null
+              ? Math.round((signal1mCutoff - r.capturedAt) / 60_000) : null;
+            console.warn(
+              `[live-signal] stale ${key} for ${coin}:`,
+              ageMin != null ? `${ageMin}m old` : "no data",
+            );
+          } else if (r.capturedAt != null &&
+                     (freshest1mCapturedAt == null || r.capturedAt > freshest1mCapturedAt)) {
+            freshest1mCapturedAt = r.capturedAt;
+          }
+        }
+      }
+    }
+
     for (const bot of this.botsForCoin(coin)) {
       if (bot.config.timeframe !== "1m") continue;
       this.checkStopLoss(bot, candle);
@@ -720,6 +761,10 @@ export class BotManager {
 
       bot.history.push(candle);
       if (bot.history.length > MAX_HISTORY) bot.history.shift();
+      if (freshest1mCapturedAt != null) {
+        const e = getStrategyEntry(bot.config.strategyId);
+        if (e?.requiresSignals) bot.lastSignalCapturedAt = freshest1mCapturedAt;
+      }
       const signal = bot.strategy!.onCandle(candle, bot.history.slice());
       if (signal) this.applySignal(bot, signal, candle);
       this.markPosition(bot, candle.close);
@@ -783,11 +828,50 @@ export class BotManager {
     if (hist.length > MAX_HISTORY) hist.shift();
     cd.aggHistories.set(tf, hist);
 
+    // ── Signal injection for shadow (requiresSignals paper) bots ─────────────
+    // Cutoff = bar close time (open + interval), matching backtest attachSignals().
+    // Collect all needed keys across bots, look them up once, then the shared
+    // completed candle object (same JS reference) carries them into every bot below.
+    const signalCutoff = completed.timestamp + tfMs;
+    let freshestSignalCapturedAt: number | null = null;
+    if (this.signalProvider) {
+      const neededKeys = new Set<string>();
+      for (const bot of this.botsForCoin(coin)) {
+        if (bot.config.timeframe !== tf) continue;
+        const e = getStrategyEntry(bot.config.strategyId);
+        if (e?.requiresSignals && e.signalKeys?.length) {
+          for (const k of e.signalKeys) neededKeys.add(k);
+        }
+      }
+      if (neededKeys.size > 0) {
+        completed.signals = {};
+        for (const key of neededKeys) {
+          const r = this.signalProvider.get(coin, key, signalCutoff);
+          completed.signals[key] = r.stale ? NaN : (r.value ?? NaN);
+          if (r.stale) {
+            const ageMin = r.capturedAt != null
+              ? Math.round((signalCutoff - r.capturedAt) / 60_000) : null;
+            console.warn(
+              `[live-signal] stale ${key} for ${coin}:`,
+              ageMin != null ? `${ageMin}m old` : "no data",
+            );
+          } else if (r.capturedAt != null &&
+                     (freshestSignalCapturedAt == null || r.capturedAt > freshestSignalCapturedAt)) {
+            freshestSignalCapturedAt = r.capturedAt;
+          }
+        }
+      }
+    }
+
     for (const bot of this.botsForCoin(coin)) {
       if (bot.config.timeframe !== tf) continue;
       this.checkStopLoss(bot, completed);
       bot.history.push(completed);
       if (bot.history.length > MAX_HISTORY) bot.history.shift();
+      if (freshestSignalCapturedAt != null) {
+        const e = getStrategyEntry(bot.config.strategyId);
+        if (e?.requiresSignals) bot.lastSignalCapturedAt = freshestSignalCapturedAt;
+      }
       const signal = bot.strategy!.onCandle(completed, bot.history.slice());
       if (signal) this.applySignal(bot, signal, completed);
       this.markPosition(bot, completed.close);
@@ -906,6 +990,20 @@ export class BotManager {
       `[bot-manager] ${bot.config.id}/${bot.config.coin}/${bot.config.timeframe}` +
       ` PAPER CLOSE @ ${exitPx.toFixed(2)} gross=${grossPnl >= 0 ? "+" : ""}${grossPnl.toFixed(2)} fees=${fees.toFixed(2)} net=${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} (${reason})`,
     );
+    bus.emit("trade", {
+      orderId:   `paper-${Date.now().toString(36)}`,
+      coin:      bot.config.coin,
+      side:      pos.side,
+      size:      pos.size,
+      price:     exitPx,
+      timestamp: Date.now(),
+      success:   true,
+      pnl,
+      fees,
+      reason,
+      strategy:  bot.config.strategyId,
+      botId:     bot.config.id,
+    } as TradeResult);
   }
 
   // ── Live execution (real exchange orders via Venue) ────────────────────────
@@ -1123,11 +1221,16 @@ export class BotManager {
     if (!entry?.isCandleStrategy || !entry.factory) {
       throw new Error(`Unknown candle strategy: ${input.strategyId}`);
     }
-    if (entry.requiresSignals) {
+    if (entry.requiresSignals && live) {
       throw new Error(
-        `Strategy "${entry.displayName}" is backtest-only (requires pre-attached Market Signal data). ` +
-        `It cannot be deployed as a live or paper bot — candles received from the WebSocket feed ` +
-        `do not have signal values attached. Use the Backtest page instead.`,
+        `Strategy "${entry.displayName}" requires Market Signal data and cannot run in live mode. ` +
+        `Add it as shadow (paper) mode to track it live.`,
+      );
+    }
+    if (entry.requiresSignals && !this.signalProvider) {
+      throw new Error(
+        `Strategy "${entry.displayName}" requires Market Signal data, but the signal provider is not available. ` +
+        `Ensure the Market subsystem is running.`,
       );
     }
 
