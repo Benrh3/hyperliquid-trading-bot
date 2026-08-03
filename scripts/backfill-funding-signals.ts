@@ -33,9 +33,13 @@
  *   row and one snapshot_metrics row. network is "mainnet" to match the live poller.
  *
  * Idempotency:
- *   Before inserting, we check for an existing snapshot_metrics row with
- *   (metric_key='funding_rate', captured_at=T) via a JOIN on snapshots.symbol.
- *   If one exists, both rows are skipped. INSERT never overwrites live-polled data.
+ *   Before inserting, we check for an existing record at timestamp T in EITHER:
+ *   (a) snapshot_metrics (any source, captured_at = T) — the live raw table;
+ *   (b) snapshot_metrics_hourly (ts_hour = T) — the retention-policy rollup table.
+ *   The retention policy moves old raw rows into the hourly table and prunes them;
+ *   checking only the raw table would cause re-insertion of already-rolled-up hours,
+ *   which would double-serve them in UNION reads and collide on the hourly PK at
+ *   next rollup. INSERT never overwrites live-polled data.
  */
 
 import Database from "better-sqlite3";
@@ -97,11 +101,19 @@ db.pragma("journal_mode = WAL");
 db.pragma("busy_timeout = 10000");
 
 // ── Prepared statements ───────────────────────────────────────────────────────
-const stmtExists = db.prepare<[string, string, number], { n: number }>(`
-  SELECT COUNT(*) AS n
-  FROM snapshot_metrics sm
-  JOIN snapshots s ON s.id = sm.snapshot_id
-  WHERE s.symbol = ? AND sm.metric_key = ? AND sm.captured_at = ?
+// Presence check spans both raw (snapshot_metrics) and rolled-up (snapshot_metrics_hourly).
+// The retention policy moves raw rows to the hourly table; checking only the raw table
+// would re-insert already-rolled-up hours, double-serving them in UNION reads and
+// colliding on the hourly PK at next rollup. Parameters: [symbol, key, ts, symbol, key, ts].
+const stmtExists = db.prepare<[string, string, number, string, string, number], { n: number }>(`
+  SELECT (
+    SELECT COUNT(*) FROM snapshot_metrics sm
+    JOIN snapshots s ON s.id = sm.snapshot_id
+    WHERE s.symbol = ? AND sm.metric_key = ? AND sm.captured_at = ?
+  ) + (
+    SELECT COUNT(*) FROM snapshot_metrics_hourly
+    WHERE symbol = ? AND metric_key = ? AND ts_hour = ?
+  ) AS n
 `);
 
 const stmtInsertSnapshot = db.prepare<[string, string, number], { lastInsertRowid: bigint }>(
@@ -246,16 +258,22 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
 //   This intra-hour drift is normal and NOT a unit error.
 //
 // Verdict design:
-//   We use the median of hist/live ratios across matched pairs. The median is robust
-//   to the intra-hour drift outliers described above. A true unit mismatch (8× or
-//   100×) shifts every ratio by that factor and fails by orders of magnitude; a few
-//   outlier pairs from mid-hour sampling do not move the median meaningfully.
-//   PASS band: median ratio in [0.5, 2.0]. Avg/max relative delta are informational.
+//   We use ratio-of-medians: median(|histVal|) / median(|liveVal|), excluding pairs
+//   where |liveVal| < 1e-6 (near-zero values make the per-pair ratio unstable —
+//   negative liveVal or sign divergence during active funding regimes can push the
+//   median-of-pair-ratios far outside [0.5, 2.0] even on good data).
+//   This is regime-independent: both medians anchor near the 1.25e-5 protocol default
+//   regardless of funding sign, direction, or mid-hour drift. A true scale error (8×
+//   or 100×) shifts one source's median by the full factor while the other stays at
+//   the default — the ratio departs from 1.0 by the full factor and reliably fails.
+//   Per-pair ratios (signed, histVal/liveVal) appear in the comparison table for info
+//   but are NOT used for the pass/fail verdict.
+//   PASS band: ratio-of-medians in [0.5, 2.0]. Avg/max relative delta are informational.
 //
 // Matching: live-polled rows fire at an arbitrary minute within each hour. We pair
 // each live row with the nearest historical settlement record within ±90 minutes.
-// A systematic multiplier would be immediately visible in the ratio column even
-// before a single row is inserted.
+// A systematic scale error would be visible in both the ratio-of-medians and the
+// per-pair ratio column even before a single row is inserted.
 {
   const OVERLAP_WINDOW_MS  = 7 * 24 * 3_600_000; // look back 7 days for live rows
   const MATCH_TOLERANCE_MS = 90 * 60 * 1000;      // ±90 min to pair with a settlement
@@ -324,23 +342,41 @@ console.log(`  range: ${new Date(records[0].time).toISOString()} → ${new Date(
       console.log("  Possible causes: backfill range doesn't reach the live-poller window,");
       console.log("  or the poller ran exclusively outside settlement hour boundaries.\n");
     } else {
-      const sortedRatios = [...comparisons.map(c => c.ratio)].sort((a, b) => a - b);
-      const mid = Math.floor(sortedRatios.length / 2);
-      const medianRatio = sortedRatios.length % 2 === 1
-        ? sortedRatios[mid]
-        : (sortedRatios[mid - 1] + sortedRatios[mid]) / 2;
+      // ratio-of-medians: median(|histVal|) / median(|liveVal|).
+      // Exclude pairs where |liveVal| < 1e-6 — sign divergence or near-zero values
+      // during active funding regimes make per-pair ratios unreliable for a verdict.
+      const stablePairs = comparisons.filter(c => Math.abs(c.liveVal) >= 1e-6);
 
       const RATIO_LO = 0.5;
       const RATIO_HI = 2.0;
-      const passed = medianRatio >= RATIO_LO && medianRatio <= RATIO_HI;
+
+      function medianOf(arr: number[]): number {
+        const s = [...arr].sort((a, b) => a - b);
+        const m = Math.floor(s.length / 2);
+        return s.length % 2 === 1 ? s[m] : (s[m - 1] + s[m]) / 2;
+      }
 
       const avgRelDelta = comparisons.reduce((s, c) => s + c.relDelta, 0) / comparisons.length;
       const maxAbsDelta = Math.max(...comparisons.map(c => c.absDelta));
 
-      console.log(`\n  Verdict: ${passed ? "✓ PASS" : "✗ FAIL"} — median ratio hist/live ${medianRatio.toFixed(4)}  (pass band [${RATIO_LO}, ${RATIO_HI}])`);
+      let passed: boolean;
+      let verdictStr: string;
+      if (stablePairs.length === 0) {
+        // All pairs have near-zero liveVal — cannot compute ratio; skip verdict.
+        passed = true; // don't block on missing data
+        verdictStr = "SKIP — all pairs have |liveVal| < 1e-6, cannot compute ratio-of-medians";
+      } else {
+        const medAbsHist    = medianOf(stablePairs.map(c => Math.abs(c.histVal)));
+        const medAbsLive    = medianOf(stablePairs.map(c => Math.abs(c.liveVal)));
+        const ratioOfMedians = medAbsHist / medAbsLive;
+        passed      = ratioOfMedians >= RATIO_LO && ratioOfMedians <= RATIO_HI;
+        verdictStr  = `${passed ? "✓ PASS" : "✗ FAIL"} — ratio-of-medians |hist|/|live| ${ratioOfMedians.toFixed(4)}  (pass band [${RATIO_LO}, ${RATIO_HI}], ${stablePairs.length}/${comparisons.length} stable pairs)`;
+      }
+
+      console.log(`\n  Verdict: ${verdictStr}`);
       console.log(`  Info:    avg relative delta ${(avgRelDelta * 100).toFixed(4)}%  max abs delta ${maxAbsDelta.toExponential(3)}  (intra-hour drift, not used for verdict)`);
       if (!passed) {
-        console.log("  WARNING: median ratio outside pass band — likely unit mismatch (e.g. 8h vs 1h rate).");
+        console.log("  WARNING: ratio-of-medians outside pass band — likely unit mismatch (e.g. 8h vs 1h rate).");
         console.log("  DO NOT proceed with insertion. Review the comparison table and check the API documentation.\n");
         if (!DRY) {
           db.close();
@@ -384,7 +420,7 @@ let errored  = 0;
 
 if (DRY) {
   for (const r of records) {
-    const exists = (stmtExists.get(COIN, METRIC_KEY, r.time) as { n: number }).n > 0;
+    const exists = (stmtExists.get(COIN, METRIC_KEY, r.time, COIN, METRIC_KEY, r.time) as { n: number }).n > 0;
     if (exists) skipped++;
     else         inserted++;
   }
@@ -397,7 +433,7 @@ if (DRY) {
 
 const insertBatch = db.transaction((batch: FundingRecord[]) => {
   for (const r of batch) {
-    const { n } = stmtExists.get(COIN, METRIC_KEY, r.time) as { n: number };
+    const { n } = stmtExists.get(COIN, METRIC_KEY, r.time, COIN, METRIC_KEY, r.time) as { n: number };
     if (n > 0) { skipped++; continue; }
 
     const value = parseFloat(r.fundingRate);

@@ -7,6 +7,7 @@ import { alignFundingRows } from "../chart-utils.js";
 import { makeCacheKey, isValidCoin, isValidInterval } from "../candle-cache-utils.js";
 import { InfoClient, HttpTransport } from "@nktkas/hyperliquid";
 import { CANDLE_STRATEGIES, STRATEGY_REGISTRY } from "../strategy/registry.js";
+import { generateParamGrid } from "../strategy/param-grid.js";
 import { INDICATOR_REGISTRY } from "../strategy/indicators.js";
 import { saveCustomDef, deleteCustomDef, customDefToRegistryEntry } from "../strategy/custom-strategy.js";
 import type { CustomStrategyDef } from "../strategy/custom-strategy.js";
@@ -190,35 +191,6 @@ async function buildFundingTop(): Promise<CachedFundingItem[]> {
   return settled
     .filter((r): r is PromiseFulfilledResult<CachedFundingItem> => r.status === "fulfilled")
     .map((r) => r.value);
-}
-
-// ── Walk-forward grid helpers ─────────────────────────────────────────────────
-
-function generateParamGrid(
-  params: { key: string; min: number; max: number; step: number }[],
-  maxCombinations = 200,
-): Record<string, number>[] {
-  if (params.length === 0) return [{}];
-
-  let combos: Record<string, number>[] = [{}];
-  for (const p of params) {
-    const vals: number[] = [];
-    for (let v = p.min; v <= p.max + 1e-9; v += p.step) {
-      vals.push(Math.round(v * 1000) / 1000);
-    }
-    const next: Record<string, number>[] = [];
-    for (const combo of combos) {
-      for (const v of vals) next.push({ ...combo, [p.key]: v });
-    }
-    combos = next;
-    if (combos.length > 50_000) { combos = combos.slice(0, 50_000); break; }
-  }
-
-  if (combos.length > maxCombinations) {
-    const step = Math.ceil(combos.length / maxCombinations);
-    return combos.filter((_, i) => i % step === 0).slice(0, maxCombinations);
-  }
-  return combos;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1105,17 +1077,19 @@ export function createRouter(
         commissionPct = 0.05,     // 0.05%/side, matches live TAKER_FEE_PER_SIDE
         stopLossPct   = config.risk.stopLossPercent,
         initialEquity = 1000,
+        strategyParams = {},
       } = req.body as {
-        strategyId:     string;
-        coin:           string;
-        interval?:      string;
-        totalCandles?:  number;
-        rangeDays?:     number;
-        windows?:       number;
-        optimiseBy?:    string;
-        commissionPct?: number;
-        stopLossPct?:   number;
-        initialEquity?: number;
+        strategyId:      string;
+        coin:            string;
+        interval?:       string;
+        totalCandles?:   number;
+        rangeDays?:      number;
+        windows?:        number;
+        optimiseBy?:     string;
+        commissionPct?:  number;
+        stopLossPct?:    number;
+        initialEquity?:  number;
+        strategyParams?: Record<string, number>;
       };
 
       const entry = STRATEGY_REGISTRY.find(e => e.id === strategyId && e.isCandleStrategy && e.factory);
@@ -1139,7 +1113,7 @@ export function createRouter(
       const segSize = Math.floor(allCandles.length / nWin);
       // Base opts without stopLossPct — resolved per run via resolveEffectiveStop.
       const baseOpts = { initialEquity, positionSizeUsd: Math.round(initialEquity * (config.risk.riskPerTradePercent / config.risk.stopLossPercent)), commissionPct: commissionPct / 100 };
-      const grid     = generateParamGrid(entry.params, 50);
+      const grid     = generateParamGrid(entry.params, 50, strategyParams);
 
       const windowResults: object[] = [];
       const stitchedEquity: { time: number; equity: number }[] = [];

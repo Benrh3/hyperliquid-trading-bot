@@ -5,12 +5,26 @@ import { CrowdPositioningStrategy } from "./crowd-positioning.js";
 import { FundingExtremeStrategy } from "./funding-extreme.js";
 
 export interface StrategyParam {
-  key:     string;
-  label:   string;
-  default: number;
-  min:     number;
-  max:     number;
-  step:    number;
+  key:          string;
+  label:        string;
+  default:      number;
+  min:          number;
+  max:          number;
+  step:         number;
+  /**
+   * false → excluded from the walk-forward grid sweep; passed through unchanged
+   * as a fixed value (sidebar value when available, registry default otherwise).
+   * Omit (or set true) to mark a param as tunable. Use false for physical constants
+   * (e.g. exchange-defined defaults) or caps that should not be optimized away.
+   */
+  optimizable?: boolean;
+  /**
+   * Explicit values to sweep in the walk-forward grid. When present, overrides
+   * the implicit min / max / step sweep for this param (only applies when
+   * optimizable is not false). Use for params where multiplicative scaling is
+   * degenerate or the meaningful values are a small, discrete set.
+   */
+  gridValues?:  number[];
 }
 
 export type StrategyCategory = "mean-reversion" | "trend-following" | "market-neutral";
@@ -197,12 +211,18 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
       "Persistent high-funding regimes where longs pay extreme carry for weeks without deleveraging " +
       "(strong bull markets). Max-hold and stop-loss cap the damage but the strategy will underperform.",
     params: [
-      { key: "defaultRate",        label: "Default rate",             default: 0.0000125,  min: 0.000001,  max: 0.0001,   step: 0.000001  },
-      { key: "entryShortMultiple", label: "Short entry multiple (k)", default: 3,          min: 1.5,       max: 10,       step: 0.5       },
-      { key: "entryLongMultiple",  label: "Long entry multiple (k_long)", default: 1,       min: 0.5,       max: 5,        step: 0.25      },
-      { key: "exitBand",           label: "Exit band (ε)",            default: 0.00000625, min: 0.000001,  max: 0.00005,  step: 0.000001  },
-      { key: "maxHoldBars",        label: "Max hold (bars)",          default: 72,         min: 4,         max: 240,      step: 4         },
-      { key: "stopLossPct",        label: "Stop-loss (%)",            default: 6,          min: 1,         max: 20,       step: 1         },
+      // Fixed: HL's protocol default rate — a fact about the exchange, not a knob.
+      // The entire strategy is calibrated around deviations from this constant.
+      { key: "defaultRate",        label: "Default rate",                  default: 0.0000125,  min: 0.000001,  max: 0.0001,   step: 0.000001, optimizable: false },
+      // Tunable: explicit grids capture the meaningful multiple ranges; multiplicative
+      // min/max/step sweep would include degenerate near-zero thresholds.
+      { key: "entryShortMultiple", label: "Short entry multiple (k)",      default: 3,          min: 1.5,       max: 10,       step: 0.5,      gridValues: [3, 5, 8] },
+      { key: "entryLongMultiple",  label: "Long entry multiple (k_long)",  default: 1,          min: 0.5,       max: 5,        step: 0.25,     gridValues: [1, 2, 3] },
+      // Fixed: structural constants — changing them shifts the strategy definition,
+      // not its parametric performance within a regime.
+      { key: "exitBand",           label: "Exit band (ε)",                 default: 0.00000625, min: 0.000001,  max: 0.00005,  step: 0.000001, optimizable: false },
+      { key: "maxHoldBars",        label: "Max hold (bars)",               default: 72,         min: 4,         max: 240,      step: 4,        optimizable: false },
+      { key: "stopLossPct",        label: "Stop-loss (%)",                 default: 6,          min: 1,         max: 20,       step: 1,        optimizable: false },
     ],
     isCandleStrategy: true,
     requiresSignals:  true,

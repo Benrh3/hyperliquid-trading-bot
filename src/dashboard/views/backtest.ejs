@@ -861,6 +861,13 @@
 
     if (!coin) { statusEl.textContent = 'Select a coin first'; runBtn.disabled = false; return; }
 
+    // Collect sidebar strategy params so fixed params thread through unchanged
+    var strategyParams = {};
+    paramsEl.querySelectorAll('input[name]').forEach(function (inp) {
+      var v = parseFloat(inp.value);
+      if (!isNaN(v)) strategyParams[inp.name] = v;
+    });
+
     runBtn.disabled = true;
     statusEl.textContent = 'Running walk-forward (' + windows + ' windows)…';
 
@@ -868,6 +875,7 @@
       var wfBody = Object.assign({
         strategyId: strategyId, coin: coin, interval: interval, windows: windows,
         optimiseBy: optimiseBy, commissionPct: commissionPct, stopLossPct: stopLossPct, initialEquity: initialEquity,
+        strategyParams: strategyParams,
       }, rangeParams.candles ? { totalCandles: rangeParams.candles } : { rangeDays: rangeParams.rangeDays });
       var resp = await fetch('/api/backtest/walkforward', {
         method: 'POST',
