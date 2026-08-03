@@ -203,11 +203,13 @@ export class SnapshotPoller {
       }
     }
     for (const symbol of this.symbols) {
-      this.cexLiqTrackers.set(symbol, new Map([
+      const trackers = new Map([
         ["binance", new CexLiqTracker()],
         ["bybit", new CexLiqTracker()],
         ["okx", new CexLiqTracker()],
-      ]));
+      ]);
+      this.cexLiqTrackers.set(symbol, trackers);
+      for (const [venue, tracker] of trackers) this.rehydrateLiqTracker(symbol, venue, tracker);
     }
 
     if (walletsConfig) {
@@ -246,6 +248,10 @@ export class SnapshotPoller {
 
   async stop(): Promise<void> {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    // Persist CEX liquidation tracker state before tearing down streams, so a
+    // clean shutdown (e.g. PM2's max_memory_restart) never loses buckets
+    // accumulated since the last poll.
+    for (const symbol of this.symbols) this.persistCexLiqTrackers(symbol);
     await Promise.all([...this.aggregators.values()].map((a) => a.stop()));
     for (const sources of this.cexSources.values()) {
       sources.binance.stopLiquidationStream();
@@ -265,6 +271,37 @@ export class SnapshotPoller {
         ]),
       ),
     );
+  }
+
+  private liqTrackerId(symbol: string, venue: string): string {
+    return `cex-liq-${venue}-${symbol}`;
+  }
+
+  /** Rehydrate one venue's CexLiqTracker from persisted state, if any. Never throws. */
+  private rehydrateLiqTracker(symbol: string, venue: string, tracker: CexLiqTracker): void {
+    try {
+      const saved = this.store.loadLiqTracker(this.liqTrackerId(symbol, venue));
+      if (saved) {
+        tracker.rehydrate({ bootTime: saved.bootTime, buckets: JSON.parse(saved.bucketsJson) });
+        console.log(`[snapshot-poller] Rehydrated ${this.liqTrackerId(symbol, venue)}`);
+      }
+    } catch (e) {
+      console.warn(`[snapshot-poller] Failed to rehydrate ${this.liqTrackerId(symbol, venue)}: ${(e as Error).message}`);
+    }
+  }
+
+  /** Persist every venue's CexLiqTracker state for `symbol` so it survives a restart. Never throws. */
+  private persistCexLiqTrackers(symbol: string): void {
+    const trackers = this.cexLiqTrackers.get(symbol);
+    if (!trackers) return;
+    for (const [venue, tracker] of trackers) {
+      try {
+        const snap = tracker.snapshot();
+        this.store.saveLiqTracker(this.liqTrackerId(symbol, venue), snap.bootTime, JSON.stringify(snap.buckets));
+      } catch (e) {
+        console.warn(`[snapshot-poller] Failed to persist ${this.liqTrackerId(symbol, venue)}: ${(e as Error).message}`);
+      }
+    }
   }
 
   /** Start each available venue's liquidation stream, feeding its CexLiqTracker. Defensive reconnect lives in ReconnectingLiqStream. */
@@ -381,6 +418,9 @@ export class SnapshotPoller {
       // Persist CVD tracker state so it survives restarts
       const agg = this.aggregators.get(symbol);
       if (agg?.persistTrackers && !this.aggregatorsInjected) agg.persistTrackers();
+
+      // Persist CEX liquidation tracker state so it survives restarts
+      this.persistCexLiqTrackers(symbol);
     }
 
     this.store.runRetentionPolicy(this.retentionRawDays);
@@ -551,13 +591,25 @@ export class SnapshotPoller {
     if (sources.okx.isAvailable())     availableLiqWindows.push(trackers.get("okx")!.getWindows());
     const liqAgg = aggregateLiqWindows(availableLiqWindows);
 
+    // Gate liquidation values on filled fraction — a tracker reset by a restart
+    // reports a real "0" that is indistinguishable from "no liquidations", so
+    // suppress it (null, not 0) until the window is mostly warm.
+    const MIN_FILLED = 0.8;
+    const gateN = (v: number, filled: number): number | null => filled >= MIN_FILLED ? v : null;
+
+    const long1h    = liqAgg ? gateN(liqAgg.longVol1h, liqAgg.filled1h)    : null;
+    const short1h   = liqAgg ? gateN(liqAgg.shortVol1h, liqAgg.filled1h)   : null;
+    const long24h   = liqAgg ? gateN(liqAgg.longVol24h, liqAgg.filled24h) : null;
+    const short24h  = liqAgg ? gateN(liqAgg.shortVol24h, liqAgg.filled24h) : null;
+    const count24h  = liqAgg ? gateN(liqAgg.count24h, liqAgg.filled24h)   : null;
+
     const liq = liqAgg ? {
-      long1h:   liqAgg.longVol1h,
-      short1h:  liqAgg.shortVol1h,
-      long24h:  liqAgg.longVol24h,
-      short24h: liqAgg.shortVol24h,
-      net24h:   liqAgg.shortVol24h - liqAgg.longVol24h,
-      count24h: liqAgg.count24h,
+      long1h,
+      short1h,
+      long24h,
+      short24h,
+      net24h: short24h !== null && long24h !== null ? short24h - long24h : null,
+      count24h,
     } : null;
 
     const cexLiqMeta: Record<string, { filled: number }> = {};

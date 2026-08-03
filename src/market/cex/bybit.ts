@@ -29,7 +29,7 @@ export class BybitSource implements CexDerivsSource {
       ?? ((symbol) => wsConnector("wss://stream.bybit.com/v5/public/linear", {
         op: "subscribe",
         args: [`allLiquidation.${symbol}`],
-      }));
+      }, { intervalMs: 20_000, message: JSON.stringify({ op: "ping" }) }));
   }
 
   async resolveSymbol(coin: string): Promise<boolean> {

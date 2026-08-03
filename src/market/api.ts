@@ -104,19 +104,24 @@ export function createMarketRouter(store: MarketStore): Router {
 
     const signals = manifest.metrics
       .filter((m) => subtab ? m.subtab === subtab : m.signalForScoring)
-      .map((m) => ({
-        key:          m.key,
-        label:        m.label,
-        source:       m.source,
-        kind:         m.kind,
-        subtab:       m.subtab,
-        derived:      m.derived,
-        read:         m.read ?? null,
-        dir:          m.dir ?? null,
-        currentValue: latest?.metrics[m.key]?.value ?? null,
-        capturedAt:   latest?.metrics[m.key]?.capturedAt ?? null,
-        staleAfterMs: m.staleAfterMs,
-      }));
+      .map((m) => {
+        const meta = latest?.metrics[m.key]?.meta as { filled?: number } | null | undefined;
+        return {
+          key:          m.key,
+          label:        m.label,
+          source:       m.source,
+          kind:         m.kind,
+          subtab:       m.subtab,
+          derived:      m.derived,
+          read:         m.read ?? null,
+          dir:          m.dir ?? null,
+          currentValue: latest?.metrics[m.key]?.value ?? null,
+          capturedAt:   latest?.metrics[m.key]?.capturedAt ?? null,
+          staleAfterMs: m.staleAfterMs,
+          /** Fraction of the metric's window covered by warm tracker data (0-1), or null if not tracked. Lets the UI gray out a confident-looking but cold value. */
+          filled:       typeof meta?.filled === "number" ? meta.filled : null,
+        };
+      });
 
     res.json({ symbol, capturedAt: latest?.capturedAt ?? null, signals });
   });

@@ -385,6 +385,11 @@
     .sc-kind-aggregate  { background: rgba(34,211,238,0.14);        color: #22D3EE; }
     .sc-kind-count      { background: var(--accent-dim);            color: var(--muted); }
     .sc-source          { background: rgba(129,140,248,0.06);       color: var(--muted); }
+    /* A tracker whose warm-up window (filled fraction) hasn't reached its
+       confidence threshold yet — e.g. right after a process restart. Distinct
+       from a genuine value of zero, which renders normally. */
+    .signal-card.warming { opacity: .55; }
+    .signal-card.warming .sc-value { color: var(--muted); }
 
     /* ── Chart card ─────────────────────────────────────────────────────── */
     .chart-card {

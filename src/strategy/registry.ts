@@ -48,6 +48,13 @@ export interface StrategyRegistryEntry {
   isCustom?:        boolean;   // true for user-built strategies from the Strategy Builder
   /** true when any rule reads Market Signal data — live deployment is blocked */
   requiresSignals?: boolean;
+  /**
+   * The DB metric keys this strategy actually reads from candle.signals.
+   * Used by the backtest UI to: (a) filter the coin dropdown to supported coins,
+   * and (b) show signal-coverage warnings only for relevant keys.
+   * Omit for candle-only strategies that don't consume Market signals.
+   */
+  signalKeys?:      string[];
   factory:          (() => Strategy) | null;
 }
 
@@ -172,6 +179,7 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
     ],
     isCandleStrategy: true,
     requiresSignals:  true,
+    signalKeys:       ["lsr_agg_long_frac"],
     factory: () => new CrowdPositioningStrategy({
       entryLongBelow:  0.45,
       entryShortAbove: 0.55,
@@ -226,6 +234,7 @@ export const STRATEGY_REGISTRY: StrategyRegistryEntry[] = [
     ],
     isCandleStrategy: true,
     requiresSignals:  true,
+    signalKeys:       ["funding_rate"],
     factory: () => new FundingExtremeStrategy({
       defaultRate:        0.0000125,
       entryShortMultiple: 3,

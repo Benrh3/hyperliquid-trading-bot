@@ -94,6 +94,8 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%233D5A78'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 7px center;
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
   }
   .ctrl-sel:focus, .ctrl-inp:focus {
     outline: none;
@@ -127,26 +129,36 @@
     min-height: 1em;
   }
 
-  /* ── Mode toggle ── */
+  /* ── Mode toggle — matches .tf-group / .tf pattern from Market charts ── */
   .mode-toggle {
     display: flex;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    width: fit-content;
+    gap: 2px;
     margin-bottom: var(--sp-3);
   }
+  .mode-toggle input[type="radio"] { display: none; }
   .mode-toggle label {
-    padding: var(--sp-1) var(--sp-4);
+    padding: 0;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .mode-toggle label span {
+    display: block;
+    padding: 3px 10px;
     font-size: var(--t-label);
     font-weight: 600;
-    cursor: pointer;
     color: var(--muted);
-    transition: background .1s, color .1s;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    transition: background .12s, color .12s, border-color .12s;
+    white-space: nowrap;
   }
-  .mode-toggle input[type="radio"] { display: none; }
-  .mode-toggle input:checked + span { background: var(--accent); color: #fff; }
-  .mode-toggle label:first-child { border-right: 1px solid var(--border); }
+  .mode-toggle label:hover span { color: var(--accent); }
+  .mode-toggle input:checked + span {
+    background: var(--accent-dim);
+    border-color: var(--accent-border);
+    color: var(--accent);
+  }
 
   /* ── Results column ── */
   .bt-results { flex: 1; min-width: 0; }
@@ -544,6 +556,8 @@
   // ── Registry (server-seeded) ──────────────────────────────────────────────
   var strategies = <%- JSON.stringify(registry.filter(e => e.isCandleStrategy).map(e => ({
     id: e.id, displayName: e.displayName,
+    requiresSignals: !!e.requiresSignals,
+    signalKeys: e.signalKeys || [],
     params: e.params.map(p => ({ key: p.key, label: p.label, default: p.default, min: p.min, max: p.max, step: p.step }))
   }))) %>;
 
@@ -600,21 +614,38 @@
     return parseFloat(document.getElementById('bt-stoploss').value) || 2;
   }
 
-  stratSel.addEventListener('change', renderParams);
+  // ── Coin list + strategy-aware filtering ──────────────────────────────────
+  // Signal strategies (requiresSignals: true) are HYPE-only: all Market signals
+  // are HYPE metrics. Showing BTC/ETH/etc. for these strategies would produce
+  // zero trades because the signal attachment only fires for HYPE.
+  function updateCoinList() {
+    var strat = strategies.find(function(s) { return s.id === stratSel.value; });
+    if (strat && strat.requiresSignals) {
+      coinSel.innerHTML = '<option value="HYPE">HYPE</option>';
+      coinSel.value = 'HYPE';
+    } else {
+      coinSel.innerHTML = topCoins.map(function(c) {
+        return '<option value="' + c.coin + '">' + (c.displayName || c.coin) + '</option>';
+      }).join('');
+      if (coinSel.innerHTML) coinSel.value = topCoins[0] ? topCoins[0].coin : 'BTC';
+    }
+  }
+
+  stratSel.addEventListener('change', function() {
+    renderParams();
+    updateCoinList();
+  });
   renderParams();
 
-  // ── Coin list ─────────────────────────────────────────────────────────────
   function loadCoins() {
     fetch('/api/funding/top').then(function(r) {
       if (!r.ok) throw new Error(r.statusText);
       return r.json();
     }).then(function(coins) {
       topCoins = coins;
-      coinSel.innerHTML = coins.map(function(c) {
-        return '<option value="' + c.coin + '">' + (c.displayName || c.coin) + '</option>';
-      }).join('');
-      coinSel.value = coins[0] ? coins[0].coin : 'BTC';
+      updateCoinList();
     }).catch(function() {
+      topCoins = [];
       coinSel.innerHTML = '<option value="BTC">BTC</option>';
     });
   }
@@ -733,14 +764,20 @@
       + bh.maxDrawdownPct.toFixed(2) + '% max drawdown.'
       + '</div>';
 
-    // Signal-coverage warning
-    if (result.signalCoverage && result.signalCoverage.length > 0) {
-      var zeroCov = result.signalCoverage.filter(function(sc) { return sc.filled === 0 && sc.total > 0; });
+    // Signal-coverage warning — only for keys this strategy actually reads.
+    // The attachSignals call populates all signalForScoring metrics on every run;
+    // filtering to signalKeys prevents false alarms about unrelated metrics.
+    var currentStrat = strategies.find(function(s) { return s.id === stratSel.value; });
+    var stratSignalKeys = (currentStrat && currentStrat.signalKeys) || [];
+    if (stratSignalKeys.length > 0 && result.signalCoverage && result.signalCoverage.length > 0) {
+      var zeroCov = result.signalCoverage.filter(function(sc) {
+        return stratSignalKeys.indexOf(sc.key) !== -1 && sc.filled === 0 && sc.total > 0;
+      });
       if (zeroCov.length > 0) {
         html += '<div class="caveat" style="margin:0 0 var(--sp-4)">'
           + '<strong>&#9888; 0% signal coverage</strong> for '
           + zeroCov.map(function(sc) { return sc.key; }).join(', ')
-          + ' — this strategy requires Market signal data (HYPE, backfilled). '
+          + ' — backfilled Market data not found for HYPE. '
           + 'Run <code>scripts/backfill-funding-signals.ts</code> to populate it.'
           + '</div>';
       }
@@ -1012,14 +1049,19 @@
           + '</div>';
       }
 
-      // Signal-coverage warning for WF
-      if (data.signalCoverage && data.signalCoverage.length > 0) {
-        var wfZero = data.signalCoverage.filter(function(sc) { return sc.filled === 0 && sc.total > 0; });
+      // Signal-coverage warning for WF — filtered to keys this strategy reads.
+      var wfStrat = strategies.find(function(s) { return s.id === strategyId; });
+      var wfSignalKeys = (wfStrat && wfStrat.signalKeys) || [];
+      if (wfSignalKeys.length > 0 && data.signalCoverage && data.signalCoverage.length > 0) {
+        var wfZero = data.signalCoverage.filter(function(sc) {
+          return wfSignalKeys.indexOf(sc.key) !== -1 && sc.filled === 0 && sc.total > 0;
+        });
         if (wfZero.length > 0) {
           headlineHtml += '<div class="caveat" style="margin:0 0 var(--sp-4)">'
             + '<strong>&#9888; 0% signal coverage</strong> for '
             + wfZero.map(function(sc) { return sc.key; }).join(', ')
-            + ' — signal strategies require backfilled Market data (HYPE).'
+            + ' — backfilled Market data not found for HYPE. '
+            + 'Run <code>scripts/backfill-funding-signals.ts</code> to populate it.'
             + '</div>';
         }
       }

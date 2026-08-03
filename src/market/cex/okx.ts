@@ -31,7 +31,7 @@ export class OkxSource implements CexDerivsSource {
       ?? ((_instId, instFamily) => wsConnector("wss://ws.okx.com:8443/ws/v5/business", {
         op: "subscribe",
         args: [{ channel: "liquidation-orders", instType: "SWAP", instFamily }],
-      }));
+      }, { intervalMs: 20_000, message: "ping" }));
   }
 
   async resolveSymbol(coin: string): Promise<boolean> {

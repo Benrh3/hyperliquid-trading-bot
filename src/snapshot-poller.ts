@@ -33,15 +33,16 @@ const poller = new SnapshotPoller(store, pollerConfig);
 
 await poller.start();
 
-process.on("SIGINT", () => {
+process.on("SIGINT", async () => {
   console.log("\n[snapshot-poller] Shutting down...");
-  poller.stop();
+  await poller.stop();
   store.close();
   process.exit(0);
 });
 
-process.on("SIGTERM", () => {
-  poller.stop();
+process.on("SIGTERM", async () => {
+  console.log("\n[snapshot-poller] Shutting down...");
+  await poller.stop();
   store.close();
   process.exit(0);
 });

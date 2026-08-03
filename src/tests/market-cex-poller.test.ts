@@ -94,7 +94,10 @@ describe("SnapshotPoller — cex-agg (stage 4)", () => {
     store.close();
   });
 
-  it("records filled fractions in meta_json for cex_liq_* metrics when at least one venue stream is running", async () => {
+  it("gates a freshly-booted (cold) cex_liq_* value to null, while still recording the real filled fraction in meta_json", async () => {
+    // A tracker that just booted (e.g. right after a restart) has filled << 0.8 —
+    // its real "0" volume is indistinguishable from "no liquidations happened",
+    // so the stored value must be null, not a confident-looking 0.
     const store = new MarketStore(":memory:");
     const info = makeMockInfo();
 
@@ -111,10 +114,68 @@ describe("SnapshotPoller — cex-agg (stage 4)", () => {
 
     const metrics = store.getRecentSnapshots("HYPE", 10)[0].metrics;
     for (const key of ["cex_liq_long_1h", "cex_liq_short_1h", "cex_liq_long_24h", "cex_liq_short_24h", "cex_liq_net_24h", "cex_liq_count_24h"]) {
-      expect(metrics[key].value).toBe(0);
+      expect(metrics[key].value).toBeNull();
       const meta = metrics[key].meta as { filled: number };
       expect(meta.filled).toBeGreaterThan(0);
+      expect(meta.filled).toBeLessThan(0.8);
     }
+
+    store.close();
+  });
+
+  it("exposes cex_liq_* values once a rehydrated tracker's filled fraction crosses 0.8", async () => {
+    // Simulates a restart: liq_tracker_state already has a long-lived bootTime
+    // (persisted before the restart) with some accumulated volume, so on
+    // rehydration the tracker is immediately "warm" instead of resetting to 0.
+    const store = new MarketStore(":memory:");
+    const info = makeMockInfo();
+    const bootTime = Date.now() - 7 * 24 * 3_600_000; // booted a week ago — both 1h and 24h windows fully warm
+    store.saveLiqTracker("cex-liq-binance-HYPE", bootTime, JSON.stringify([
+      { bucketStart: Math.floor(Date.now() / 60_000) * 60_000, longVol: 31_806.87448, shortVol: 848.8896, count: 26 },
+    ]));
+
+    const cexSources = new Map<string, CexVenueSources>([
+      ["HYPE", {
+        binance: makeMockCexSource({ available: true, oi: 5_000_000, lsr: NULL_LSR }),
+        bybit:   makeMockCexSource({ available: false }),
+        okx:     makeMockCexSource({ available: false }),
+      }],
+    ]);
+
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, undefined, cexSources, undefined, undefined, () => Promise.resolve(null));
+    await poller.poll();
+
+    const metrics = store.getRecentSnapshots("HYPE", 10)[0].metrics;
+    expect(metrics.cex_liq_long_1h.value).toBe(31_806.87448);
+    expect(metrics.cex_liq_short_1h.value).toBe(848.8896);
+    expect(metrics.cex_liq_count_24h.value).toBe(26);
+    expect(metrics.cex_liq_net_24h.value).toBeCloseTo(848.8896 - 31_806.87448, 5);
+    expect((metrics.cex_liq_long_1h.meta as { filled: number }).filled).toBe(1);
+
+    store.close();
+  });
+
+  it("persists CexLiqTracker state after each poll so it survives a restart", async () => {
+    const store = new MarketStore(":memory:");
+    const info = makeMockInfo();
+
+    const cexSources = new Map<string, CexVenueSources>([
+      ["HYPE", {
+        binance: makeMockCexSource({ available: true, oi: 5_000_000, lsr: NULL_LSR }),
+        bybit:   makeMockCexSource({ available: true, oi: 3_000_000, lsr: NULL_LSR }),
+        okx:     makeMockCexSource({ available: false }),
+      }],
+    ]);
+
+    const poller = new SnapshotPoller(store, { symbols: ["HYPE"], retentionRawDays: 7 }, info, undefined, cexSources, undefined, undefined, () => Promise.resolve(null));
+    await poller.poll();
+
+    expect(store.loadLiqTracker("cex-liq-binance-HYPE")).not.toBeNull();
+    expect(store.loadLiqTracker("cex-liq-bybit-HYPE")).not.toBeNull();
+    // okx was unavailable — its tracker still exists in-process but was never
+    // wired to a stream; persisting it anyway (as bootTime + empty buckets) is
+    // harmless and keeps the persistence loop simple (no venue-availability branching).
+    expect(store.loadLiqTracker("cex-liq-okx-HYPE")).not.toBeNull();
 
     store.close();
   });

@@ -33,15 +33,33 @@ export interface CexLiqWindows {
   filled24h:   number;
 }
 
+export interface CexLiqTrackerSnapshot {
+  bootTime: number;
+  buckets:  LiqBucket[];
+}
+
 /** Per-minute ring buffer of long/short liquidation volume + counts, covering the last 24h. */
 export class CexLiqTracker {
   private buckets: LiqBucket[] = [];
-  private readonly bootTime: number;
+  private bootTime: number;
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
     this.now = now;
     this.bootTime = now();
+  }
+
+  /** Rehydrate from a persisted snapshot. Restores buckets and bootTime, then evicts stale buckets. */
+  rehydrate(snapshot: CexLiqTrackerSnapshot): void {
+    this.bootTime = snapshot.bootTime;
+    this.buckets  = snapshot.buckets.slice();
+    const cutoff = this.now() - LIQ_WINDOW_24H_BUCKETS * LIQ_BUCKET_MS;
+    while (this.buckets.length > 0 && this.buckets[0].bucketStart < cutoff) this.buckets.shift();
+  }
+
+  /** Serialize current state for persistence. */
+  snapshot(): CexLiqTrackerSnapshot {
+    return { bootTime: this.bootTime, buckets: this.buckets.slice() };
   }
 
   /** Record one liquidation event. `notionalUsd` is the dollar-value (qty × price). */

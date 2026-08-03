@@ -3577,9 +3577,16 @@
   ];
 
   // ── Card builder ──────────────────────────────────────────────────────────
-  function makeCard(tile, value) {
-    var val     = (value !== null && value !== undefined) ? tile.fmt(value) : '—';
-    var dirInfo = (tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
+  // `filled`: fraction (0-1) of the metric's tracker window that's warm, or
+  // null/undefined if this metric isn't tracker-gated. Below MIN_CARD_FILLED
+  // the card renders as "warming" (grayed, value hidden) instead of a
+  // confident-looking value — a cold tracker's real "0" is indistinguishable
+  // from "nothing happened" otherwise (see cex_liq_* restart-reset bug).
+  var MIN_CARD_FILLED = 0.8;
+  function makeCard(tile, value, filled) {
+    var isWarming = typeof filled === 'number' && filled < MIN_CARD_FILLED;
+    var val     = (!isWarming && value !== null && value !== undefined) ? tile.fmt(value) : '—';
+    var dirInfo = (!isWarming && tile.dir && value !== null && value !== undefined) ? tile.dir(value) : null;
     var valCls  = dirInfo && dirInfo.cls ? ' ' + dirInfo.cls : '';
     var dirCls  = dirInfo ? (dirInfo.cls ? ' sc-dir-' + dirInfo.cls.replace('val-', '') : ' sc-dir-neutral') : '';
     var srcCls  = SRC_CLS[tile.source] || '';
@@ -3587,8 +3594,9 @@
       ? '<button class="sc-info-btn" data-tip="' + esc(tile.read) + '" aria-label="About ' + esc(tile.label) + '">&#9432;</button>'
       : '';
     var rd = tile.read ? '<div class="sc-read" style="display:none">' + esc(tile.read) + '</div>' : '';
-    var subLabel = dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '';
-    return '<div class="signal-card" data-key="' + esc(tile.key) + '">'
+    var subLabel = isWarming ? '<div class="sc-dir sc-dir-neutral">warming</div>'
+      : (dirInfo ? '<div class="sc-dir' + dirCls + '">' + esc(dirInfo.text) + '</div>' : '');
+    return '<div class="signal-card' + (isWarming ? ' warming' : '') + '" data-key="' + esc(tile.key) + '">'
       + '<div class="sc-header">'
       +   '<span class="sc-label" data-expert="' + esc(tile.label) + '" data-beginner="' + esc(tile.beginner) + '">' + esc(tile.label) + '</span>'
       +   ib
@@ -3609,12 +3617,13 @@
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (d) {
         var vm = {};
-        (d.signals || []).forEach(function (s) { vm[s.key] = s.currentValue; });
+        var filledMap = {};
+        (d.signals || []).forEach(function (s) { vm[s.key] = s.currentValue; filledMap[s.key] = s.filled; });
         var hlHtml = HL_TILES.map(function (t) {
-          return makeCard(t, vm[t.key] !== undefined ? vm[t.key] : null);
+          return makeCard(t, vm[t.key] !== undefined ? vm[t.key] : null, filledMap[t.key]);
         }).join('');
         var cexHtml = CEX_TILES.map(function (t) {
-          return makeCard(t, vm[t.key] !== undefined ? vm[t.key] : null);
+          return makeCard(t, vm[t.key] !== undefined ? vm[t.key] : null, filledMap[t.key]);
         }).join('');
         document.getElementById('lq-hl-cards-grid').innerHTML = hlHtml;
         document.getElementById('lq-cex-cards-grid').innerHTML = cexHtml;

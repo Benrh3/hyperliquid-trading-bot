@@ -23,27 +23,53 @@ export type LiqStreamConnector = (
   onClose: () => void,
 ) => Promise<LiqStreamConnection>;
 
-/** Build a LiqStreamConnector for a plain WS URL, optionally sending a subscribe message on open. */
-export function wsConnector(url: string, subscribeMsg?: unknown): LiqStreamConnector {
+/**
+ * App-level keepalive: some venues (OKX, Bybit) require a periodic text/JSON
+ * ping message on top of the WS protocol's own ping/pong frames, or the
+ * server unilaterally drops the connection as idle (OKX: ~30s with no
+ * traffic; Bybit: recommends every 20s). Binance doesn't need this — its
+ * combined-stream connection replies to protocol-level ping frames
+ * automatically via the `ws` library, with no app-level message required.
+ */
+export interface KeepaliveConfig {
+  intervalMs: number;
+  /** Sent verbatim via sock.send() — a raw string for venues expecting plain text (e.g. OKX's "ping"), or a pre-serialized JSON string otherwise. */
+  message: string;
+}
+
+/** Build a LiqStreamConnector for a plain WS URL, optionally sending a subscribe message on open and a periodic app-level keepalive. */
+export function wsConnector(url: string, subscribeMsg?: unknown, keepalive?: KeepaliveConfig): LiqStreamConnector {
   return (onMessage, onClose) =>
     new Promise((resolve, reject) => {
       const sock = new WebSocket(url);
       let opened = false;
+      let pingTimer: ReturnType<typeof setInterval> | null = null;
+
+      const clearPing = () => {
+        if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+      };
 
       sock.on("open", () => {
         opened = true;
         if (subscribeMsg !== undefined) sock.send(JSON.stringify(subscribeMsg));
-        resolve({ close: () => sock.close() });
+        if (keepalive) {
+          pingTimer = setInterval(() => {
+            if (sock.readyState === sock.OPEN) sock.send(keepalive.message);
+          }, keepalive.intervalMs);
+        }
+        resolve({ close: () => { clearPing(); sock.close(); } });
       });
       sock.on("message", (data) => {
         try {
           onMessage(JSON.parse(data.toString()));
         } catch {
-          // Ignore malformed frames — never let a bad message kill the stream.
+          // Ignore malformed frames (including plain-text "pong" keepalive
+          // replies) — never let a bad message kill the stream.
         }
       });
-      sock.on("close", () => onClose());
+      sock.on("close", () => { clearPing(); onClose(); });
       sock.on("error", (err) => {
+        clearPing();
         if (!opened) reject(err);
         else onClose();
       });
