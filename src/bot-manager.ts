@@ -111,6 +111,8 @@ export interface BotState {
   lastReconcileEvent?: string;
   /** For shadow (requiresSignals paper) bots: capturedAt of the last signal value used. */
   lastSignalCapturedAt?: number;
+  /** Number of DB open rows without a matching close row, updated at startup. */
+  orphanedOpens?: number;
 }
 
 // ── Orphaned position (on exchange, no live bot owns it) ──────────────────────
@@ -177,6 +179,8 @@ interface BotRuntime {
    * the deleted bot from placing any further exchange orders.
    */
   deleted?: boolean;
+  /** DB open rows without a matching close, resolved at startup by reconcileDbOrphans(). */
+  orphanedOpens?: number;
 }
 
 // ── BotManager ────────────────────────────────────────────────────────────────
@@ -219,8 +223,9 @@ export class BotManager {
     this.logger         = logger;
     this.cvStateStore   = cvStateStore;
     this.signalProvider = signalProvider;
-    const isTestnet = config.exchange.network === "testnet";
-    this.info        = new InfoClient({ transport: new HttpTransport({ isTestnet }) });
+    // Data clients always use mainnet: candle prices and funding rates must be real.
+    // Live execution uses this.venue (injected from index.ts), which has its own isTestnet flag.
+    this.info = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
     this.botsFile    = this.loadFile();
     this.buildRuntimes(this.botsFile, new Map());
   }
@@ -394,6 +399,7 @@ export class BotManager {
         hadRecentMismatch:   bot.hadRecentMismatch,
         lastReconcileEvent:  bot.lastReconcileEvent,
         lastSignalCapturedAt: bot.lastSignalCapturedAt,
+        orphanedOpens:        bot.orphanedOpens,
       });
     }
 
@@ -482,9 +488,9 @@ export class BotManager {
       }
     }
 
-    const isTestnet = config.exchange.network === "testnet";
+    // WS feed always targets mainnet for real candle data.
     const transport = new WebSocketTransport({
-      isTestnet,
+      isTestnet: false,
       reconnect: { WebSocket: WebSocket as unknown as typeof globalThis.WebSocket },
     });
     this.wsClient = new SubscriptionClient({ transport });
@@ -522,6 +528,11 @@ export class BotManager {
     const cvCount = [...this.bots.values()].filter((b) => b.crossVenue).length;
     console.log(
       `[bot-manager] Live — ${this.bots.size} bot(s) (${cvCount} cross-venue)`,
+    );
+
+    // DB-level orphan reconciliation: runs unconditionally — paper bots need it too
+    void this.reconcileDbOrphans().catch((e: Error) =>
+      console.warn(`[bot-manager] DB orphan reconcile failed: ${e.message}`),
     );
 
     // Start reconciliation loop — runs independently of the candle feed
@@ -1300,6 +1311,27 @@ export class BotManager {
     console.log(`[bot-manager] Bot ${id} mode → ${mode}`);
   }
 
+  /**
+   * Admin action: delete all trades rows for the given bot_id from the DB and
+   * reset the in-memory realised-P&L / trade-count counters to zero.
+   * Leaves bot config, position, and session stats untouched.
+   */
+  resetBotHistory(id: string): { deleted: number } {
+    const bot = this.bots.get(id);
+    if (!bot) throw new Error(`Bot ${id} not found`);
+    const deleted = this.logger?.deleteTradesForBot(id) ?? 0;
+    bot.realisedPnl    = 0;
+    bot.realisedTrades = 0;
+    bot.hlClosedPnl    = undefined;
+    bot.orphanedOpens  = undefined;
+    console.log(`[bot-manager] resetBotHistory ${id}: deleted ${deleted} trade row(s)`);
+    this.logger?.logEvent("bot-manager", "warn",
+      `Trade history reset for bot ${id} (${bot.config.coin}): deleted ${deleted} rows`,
+      { id, deleted },
+    );
+    return { deleted };
+  }
+
   async pauseBot(id: string): Promise<void> {
     const bc = this.botsFile.bots.find((b) => b.id === id);
     if (!bc || !bc.active) return;
@@ -1480,6 +1512,135 @@ export class BotManager {
    * the real exchange state, then scans for orphaned positions.
    */
   /**
+   * Startup guard: finds DB rows where opens outnumber closes per bot_id
+   * (positions whose exits were never recorded — liquidations, exchange-side
+   * closes, or positions abandoned across restarts). For live bots, confirms
+   * the exchange is flat before writing synthetic close rows. For paper bots
+   * (no exchange to consult) writes pnl=0 reconciled_unknown closes.
+   * Runs once after warmup; idempotent on the next restart.
+   */
+  /**
+   * @param allPositions  Pre-fetched coin→position map from the periodic
+   *   runReconcile cycle.  When provided, position lookups are free (no extra
+   *   API calls).  When absent (startup), calls getPosition() per live bot.
+   */
+  private async reconcileDbOrphans(
+    allPositions?: ReadonlyMap<string, import("./venue.js").VenuePosition | null>,
+  ): Promise<void> {
+    if (!this.logger) return;
+
+    // Idempotency guard: a bot with a current in-memory open position has one
+    // legitimate unmatched open row (the live trade entry).  Subtract it so the
+    // periodic reconciler never writes a synthetic close for a position that's
+    // simply still open.
+    const inMemoryOpenBotIds = new Set<string>();
+    for (const bot of this.bots.values()) {
+      if (bot.position != null) inMemoryOpenBotIds.add(bot.config.id);
+    }
+
+    const stats = this.logger.getOrphanedOpenStats(inMemoryOpenBotIds);
+    if (stats.length === 0) return;
+
+    console.log(`[reconcile-db] ${stats.length} bot(s) have orphaned open row(s) in DB`);
+
+    for (const { botId, coin, strategy, orphanCount } of stats) {
+      const bot = this.bots.get(botId);
+      if (bot) bot.orphanedOpens = orphanCount;
+
+      this.logger.logEvent(
+        "reconcile-db", "warn",
+        `${orphanCount} orphaned open row(s) for ${botId}/${coin}`,
+        { botId, coin, orphanCount },
+      );
+
+      // Live bot with venue access: confirm exchange is flat before closing in DB
+      if (bot?.config.live && this.venue) {
+        let exchangePos: import("./venue.js").VenuePosition | null | undefined;
+
+        if (allPositions) {
+          // Periodic path — use the pre-fetched map (zero extra API calls)
+          exchangePos = allPositions.get(coin) ?? null;
+        } else {
+          // Startup path — call per-bot (acceptable once; not in the hot loop)
+          try {
+            exchangePos = await this.venue.getPosition(coin);
+          } catch (e) {
+            console.warn(`[reconcile-db] ${botId}/${coin}: could not query exchange: ${(e as Error).message}`);
+            continue;
+          }
+        }
+
+        if (exchangePos) {
+          // Exchange still holds the position — runtime reconcileBot will adopt it
+          console.log(`[reconcile-db] ${botId}/${coin}: exchange position open, skipping DB close`);
+          continue;
+        }
+
+        // Exchange flat — try to recover P&L from HL fill history
+        const sinceMs = this.logger.getEarliestOrphanTimestamp(botId);
+        let closedPnl = 0;
+        try {
+          if (this.venue.getClosedPnlForCoin) {
+            ({ totalClosedPnl: closedPnl } = await this.venue.getClosedPnlForCoin(coin, sinceMs));
+          }
+        } catch (e) {
+          console.warn(`[reconcile-db] ${botId}/${coin}: fill-history query failed: ${(e as Error).message}`);
+        }
+
+        const errTag = closedPnl !== 0 ? "reconciled_from_exchange" : "reconciled_unknown";
+        for (let i = 0; i < orphanCount; i++) {
+          bus.emit("trade", {
+            orderId:   `reconciled-${botId}-${Date.now().toString(36)}-${i}`,
+            coin,
+            side:      "long" as const,
+            size:      0,
+            price:     0,
+            timestamp: Date.now(),
+            success:   true,
+            pnl:       i === 0 ? closedPnl : 0,
+            fees:      0,
+            strategy:  bot.config.strategyId,
+            botId,
+            error:     errTag,
+          } as import("./events.js").TradeResult);
+        }
+        bot.realisedPnl    += closedPnl;
+        bot.realisedTrades += orphanCount;
+        bot.orphanedOpens   = 0;
+        console.warn(
+          `[reconcile-db] ${botId}/${coin}: wrote ${orphanCount} synthetic close(s) ` +
+          `(${errTag}) closedPnl=${closedPnl >= 0 ? "+" : ""}${closedPnl.toFixed(2)}`,
+        );
+
+      } else {
+        // Paper bot or no venue — write pnl=0 synthetic closes so books balance
+        const stratId = bot?.config.strategyId ?? strategy;
+        for (let i = 0; i < orphanCount; i++) {
+          bus.emit("trade", {
+            orderId:   `reconciled-${botId}-${Date.now().toString(36)}-${i}`,
+            coin,
+            side:      "long" as const,
+            size:      0,
+            price:     0,
+            timestamp: Date.now(),
+            success:   true,
+            pnl:       0,
+            fees:      0,
+            strategy:  stratId,
+            botId,
+            error:     "reconciled_unknown",
+          } as import("./events.js").TradeResult);
+        }
+        if (bot) {
+          bot.realisedTrades += orphanCount;
+          bot.orphanedOpens   = 0;
+        }
+        console.warn(`[reconcile-db] ${botId}/${coin}: wrote ${orphanCount} synthetic close(s) (reconciled_unknown, paper/no-venue)`);
+      }
+    }
+  }
+
+  /**
    * On startup, query HL fills for each live directional bot and set
    * hlClosedPnl — the exchange-authoritative realized P&L including
    * liquidation fills that our internal log may have missed.
@@ -1508,6 +1669,17 @@ export class BotManager {
   private async runReconcile(): Promise<void> {
     if (!this.venue || this.isWarming) return;
     try {
+      // Fetch all positions once — shared by detectOrphans and reconcileDbOrphans
+      // so both operations cost one clearinghouseState call per cycle.
+      let allPos: import("./venue.js").VenuePosition[] | undefined;
+      try {
+        allPos = await this.venue.getAllPositions();
+      } catch (e) {
+        console.warn("[reconcile] getAllPositions failed, skipping cycle:", (e as Error).message);
+        return;
+      }
+      const allPosMap = new Map(allPos.map((p) => [p.coin, p]));
+
       // Per-bot reconcile (staggered 200 ms apart to avoid rate-limit bursts)
       let delay = 0;
       for (const bot of this.bots.values()) {
@@ -1516,8 +1688,10 @@ export class BotManager {
         delay += 200;
         await this.reconcileBot(bot);
       }
-      // Orphan scan uses one clearinghouseState call for the full position list
-      await this.detectOrphans();
+
+      // Orphan scan + DB reconcile — both reuse the pre-fetched map
+      await this.detectOrphans(allPos);
+      await this.reconcileDbOrphans(allPosMap);
     } catch (e) {
       console.error("[reconcile] Cycle failed:", (e as Error).message);
     }
@@ -1671,14 +1845,15 @@ export class BotManager {
     }
   }
 
-  private async detectOrphans(): Promise<void> {
+  private async detectOrphans(allPos?: import("./venue.js").VenuePosition[]): Promise<void> {
     if (!this.venue) return;
-    let allPos: import("./venue.js").VenuePosition[];
-    try {
-      allPos = await this.venue.getAllPositions();
-    } catch (e) {
-      console.warn("[reconcile] detectOrphans: could not fetch all positions:", (e as Error).message);
-      return;
+    if (!allPos) {
+      try {
+        allPos = await this.venue.getAllPositions();
+      } catch (e) {
+        console.warn("[reconcile] detectOrphans: could not fetch all positions:", (e as Error).message);
+        return;
+      }
     }
 
     // Coins claimed by a currently-live candle-strategy bot with an open position

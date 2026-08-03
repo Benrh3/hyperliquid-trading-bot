@@ -113,6 +113,11 @@
     border-top: 1px solid rgba(210,153,34,0.25); background: rgba(210,153,34,0.06);
     display: flex; align-items: flex-start; gap: var(--sp-1); line-height: 1.4;
   }
+  .bc-orphan-warn {
+    font-size: var(--t-label); color: var(--muted); padding: var(--sp-2) var(--sp-4);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; gap: var(--sp-1);
+  }
 
   /* ── Orphaned positions panel ── */
   .orphans-panel {
@@ -637,11 +642,17 @@
       : `<button class="bc-btn primary" data-action="resume" data-id="${b.id}">Resume</button>`);
     const deleteBtn = (!IS_ADMIN || isFunding || isCrossVenue) ? '' :
       `<button class="bc-btn danger" data-action="delete" data-id="${b.id}" style="margin-left:auto">Delete</button>`;
+    const resetHistoryBtn = IS_ADMIN
+      ? `<button class="bc-btn" data-action="reset-history" data-id="${b.id}" title="Delete all trade rows for this bot and zero its P&L counters">Reset History</button>`
+      : '';
     const errorBanner = isError
       ? `<div class="bc-error-msg">&#9888; ${esc(b.error || 'Unknown error')}</div>`
       : '';
     const reconcileBanner = (!isError && b.hadRecentMismatch && b.lastReconcileEvent)
       ? `<div class="bc-reconcile-warn">⚠ <span><strong>State reconciled</strong> — ${esc(b.lastReconcileEvent)}</span></div>`
+      : '';
+    const orphanBanner = (IS_ADMIN && b.orphanedOpens && b.orphanedOpens > 0)
+      ? `<div class="bc-orphan-warn">&#9432; ${b.orphanedOpens} orphaned open row(s) in DB — closes missing (reconciled on next restart)</div>`
       : '';
 
     var pnl = isCrossVenue ? (b.sessionPnl || 0) : (b.realisedPnl || 0);
@@ -656,10 +667,10 @@
         ${tfBadge}${liveBadge}${shadowBadge}
         <span class="bc-status ${statusCls}">${statusLabel}</span>
       </div>
-      ${errorBanner}${reconcileBanner}
+      ${errorBanner}${reconcileBanner}${orphanBanner}
       ${renderPnlLead(pnl)}
       <div class="bc-body">${bodyHtml}</div>
-      <div class="bc-footer">${pauseBtn}${deleteBtn}</div>
+      <div class="bc-footer">${pauseBtn}${resetHistoryBtn}${deleteBtn}</div>
     </div>`;
   }
 
@@ -702,6 +713,16 @@
             this.disabled = false; return;
           }
           try { await fetch('/api/bots/' + encodeURIComponent(id), { method: 'DELETE' }); }
+          catch (e) { console.error(e); }
+        } else if (action === 'reset-history') {
+          if (!confirm(`Reset trade history for bot "${id}"?\n\nThis deletes all DB trade rows for this bot and zeroes its realised P&L counters. Cannot be undone.`)) {
+            this.disabled = false; return;
+          }
+          try {
+            const r = await fetch('/api/bots/' + encodeURIComponent(id) + '/history', { method: 'DELETE' });
+            const d = await r.json();
+            if (!r.ok) alert('Error: ' + (d.error || r.statusText));
+          }
           catch (e) { console.error(e); }
         } else {
           try { await fetch('/api/bots/' + encodeURIComponent(id) + '/' + action, { method: 'POST' }); }

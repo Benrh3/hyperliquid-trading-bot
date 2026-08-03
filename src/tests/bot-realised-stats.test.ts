@@ -49,6 +49,46 @@ describe("getBotRealisedStats", () => {
     expect(statsB.realisedPnl).toBeCloseTo(-0.50);
   });
 
+  it("excludes open-trade rows (pnl=NULL, success=1) from count and P&L", () => {
+    const logger = new Logger(":memory:");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = (logger as any).db;
+    const insert = db.prepare(
+      "INSERT INTO trades (order_id, coin, side, size, price, pnl, strategy, success, bot_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    );
+    // 3 open-trade rows (pnl=NULL) — these represent entries without recorded closes
+    insert.run("open-1", "ETH", "long", 1, 3000, null, "trend-follow", 1, "bot-x");
+    insert.run("open-2", "ETH", "long", 1, 3010, null, "trend-follow", 1, "bot-x");
+    insert.run("open-3", "ETH", "long", 1, 3005, null, "trend-follow", 1, "bot-x");
+    // 1 real close with P&L
+    insert.run("close-1", "ETH", "long", 1, 3050, 45.00, "trend-follow", 1, "bot-x");
+
+    const stats = logger.getBotRealisedStats("trend-follow", "ETH", "bot-x");
+    expect(stats.tradeCount).toBe(1);          // only the close row
+    expect(stats.realisedPnl).toBeCloseTo(45.00);
+  });
+
+  it("getOrphanedOpenStats: excludes in-memory open position from orphan count (idempotency guard)", () => {
+    const logger = new Logger(":memory:");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = (logger as any).db;
+    const insert = db.prepare(
+      "INSERT INTO trades (order_id, coin, side, size, price, pnl, strategy, success, bot_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    );
+    // One open row (pnl=NULL) — represents a live in-progress trade, not an orphan
+    insert.run("open-live", "ETH", "long", 1, 3000, null, "trend-follow", 1, "bot-x");
+
+    // Without the in-memory set: looks like an orphan (count=1)
+    const withoutGuard = logger.getOrphanedOpenStats();
+    expect(withoutGuard).toHaveLength(1);
+    expect(withoutGuard[0].botId).toBe("bot-x");
+    expect(withoutGuard[0].orphanCount).toBe(1);
+
+    // With bot-x in the in-memory set: not an orphan (count=0 → filtered out)
+    const withGuard = logger.getOrphanedOpenStats(new Set(["bot-x"]));
+    expect(withGuard).toHaveLength(0);
+  });
+
   it("includes pre-migration rows (bot_id NULL) in the fallback for the matching bot", () => {
     const logger = new Logger(":memory:");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

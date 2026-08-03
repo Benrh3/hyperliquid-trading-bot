@@ -7,13 +7,6 @@
     padding: var(--sp-6);
   }
 
-
-  .section-divider {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: var(--sp-6) 0;
-  }
-
   /* ── Strategy cards ─────────────────────────────────────────── */
   .strat-card {
     background: var(--surface);
@@ -94,76 +87,6 @@
   .param-default { font-size: var(--t-label); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .param-range  { font-size: var(--t-label); color: var(--muted); white-space: nowrap; }
   .param-none   { font-size: var(--t-body); color: var(--muted); font-style: italic; }
-
-  /* ── Indicator accordion ────────────────────────────────────── */
-  .ind-toolbar {
-    display: flex; align-items: center; gap: var(--sp-3);
-    margin-bottom: var(--sp-5); flex-wrap: wrap;
-  }
-  .ind-search {
-    flex: 1; min-width: 160px;
-    background: var(--bg); border: 1px solid var(--border);
-    color: var(--text); font-size: var(--t-body); font-family: inherit;
-    padding: var(--sp-2) var(--sp-3); border-radius: 4px;
-  }
-  .ind-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
-  .ind-search::placeholder { color: var(--muted); }
-  .ind-ctrl-btn {
-    background: var(--surface); border: 1px solid var(--border); color: var(--text);
-    font-size: var(--t-label); font-weight: 600; font-family: inherit;
-    padding: var(--sp-1) var(--sp-3); border-radius: 4px;
-    cursor: pointer; white-space: nowrap; transition: border-color .15s, color .15s;
-  }
-  .ind-ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-  .ind-group { margin-bottom: var(--sp-5); }
-  .ind-group[hidden] { display: none; }
-
-  .ind-group-label {
-    font-size: var(--t-label); font-weight: 700; text-transform: uppercase;
-    letter-spacing: .07em; color: var(--muted);
-    padding-bottom: var(--sp-2); margin-bottom: var(--sp-2);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .ind-item {
-    border-radius: 6px;
-    margin-bottom: var(--sp-1); background: var(--surface); overflow: hidden;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-  }
-  .ind-item[hidden] { display: none; }
-
-  .ind-item-hdr {
-    display: flex; align-items: center; gap: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3); cursor: pointer; user-select: none;
-    transition: background .1s;
-  }
-  .ind-item-hdr:hover { background: var(--surface2); }
-  .ind-item-name { flex: 1; font-size: var(--t-body); font-weight: 600; }
-  .ind-item-cat {
-    font-size: 10px; font-weight: 600; color: var(--muted);
-    text-transform: uppercase; letter-spacing: .04em;
-    padding: 2px var(--sp-2); border: 1px solid var(--border); border-radius: 20px;
-  }
-  .ind-item-chevron {
-    font-size: 9px; color: var(--muted); flex-shrink: 0;
-    transition: transform 0.15s; line-height: 1;
-  }
-  .ind-item.open .ind-item-chevron { transform: rotate(90deg); }
-
-  .ind-item-body {
-    border-top: 1px solid var(--border);
-    padding: var(--sp-4);
-    display: none; grid-template-columns: 1fr; gap: var(--sp-3);
-  }
-  .ind-item.open .ind-item-body { display: grid; }
-
-  .ind-example {
-    font-family: 'SFMono-Regular', Consolas, monospace; font-size: var(--t-label);
-    background: var(--surface2); padding: var(--sp-2) var(--sp-3);
-    border-radius: 4px; border: 1px solid var(--border);
-    color: var(--text); word-break: break-all;
-  }
 
   @media (max-width: 600px) {
     .two-col { grid-template-columns: 1fr; }
@@ -429,128 +352,8 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════
-       INDICATOR LIBRARY
-  ════════════════════════════════════════════════════════════ -->
-  <hr class="section-divider">
-
-  <div class="page-header">
-    <h1 class="page-title">Indicator Library</h1>
-    <p class="page-subtitle">All 20 indicators available in the Strategy Builder. Click any row to expand details.</p>
-  </div>
-
-  <!-- Toolbar: search + expand/collapse -->
-  <div class="ind-toolbar">
-    <input type="text" id="ind-search" class="ind-search" placeholder="Search indicators…" autocomplete="off">
-    <button class="ind-ctrl-btn" id="ind-expand-all">Expand all</button>
-    <button class="ind-ctrl-btn" id="ind-collapse-all">Collapse all</button>
-  </div>
-
-  <!-- Grouped accordion — server-side rendered -->
-  <%
-    const IND_CATS = ['Momentum', 'Trend', 'Volatility', 'Volume'];
-    for (const cat of IND_CATS) {
-      const catInds = indicators.filter(m => m.category === cat);
-      if (!catInds.length) continue;
-  %>
-  <div class="ind-group" data-cat="<%= cat %>">
-    <div class="ind-group-label"><%= cat %></div>
-
-    <% for (const m of catInds) { %>
-    <div class="ind-item" data-name="<%= m.displayName.toLowerCase() %>">
-      <div class="ind-item-hdr">
-        <span class="ind-item-name"><%= m.displayName %></span>
-        <span class="ind-item-cat"><%= m.category %></span>
-        <span class="ind-item-chevron">&#9658;</span>
-      </div>
-      <div class="ind-item-body">
-
-        <div>
-          <div class="strat-section-label">Description</div>
-          <div class="strat-section-text"><%= m.description %></div>
-        </div>
-
-        <div>
-          <div class="strat-section-label">Common use</div>
-          <div class="strat-section-text"><%= m.commonUse %></div>
-        </div>
-
-        <div>
-          <div class="strat-section-label">Typical parameters</div>
-          <div class="strat-section-text"><%= m.typicalParams %></div>
-        </div>
-
-        <div>
-          <div class="strat-section-label">Example rule</div>
-          <div class="ind-example"><%= m.exampleRule %></div>
-        </div>
-
-        <% if (m.defaultParams && m.defaultParams.length > 0) { %>
-        <div>
-          <div class="strat-section-label">Parameters</div>
-          <div class="param-list">
-            <% for (const p of m.defaultParams) { %>
-            <div class="param-row">
-              <span class="param-label"><%= p.label %></span>
-              <span class="param-default">default: <%= p.default %></span>
-              <span class="param-range"><%= p.min %> – <%= p.max %></span>
-            </div>
-            <% } %>
-          </div>
-        </div>
-        <% } %>
-
-      </div>
-    </div>
-    <% } %>
-
-  </div>
-  <% } %>
 
 </div><!-- /.learn-container -->
-
-<script>
-(function () {
-  'use strict';
-
-  // ── Accordion ────────────────────────────────────────────────
-  document.querySelectorAll('.ind-item-hdr').forEach(function (hdr) {
-    hdr.addEventListener('click', function () {
-      hdr.closest('.ind-item').classList.toggle('open');
-    });
-  });
-
-  // ── Expand / Collapse all ────────────────────────────────────
-  document.getElementById('ind-expand-all').addEventListener('click', function () {
-    document.querySelectorAll('.ind-item:not([hidden])').forEach(function (el) {
-      el.classList.add('open');
-    });
-  });
-  document.getElementById('ind-collapse-all').addEventListener('click', function () {
-    document.querySelectorAll('.ind-item').forEach(function (el) {
-      el.classList.remove('open');
-    });
-  });
-
-  // ── Live search ──────────────────────────────────────────────
-  document.getElementById('ind-search').addEventListener('input', function () {
-    var q = this.value.trim().toLowerCase();
-
-    document.querySelectorAll('.ind-item').forEach(function (el) {
-      var match = !q || el.dataset.name.includes(q);
-      el.hidden = !match;
-      // Auto-expand single exact-ish match; collapse when clearing
-      if (match && q) el.classList.add('open');
-    });
-
-    // Hide group headers when all their items are hidden
-    document.querySelectorAll('.ind-group').forEach(function (grp) {
-      var anyVisible = grp.querySelector('.ind-item:not([hidden])');
-      grp.hidden = !anyVisible;
-    });
-  });
-})();
-</script>
 
 </body>
 </html>

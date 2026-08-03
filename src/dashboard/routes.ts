@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { join } from "path";
 import { RSI } from "technicalindicators";
-import { config, coins, API_URL } from "../config.js";
+import { config, coins } from "../config.js";
 import { runBacktest, fetchCandles, fetchCandlesByRange, runFundingBasisBacktest, fetchFundingHistory, attachSignals, BACKTEST_INTERVAL_MS, resolveEffectiveStop } from "../backtest.js";
 import { alignFundingRows } from "../chart-utils.js";
 import { makeCacheKey, isValidCoin, isValidInterval } from "../candle-cache-utils.js";
@@ -25,7 +25,8 @@ import { buildScorecard } from "../market/scoring.js";
 
 // ── Funding rate cache & helpers ─────────────────────────────────────────────
 
-const HL_INFO_ENDPOINT = `${API_URL}/info`;
+// Funding-rate dashboard always reads from mainnet regardless of execution network.
+const HL_INFO_ENDPOINT = "https://api.hyperliquid.xyz/info";
 
 interface CachedFundingItem {
   coin: string;
@@ -398,10 +399,9 @@ export function createRouter(
 
   router.get("/learn", (_req, res) => {
     res.render("learn", {
-      network:    config.exchange.network,
-      coin:       config.exchange.coin,
-      registry:   STRATEGY_REGISTRY,
-      indicators: INDICATOR_REGISTRY,
+      network:  config.exchange.network,
+      coin:     config.exchange.coin,
+      registry: STRATEGY_REGISTRY,
     });
   });
 
@@ -459,6 +459,16 @@ export function createRouter(
     try {
       await laneManager.deleteBot(req.params.id);
       res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  router.delete("/api/bots/:id/history", (req, res) => {
+    if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
+    try {
+      const result = laneManager.resetBotHistory(req.params.id);
+      res.json({ ok: true, ...result });
     } catch (err) {
       res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -687,11 +697,15 @@ export function createRouter(
   });
 
   router.get("/strategies", (_req, res) => {
+    res.redirect(301, "/funding");
+  });
+
+  router.get("/funding", (_req, res) => {
     const strategyData = strategies.map((s) => ({
       name:  s.name,
       state: s.getState?.() ?? {},
     }));
-    res.render("strategies", {
+    res.render("funding", {
       strategies: strategyData,
       coin:    config.exchange.coin,
       network: config.exchange.network,

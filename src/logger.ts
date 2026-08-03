@@ -241,17 +241,62 @@ export class Logger {
    */
   getBotRealisedStats(strategy: string, coin: string, botId?: string): { tradeCount: number; realisedPnl: number } {
     if (botId) {
-      // Rows with this bot_id + fallback rows with matching strategy+coin but no bot_id
+      // Rows with this bot_id + fallback rows with matching strategy+coin but no bot_id.
+      // pnl IS NOT NULL filters to closed-position rows only; open-trade rows (pnl = NULL)
+      // are entry records only and would inflate the count with $0 contribution.
       const row = this.db.prepare(
-        "SELECT COUNT(*) as cnt, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE success = 1 AND (bot_id = ? OR (bot_id IS NULL AND strategy = ? AND coin = ?))",
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE success = 1 AND pnl IS NOT NULL AND (bot_id = ? OR (bot_id IS NULL AND strategy = ? AND coin = ?))",
       ).get(botId, strategy, coin) as { cnt: number; pnl: number };
       return { tradeCount: row.cnt, realisedPnl: row.pnl };
     }
     // Legacy path — no bot_id available
     const row = this.db.prepare(
-      "SELECT COUNT(*) as cnt, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE strategy = ? AND coin = ? AND success = 1",
+      "SELECT COUNT(*) as cnt, COALESCE(SUM(pnl), 0) as pnl FROM trades WHERE strategy = ? AND coin = ? AND success = 1 AND pnl IS NOT NULL",
     ).get(strategy, coin) as { cnt: number; pnl: number };
     return { tradeCount: row.cnt, realisedPnl: row.pnl };
+  }
+
+  /**
+   * Returns per-bot orphaned-open statistics: bots where the number of
+   * pnl=NULL (open-trade) rows exceeds pnl IS NOT NULL (close-trade) rows.
+   *
+   * @param inMemoryOpenBotIds  Bot IDs that currently hold an open in-memory
+   *   position.  One open row per such bot is *legitimate* (the live position
+   *   has no close row yet), so the count is decremented by 1 for each.
+   *   Pass this when calling periodically; omit at startup (bot.position is
+   *   always null immediately after a restart).
+   */
+  getOrphanedOpenStats(
+    inMemoryOpenBotIds?: ReadonlySet<string>,
+  ): Array<{ botId: string; coin: string; strategy: string; orphanCount: number }> {
+    const opens = this.db.prepare(
+      "SELECT bot_id, coin, strategy, COUNT(*) as cnt FROM trades WHERE success = 1 AND pnl IS NULL AND bot_id IS NOT NULL GROUP BY bot_id, coin, strategy",
+    ).all() as Array<{ bot_id: string; coin: string; strategy: string; cnt: number }>;
+
+    const closes = this.db.prepare(
+      "SELECT bot_id, COUNT(*) as cnt FROM trades WHERE success = 1 AND pnl IS NOT NULL AND bot_id IS NOT NULL GROUP BY bot_id",
+    ).all() as Array<{ bot_id: string; cnt: number }>;
+
+    const closeMap = new Map(closes.map((r) => [r.bot_id, r.cnt]));
+    return opens
+      .map((r) => {
+        const inMemAdj = inMemoryOpenBotIds?.has(r.bot_id) ? 1 : 0;
+        return {
+          botId:       r.bot_id,
+          coin:        r.coin,
+          strategy:    r.strategy,
+          orphanCount: r.cnt - (closeMap.get(r.bot_id) ?? 0) - inMemAdj,
+        };
+      })
+      .filter((r) => r.orphanCount > 0);
+  }
+
+  /** Epoch-ms of the earliest orphaned open row for the given bot_id. */
+  getEarliestOrphanTimestamp(botId: string): number {
+    const row = this.db.prepare(
+      "SELECT strftime('%s', MIN(created_at)) * 1000 as ts FROM trades WHERE bot_id = ? AND pnl IS NULL AND success = 1",
+    ).get(botId) as { ts: number | null };
+    return row.ts ?? (Date.now() - 365 * 24 * 3_600_000);
   }
 
   getDailyPnl(): DailyPnlRow[] {
@@ -264,6 +309,15 @@ export class Logger {
     return this.db
       .prepare("SELECT * FROM events ORDER BY created_at DESC LIMIT ?")
       .all(limit) as EventRow[];
+  }
+
+  /**
+   * Delete all trades rows for the given bot_id and return the deleted count.
+   * Used by the admin "reset history" action to purge testnet-economics fiction.
+   */
+  deleteTradesForBot(botId: string): number {
+    const result = this.db.prepare("DELETE FROM trades WHERE bot_id = ?").run(botId);
+    return result.changes;
   }
 
   /**

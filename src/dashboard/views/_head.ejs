@@ -179,12 +179,25 @@
     }
     .nav-links.open { display: flex; }
 
-    /* ── Two-tier nav ── */
+    /* ── Bot pillar nav: group row + sub-page row ── */
     .nav-sub {
       height: 40px;
       border-top: none;
     }
-    .nav-sub .nav-link { height: 40px; font-size: 12px; }
+    .nav-sub .nav-link { height: 40px; font-size: 12px; font-weight: 500; }
+    .nav-sub .nav-link.active,
+    .nav-sub2 .nav-link.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Settings link pushed to the right end of the group row */
+    .nav-settings { margin-left: auto; }
+
+    /* Sub-page row — second level, shown under Pulse and Evidence */
+    .nav-sub2 {
+      height: 36px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-sub2 .nav-link { height: 36px; font-size: 12px; padding: 0 0.65rem; }
 
     /* ── Layout ── */
     .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
@@ -303,8 +316,10 @@
         padding: 0.5rem 0;
       }
       .nav-links.open { display: flex; }
-      .nav-sub { overflow-x: auto; -webkit-overflow-scrolling: touch; height: auto; padding: 0 0.5rem; }
-      .nav-sub .nav-links { display: flex; position: static; flex-direction: row; border-bottom: none; padding: 0; background: none; }
+      .nav-sub  { overflow-x: auto; -webkit-overflow-scrolling: touch; height: auto; padding: 0 0.5rem; }
+      .nav-sub2 { overflow-x: auto; -webkit-overflow-scrolling: touch; height: auto; padding: 0 0.5rem; }
+      .nav-sub  .nav-links,
+      .nav-sub2 .nav-links { display: flex; position: static; flex-direction: row; border-bottom: none; padding: 0; background: none; }
       .nav-link {
         height: auto;
         padding: 0.6rem 1.25rem;
@@ -313,6 +328,8 @@
         width: 100%;
       }
       .nav-link.active { border-left-color: var(--blue); border-bottom: none; }
+      .nav-sub  .nav-link.active,
+      .nav-sub2 .nav-link.active { border-left-color: var(--accent); }
 
       /* Cards: single column */
       .grid {
