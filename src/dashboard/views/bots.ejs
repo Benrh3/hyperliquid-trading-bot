@@ -396,11 +396,12 @@
   var STRATEGY_REQUIRES_SIGNALS = <%- JSON.stringify(Object.fromEntries(registry.map(e => [e.id, !!e.requiresSignals]))) %>;
 
   // ── State ─────────────────────────────────────────────────────────────────
-  var allBots    = [];
-  var topCoins   = [];
+  var allBots      = [];
+  var topCoins     = [];
   var dydxCoins    = [];
   var coinsLoading = false;
-  var lastFetch  = 0;
+  var lastFetch    = 0;
+  var expandedBots = new Set(); // bot IDs whose expand panel should stay open across renders
 
   // ── Elements ─────────────────────────────────────────────────────────────
   var grid    = document.getElementById('bots-grid');
@@ -750,8 +751,12 @@
       face.addEventListener('click', function (e) {
         if (e.target.closest('button')) return;
         var card   = face.closest('.bc2');
+        var id     = card.dataset.id;
         var expand = card.querySelector('.bc2-expand');
-        if (expand) expand.style.display = expand.style.display === 'none' ? '' : 'none';
+        if (!expand) return;
+        var opening = expand.style.display === 'none';
+        expand.style.display = opening ? '' : 'none';
+        if (opening) expandedBots.add(id); else expandedBots.delete(id);
       });
     });
 
@@ -760,8 +765,12 @@
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
         var card   = btn.closest('.bc2');
+        var id     = card.dataset.id;
         var expand = card.querySelector('.bc2-expand');
-        if (expand) expand.style.display = expand.style.display === 'none' ? '' : 'none';
+        if (!expand) return;
+        var opening = expand.style.display === 'none';
+        expand.style.display = opening ? '' : 'none';
+        if (opening) expandedBots.add(id); else expandedBots.delete(id);
       });
     });
 
@@ -881,8 +890,26 @@
         + '</div>';
     }
 
+    var scrollY = window.scrollY;
     grid.innerHTML = html;
     wireGridEvents();
+
+    // Reapply expand state from previous renders
+    if (expandedBots.size > 0) {
+      expandedBots.forEach(function (id) {
+        var card = grid.querySelector('.bc2[data-id="' + id + '"]');
+        if (card) {
+          var expand = card.querySelector('.bc2-expand');
+          if (expand) expand.style.display = '';
+        } else {
+          // Bot no longer in DOM (deleted) — clean up
+          expandedBots.delete(id);
+        }
+      });
+    }
+
+    // Restore scroll position so an expanded card doesn't jump
+    if (expandedBots.size > 0) window.scrollTo(0, scrollY);
 
     // Orphans
     (async function () {
