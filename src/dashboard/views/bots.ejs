@@ -1,137 +1,179 @@
 <%- include('_head', { title: 'Bots' }) %>
 
 <style>
-  .bots-page {
+  /* ── Page container ── */
+  .bp-container {
     max-width: 1280px;
     margin: 0 auto;
-    padding: var(--sp-6) var(--sp-6) var(--sp-6);
+    padding: var(--sp-4) var(--sp-6);
   }
 
-  /* ── Account hero ── */
-  .acct-hero {
-    text-align: center;
-    padding: var(--sp-6) var(--sp-4) var(--sp-5);
+  /* ── Summary strip — 5 signal-card tiles ── */
+  .bp-summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+    align-items: stretch;
   }
-  .acct-hero-pnl {
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: var(--t-hero);
-    font-weight: 400;
-    letter-spacing: -.01em;
-    line-height: 1.1;
+
+  /* ── Page bar ── */
+  .bp-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+    flex-wrap: wrap;
   }
-  .acct-hero-label {
+  .bp-bar-right { margin-left: auto; display: flex; align-items: center; gap: var(--sp-3); }
+  #refresh-badge  { font-size: var(--t-label); color: var(--muted); }
+  #risk-indicator { font-size: var(--t-label); color: var(--muted); }
+
+  /* ── Strategy family section ── */
+  .bg-section { margin-bottom: var(--sp-5); }
+  .bg-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
+    padding-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .bg-label {
     font-size: var(--t-label);
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .08em;
     color: var(--muted);
-    margin-bottom: var(--sp-1);
   }
-  .acct-hero-stats {
-    display: flex;
-    justify-content: center;
-    gap: var(--sp-5);
-    margin-top: var(--sp-4);
-    flex-wrap: wrap;
-  }
-  .acct-hero-stat {
+  .bg-pnl {
     font-size: var(--t-label);
-    color: var(--muted);
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-variant-numeric: tabular-nums;
     font-weight: 600;
   }
-  .acct-hero-stat .ahs-val { color: var(--text); margin-left: var(--sp-1); }
-
-  /* ── Page header ── */
-  .bots-page-hdr {
-    display: flex; align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--sp-4); flex-wrap: wrap; gap: var(--sp-3);
-  }
-  .bots-page-hdr h1 { font-size: var(--t-label); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-  .hdr-right { display: flex; align-items: center; gap: var(--sp-4); }
-  #refresh-badge { font-size: var(--t-label); color: var(--muted); }
-
-  /* ── Grid ── */
-  .bots-grid {
+  .bg-count { font-size: var(--t-label); color: var(--muted); margin-left: auto; }
+  .bg-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
-    gap: var(--sp-4);
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--sp-3);
     align-items: start;
   }
 
-  /* ── Bot card ── */
-  .bot-card {
+  /* ── Compact bot card ── */
+  .bc2 {
     background: var(--surface);
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 6px;
     overflow: hidden;
-    display: flex; flex-direction: column;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     transition: border-color .15s, box-shadow .15s;
+    cursor: pointer;
   }
-  .bot-card:hover { border-color: var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
-  .bot-card.paused { opacity: 0.65; }
+  .bc2:hover { border-color: var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+  .bc2.bc2-idle   { opacity: 0.42; }
+  .bc2.bc2-paused { opacity: 0.65; }
 
-  .bc-header {
+  .bc2-face {
     padding: var(--sp-3) var(--sp-4);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: var(--sp-1);
-    flex-wrap: wrap; row-gap: var(--sp-1);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
   }
-  .bc-name { font-size: var(--t-body); font-weight: 600; }
-  .bc-coin {
-    font-size: 10px; font-weight: 600; font-family: 'SFMono-Regular', Consolas, monospace;
-    color: var(--accent); border: 1px solid var(--accent-border);
-    padding: 1px var(--sp-2); border-radius: 3px;
+  .bc2-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    min-width: 0;
   }
-  .bc-tf {
-    font-size: 10px; color: var(--muted);
-    border: 1px solid var(--border);
-    padding: 1px var(--sp-2); border-radius: 3px;
+  .bc2-name {
+    font-size: var(--t-body);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
   }
-  .bc-live   { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--green); }
-  .bc-shadow {
-    font-size: 10px; font-weight: 700; letter-spacing: .05em;
-    padding: 2px 6px; border-radius: 99px;
-    background: rgba(129,140,248,.12); color: var(--accent);
-    border: 1px solid rgba(129,140,248,.25);
+  .bc2-coin {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    color: var(--accent);
+    font-size: 11px;
   }
-  .bc-status {
-    margin-left: auto; font-size: 10px; font-weight: 600;
-    letter-spacing: .03em; padding: 2px var(--sp-2); border-radius: 99px;
+  .bc2-badges { display: flex; gap: 3px; flex-shrink: 0; }
+  .bc2-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: .05em;
+    padding: 1px 5px; border-radius: 99px;
   }
-  .bc-status.running { background: rgba(63,185,80,0.15);   color: var(--green); }
-  .bc-status.paused  { background: rgba(129,140,248,0.12);  color: var(--muted); }
-  .bc-status.error   { background: rgba(248,81,73,0.15);   color: var(--red); }
-  .bc-error-msg {
-    font-size: var(--t-label); color: var(--red); padding: var(--sp-2) var(--sp-4);
-    border-top: 1px solid rgba(248,81,73,0.2); background: rgba(248,81,73,0.04);
-    word-break: break-word;
+  .bc2-live    { background: rgba(240,136,62,.15);  color: #f0883e;        border: 1px solid rgba(240,136,62,.3); }
+  .bc2-paper   { background: rgba(129,140,248,.10); color: var(--muted);   border: 1px solid rgba(129,140,248,.15); }
+  .bc2-shadow  { background: rgba(129,140,248,.15); color: var(--accent);  border: 1px solid rgba(129,140,248,.28); }
+  .bc2-running { background: rgba(63,185,80,.12);   color: var(--green);   border: 1px solid rgba(63,185,80,.2); }
+  .bc2-paused-b { background: rgba(61,90,120,.12);  color: var(--muted);   border: 1px solid var(--border); }
+  .bc2-error-b  { background: rgba(248,81,73,.12);  color: var(--red);     border: 1px solid rgba(248,81,73,.2); }
+
+  .bc2-bottom {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
   }
-  .bc-reconcile-warn {
-    font-size: var(--t-label); color: var(--amber, #d29922); padding: var(--sp-2) var(--sp-4);
-    border-top: 1px solid rgba(210,153,34,0.25); background: rgba(210,153,34,0.06);
-    display: flex; align-items: flex-start; gap: var(--sp-1); line-height: 1.4;
+  .bc2-pnl {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: var(--t-value-sm);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    flex: 1;
+    min-width: 0;
   }
-  .bc-orphan-warn {
-    font-size: var(--t-label); color: var(--muted); padding: var(--sp-2) var(--sp-4);
+  .bc2-meta { font-size: var(--t-label); color: var(--muted); white-space: nowrap; }
+  .bc2-face-btns { display: flex; gap: 3px; flex-shrink: 0; }
+  .bc2-ctrl {
+    background: transparent; border: 1px solid var(--border);
+    color: var(--muted); border-radius: 4px;
+    padding: 2px 6px; font-size: 12px; font-family: inherit;
+    cursor: pointer; line-height: 1.4; transition: background .1s, color .1s;
+  }
+  .bc2-ctrl:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
+  .bc2-ctrl-accent { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
+  .bc2-more { font-size: 13px; padding: 1px 5px; letter-spacing: .1em; }
+
+  .bc2-err-msg {
+    font-size: var(--t-label); color: var(--red);
+    padding: var(--sp-1) 0 0; line-height: 1.4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* Expanded detail panel */
+  .bc2-expand {
     border-top: 1px solid var(--border);
-    display: flex; align-items: center; gap: var(--sp-1);
+    background: var(--surface2);
+  }
+  .bc2-expand .bc-body {
+    padding: var(--sp-3) var(--sp-4);
+    display: flex; flex-direction: column; gap: var(--sp-1);
+  }
+  .bc2-expand .bc-footer {
+    padding: var(--sp-2) var(--sp-4);
+    border-top: 1px solid var(--border);
+    display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap;
+  }
+
+  /* Empty / loading */
+  .bots-empty {
+    padding: var(--sp-6) 0;
+    text-align: center; color: var(--muted); font-size: var(--t-body);
   }
 
   /* ── Orphaned positions panel ── */
   .orphans-panel {
-    background: var(--surface);
-    border: 1px solid rgba(248,81,73,0.35);
-    border-radius: 8px;
-    margin-top: var(--sp-5);
-    overflow: hidden;
+    background: var(--surface); border: 1px solid rgba(248,81,73,0.35);
+    border-radius: 8px; margin-top: var(--sp-5); overflow: hidden;
   }
   .orphans-hdr {
-    padding: var(--sp-3) var(--sp-4);
-    border-bottom: 1px solid rgba(248,81,73,0.2);
-    background: rgba(248,81,73,0.06);
-    display: flex; align-items: center; gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid rgba(248,81,73,0.2);
+    background: rgba(248,81,73,0.06); display: flex; align-items: center; gap: var(--sp-2);
     font-size: var(--t-body); font-weight: 600; color: var(--red);
   }
   .orphan-row {
@@ -150,44 +192,25 @@
   }
   .btn-close-orphan:hover { background: rgba(248,81,73,0.2); }
 
-  .bc-body {
-    padding: var(--sp-3) var(--sp-4);
-    display: flex; flex-direction: column; gap: var(--sp-1);
-    flex: 1;
-  }
-  .bc-row {
-    display: flex; justify-content: space-between;
-    align-items: baseline; font-size: var(--t-label);
-  }
+  /* ── Shared row/badge styles (expand detail) ── */
+  .bc-row { display: flex; justify-content: space-between; align-items: baseline; font-size: var(--t-label); }
   .bc-lbl { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-  .bc-val {
-    font-family: 'SFMono-Regular', Consolas, monospace;
-    font-variant-numeric: tabular-nums; font-size: var(--t-label);
-  }
+  .bc-val { font-family: 'SFMono-Regular', Consolas, monospace; font-variant-numeric: tabular-nums; font-size: var(--t-label); }
+  .bc-divider { height: 1px; background: var(--border); margin: var(--sp-2) 0; }
 
-  .pos-badge {
-    display: inline-block; font-size: var(--t-label); font-weight: 600;
-    padding: 1px var(--sp-2); border-radius: 3px; letter-spacing: .02em;
-  }
+  .pos-badge { display: inline-block; font-size: var(--t-label); font-weight: 600; padding: 1px var(--sp-2); border-radius: 3px; letter-spacing: .02em; }
   .pos-long    { background: rgba(63,185,80,0.15);   color: var(--green); }
   .pos-short   { background: rgba(248,81,73,0.15);   color: var(--red); }
-  .pos-flat    { background: rgba(129,140,248,0.12);  color: var(--muted); }
-  .pos-neutral { background: var(--accent-dim);       color: var(--accent); }
+  .pos-flat    { background: rgba(129,140,248,0.12); color: var(--muted); }
+  .pos-neutral { background: var(--accent-dim);      color: var(--accent); }
 
   .pnl-pos { color: var(--green); }
   .pnl-neg { color: var(--red); }
 
-  .bc-divider { height: 1px; background: var(--border); margin: var(--sp-2) 0; }
-
-  .bc-footer {
-    padding: var(--sp-2) var(--sp-4);
-    border-top: 1px solid var(--border);
-    display: flex; gap: var(--sp-2); align-items: center;
-  }
+  /* ── Expand control buttons ── */
   .bc-btn {
     font-size: var(--t-label); font-weight: 600; font-family: inherit;
-    border: 1px solid var(--border);
-    background: transparent; color: var(--text);
+    border: 1px solid var(--border); background: transparent; color: var(--text);
     border-radius: 4px; padding: var(--sp-1) var(--sp-3);
     cursor: pointer; transition: background 0.1s, color 0.1s;
   }
@@ -198,113 +221,54 @@
   .bc-btn.danger:hover { background: rgba(248,81,73,0.12); border-color: var(--red); }
   .bc-btn:disabled { opacity: 0.4; cursor: default; }
 
-  .bots-empty {
-    grid-column: 1/-1; padding: var(--sp-6) 0;
-    text-align: center; color: var(--muted); font-size: var(--t-body);
-  }
-
-  /* ── P&L headline in card body ── */
-  .bc-pnl-lead {
-    font-family: 'SFMono-Regular', Consolas, monospace;
-    font-weight: 700;
-    font-size: var(--t-value-sm);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -.02em;
-    padding: var(--sp-2) var(--sp-4) 0;
-  }
-
   /* ── Modal ── */
-  .modal-backdrop {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.55);
-    z-index: 200;
-    display: flex; align-items: center; justify-content: center;
-    padding: var(--sp-4);
-  }
-  .modal {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    width: 100%; max-width: 420px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.45);
-    display: flex; flex-direction: column;
-  }
-  .modal-hdr {
-    padding: var(--sp-4) var(--sp-5) var(--sp-3);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-  }
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 200; display: flex; align-items: center; justify-content: center; padding: var(--sp-4); }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 420px; box-shadow: 0 12px 40px rgba(0,0,0,0.45); display: flex; flex-direction: column; }
+  .modal-hdr { padding: var(--sp-4) var(--sp-5) var(--sp-3); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
   .modal-hdr h2 { font-size: var(--t-body); font-weight: 600; margin: 0; }
-  .modal-x {
-    background: none; border: none; color: var(--muted);
-    font-size: 20px; cursor: pointer; line-height: 1; padding: 2px var(--sp-2);
-    border-radius: 3px;
-  }
+  .modal-x { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; line-height: 1; padding: 2px var(--sp-2); border-radius: 3px; }
   .modal-x:hover { color: var(--text); background: var(--accent-dim); }
   .modal-body { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); }
-  .modal-ftr {
-    padding: var(--sp-3) var(--sp-5);
-    border-top: 1px solid var(--border);
-    display: flex; justify-content: flex-end; gap: var(--sp-2);
-  }
-
-  /* Form fields */
+  .modal-ftr { padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: var(--sp-2); }
   .m-field { display: flex; flex-direction: column; gap: var(--sp-1); }
   .m-label { font-size: var(--t-label); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-  .m-sel, .m-inp {
-    background: var(--bg); border: 1px solid var(--border);
-    color: var(--text); font-size: var(--t-body); font-family: inherit;
-    padding: var(--sp-2) var(--sp-3); border-radius: 4px;
-    transition: border-color 0.1s;
-  }
-  .m-sel {
-    appearance: none; cursor: pointer;
-    padding-right: var(--sp-6);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%233D5A78'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 7px center;
-  }
+  .m-sel, .m-inp { background: var(--bg); border: 1px solid var(--border); color: var(--text); font-size: var(--t-body); font-family: inherit; padding: var(--sp-2) var(--sp-3); border-radius: 4px; transition: border-color 0.1s; }
+  .m-sel { appearance: none; cursor: pointer; padding-right: var(--sp-6); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%233D5A78'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 7px center; }
   .m-sel:focus, .m-inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
   .m-sel:disabled, .m-inp:disabled { opacity: 0.45; cursor: default; }
-
   .m-pfx-wrap { display: flex; }
-  .m-pfx {
-    background: var(--surface2);
-    border: 1px solid var(--border); border-right: none;
-    border-radius: 4px 0 0 4px;
-    padding: var(--sp-2) var(--sp-3); font-size: var(--t-body); color: var(--muted);
-    line-height: 1.6;
-  }
+  .m-pfx { background: var(--surface2); border: 1px solid var(--border); border-right: none; border-radius: 4px 0 0 4px; padding: var(--sp-2) var(--sp-3); font-size: var(--t-body); color: var(--muted); line-height: 1.6; }
   .m-pfx + .m-inp { border-radius: 0 4px 4px 0; width: 100%; }
-
   .m-hint { font-size: var(--t-label); color: var(--muted); margin: 0; line-height: 1.4; }
   .m-desc { font-size: var(--t-label); color: var(--muted); margin: 0; line-height: 1.5; font-style: italic; }
   .m-warn { font-size: var(--t-label); color: var(--yellow); margin: 0; }
   .m-err  { font-size: var(--t-label); color: var(--red);    margin: 0; }
-
-  .live-row {
-    display: flex; align-items: center;
-    justify-content: space-between; gap: var(--sp-4);
-  }
+  .live-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
   .live-row-text .m-label { display: block; margin-bottom: 2px; }
-
-  /* Toggle */
-  .toggle {
-    position: relative; width: 36px; height: 20px;
-    cursor: pointer; display: inline-block; flex-shrink: 0;
-  }
+  .toggle { position: relative; width: 36px; height: 20px; cursor: pointer; display: inline-block; flex-shrink: 0; }
   .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
-  .toggle-slider {
-    position: absolute; inset: 0;
-    background: var(--border); border-radius: 20px; transition: background 0.15s;
-  }
-  .toggle-slider::after {
-    content: ""; position: absolute;
-    width: 14px; height: 14px; background: #fff;
-    border-radius: 50%; top: 3px; left: 3px; transition: transform 0.15s;
-  }
+  .toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 20px; transition: background 0.15s; }
+  .toggle-slider::after { content: ""; position: absolute; width: 14px; height: 14px; background: #fff; border-radius: 50%; top: 3px; left: 3px; transition: transform 0.15s; }
   .toggle input:checked + .toggle-slider { background: var(--accent); }
   .toggle input:checked + .toggle-slider::after { transform: translateX(16px); }
   .toggle input:disabled + .toggle-slider { opacity: 0.35; cursor: default; }
+
+  /* ── Responsive ── */
+  @media (max-width: 1100px) {
+    .bp-summary { grid-template-columns: repeat(3, 1fr); }
+  }
+  @media (max-width: 900px) {
+    .bp-summary { grid-template-columns: repeat(3, 1fr); }
+    .bg-grid    { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 768px) {
+    .bp-container { padding: var(--sp-3); }
+    .bp-summary   { grid-template-columns: repeat(2, 1fr); }
+    .bg-grid      { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .bp-summary { grid-template-columns: 1fr 1fr; }
+  }
 </style>
 
 <%- include('_nav') %>
@@ -338,7 +302,6 @@
         <p class="m-hint" id="m-coin-hint"></p>
       </div>
 
-      <!-- Timeframe — hidden for non-candle strategies -->
       <div class="m-field" id="m-tf-field">
         <label class="m-label" for="m-tf">Timeframe</label>
         <select class="m-sel" id="m-tf">
@@ -351,7 +314,6 @@
         </select>
       </div>
 
-      <!-- Notional — shown for cross-venue bots only -->
       <div class="m-field" id="m-notional-field" style="display:none">
         <label class="m-label" for="m-notional">Notional per leg ($)</label>
         <div class="m-pfx-wrap">
@@ -361,7 +323,6 @@
         <p class="m-hint">Capital deployed on each venue leg. Position size is computed from this.</p>
       </div>
 
-      <!-- Account equity — shown for candle-strategy bots (sizing is %-based, not fixed $) -->
       <div class="m-field" id="m-acct-equity-field">
         <label class="m-label">Account equity (used for sizing)</label>
         <div class="m-pfx-wrap">
@@ -400,30 +361,28 @@
 </div>
 
 <!-- ── Page ── -->
-<div class="bots-page">
+<div class="bp-container">
 
-  <!-- Account hero (populated by JS from allBots) -->
-  <div class="acct-hero" id="acct-hero">
-    <div class="acct-hero-label">Realised P&amp;L</div>
-    <div class="acct-hero-pnl" id="acct-pnl">—</div>
-    <div class="acct-hero-stats" id="acct-stats"></div>
-  </div>
+  <!-- Summary strip (populated by JS) -->
+  <div class="bp-summary" id="bp-summary"></div>
 
-  <div class="bots-page-hdr">
-    <h1>Bots</h1>
-    <div class="hdr-right">
-      <span id="risk-indicator" style="font-size:var(--t-label);color:var(--muted);display:none">Open risk: —</span>
-      <span id="refresh-badge">Loading…</span>
+  <!-- Bar: refresh badge + risk + add bot -->
+  <div class="bp-bar">
+    <span id="refresh-badge">Loading…</span>
+    <span id="risk-indicator" style="display:none">Open risk: —</span>
+    <div class="bp-bar-right">
       <% if (isAdmin) { %><button class="bc-btn primary" id="btn-add-bot">+ Add Bot</button><% } %>
     </div>
   </div>
-  <div class="bots-grid" id="bots-grid">
+
+  <!-- Bot family groups (rendered by JS) -->
+  <div id="bots-grid">
     <div class="bots-empty">Loading bots…</div>
   </div>
 
-  <!-- Orphaned positions panel (hidden when empty) -->
+  <!-- Orphaned positions panel -->
   <div class="orphans-panel" id="orphans-panel" style="display:none">
-    <div class="orphans-hdr">⚠ Orphaned Exchange Positions</div>
+    <div class="orphans-hdr">&#9888; Orphaned Exchange Positions</div>
     <div id="orphans-list"></div>
   </div>
 </div>
@@ -432,45 +391,39 @@
 (function () {
   'use strict';
 
-  const IS_ADMIN = <%= isAdmin %>;
-  const STRATEGY_SUMMARIES = <%- JSON.stringify(Object.fromEntries(registry.map(e => [e.id, e.summary]))) %>;
-  const STRATEGY_REQUIRES_SIGNALS = <%- JSON.stringify(Object.fromEntries(registry.map(e => [e.id, !!e.requiresSignals]))) %>;
+  var IS_ADMIN = <%= isAdmin %>;
+  var STRATEGY_SUMMARIES = <%- JSON.stringify(Object.fromEntries(registry.map(e => [e.id, e.summary]))) %>;
+  var STRATEGY_REQUIRES_SIGNALS = <%- JSON.stringify(Object.fromEntries(registry.map(e => [e.id, !!e.requiresSignals]))) %>;
 
   // ── State ─────────────────────────────────────────────────────────────────
-  let allBots    = [];   // most recent /api/bots response (used by modal)
-  let topCoins   = [];   // cached /api/funding/top response (HL top 25)
-  let dydxCoins    = [];    // cached /api/dydx-markets response
-  let coinsLoading = false; // guard against concurrent /api/funding/top fetches
-  let lastFetch  = 0;
+  var allBots    = [];
+  var topCoins   = [];
+  var dydxCoins    = [];
+  var coinsLoading = false;
+  var lastFetch  = 0;
 
   // ── Elements ─────────────────────────────────────────────────────────────
-  const grid    = document.getElementById('bots-grid');
-  const badge   = document.getElementById('refresh-badge');
-  const modal   = document.getElementById('modal');
-  const mCoin   = document.getElementById('m-coin');
-  const mLive   = document.getElementById('m-live');
-  const mLiveW  = document.getElementById('m-live-warn');
-  const mLiveH  = document.getElementById('m-live-hint');
-  const mCoinH  = document.getElementById('m-coin-hint');
-  const mErr    = document.getElementById('m-err');
-  const mSubmit = document.getElementById('modal-submit');
-  const mTfField      = document.getElementById('m-tf-field');
-  const mNotionalF    = document.getElementById('m-notional-field');
-  const mAcctEquityF  = document.getElementById('m-acct-equity-field');
-  const mAcctDisp     = document.getElementById('m-acct-equity-display');
-  const mDesc         = document.getElementById('m-desc');
+  var grid    = document.getElementById('bots-grid');
+  var badge   = document.getElementById('refresh-badge');
+  var modal   = document.getElementById('modal');
+  var mCoin   = document.getElementById('m-coin');
+  var mLive   = document.getElementById('m-live');
+  var mLiveW  = document.getElementById('m-live-warn');
+  var mLiveH  = document.getElementById('m-live-hint');
+  var mCoinH  = document.getElementById('m-coin-hint');
+  var mErr    = document.getElementById('m-err');
+  var mSubmit = document.getElementById('modal-submit');
+  var mTfField      = document.getElementById('m-tf-field');
+  var mNotionalF    = document.getElementById('m-notional-field');
+  var mAcctEquityF  = document.getElementById('m-acct-equity-field');
+  var mAcctDisp     = document.getElementById('m-acct-equity-display');
+  var mDesc         = document.getElementById('m-desc');
 
-  function updateStrategyDesc() {
-    const id = document.getElementById('m-strategy').value;
-    mDesc.textContent = STRATEGY_SUMMARIES[id] ?? '';
-  }
-
+  // ── Formatters ────────────────────────────────────────────────────────────
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
                     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
-
-  // ── Formatters ────────────────────────────────────────────────────────────
   function fmtPrice(n) {
     if (!n) return '—';
     return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -487,53 +440,128 @@
     return (r !== null && r !== undefined) ? (r * 100).toFixed(4) + '%/hr' : '—';
   }
   function timeAgo(ts) {
-    const s = Math.floor((Date.now() - ts) / 1000);
+    var s = Math.floor((Date.now() - ts) / 1000);
     if (s < 60)  return s + 's ago';
-    const m = Math.floor(s / 60);
+    var m = Math.floor(s / 60);
     if (m < 60)  return m + 'm ago';
-    const h = Math.floor(m / 60);
+    var h = Math.floor(m / 60);
     if (h < 24)  return h + 'h ago';
     return Math.floor(h / 24) + 'd ago';
   }
   function timeSince(ts) {
-    const s = Math.floor((Date.now() - ts) / 1000);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
+    var s = Math.floor((Date.now() - ts) / 1000);
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
     if (h > 0) return h + 'h ' + m + 'm';
     if (m > 0) return m + 'm';
     return s + 's';
   }
   function pnlCls(n) { return n >= 0 ? 'pnl-pos' : 'pnl-neg'; }
 
-  // ── Card body helpers ─────────────────────────────────────────────────────
+  // ── Family grouping ───────────────────────────────────────────────────────
+  var FAM_ORDER  = ['Cross-Venue', 'Trend Follow', 'Confluence', 'Funding', 'Shadow', 'Other'];
+  var FAM_LABELS = {
+    'Cross-Venue':  'Funding — Cross-Venue',
+    'Trend Follow': 'Trend Follow',
+    'Confluence':   'Confluence',
+    'Funding':      'Funding',
+    'Shadow':       'Shadow / Signal-Driven',
+    'Other':        'Strategy',
+  };
 
-  function renderPnlLead(pnl) {
-    return '<div class="bc-pnl-lead ' + pnlCls(pnl) + '">' + fmtPnl(pnl) + '</div>';
+  function familyOf(b) {
+    if (b.strategyId === 'cross-venue-funding-basis') return 'Cross-Venue';
+    if (STRATEGY_REQUIRES_SIGNALS[b.strategyId])      return 'Shadow';
+    var sid = b.strategyId || '';
+    if (sid.indexOf('trend') !== -1)      return 'Trend Follow';
+    if (sid.indexOf('confluence') !== -1) return 'Confluence';
+    if (sid.indexOf('funding') !== -1)    return 'Funding';
+    return 'Other';
   }
 
+  function botPnl(b) {
+    return b.strategyId === 'cross-venue-funding-basis'
+      ? (b.sessionPnl || 0)
+      : (b.realisedPnl || 0);
+  }
+
+  function isActive(b) {
+    if (b.position && b.position.side !== 'flat') return 1;
+    if ((b.realisedTrades || 0) > 0) return 1;
+    if ((b.tradeCount     || 0) > 0) return 1;
+    return 0;
+  }
+
+  // ── Summary strip ─────────────────────────────────────────────────────────
+  function summaryTile(label, val, valCls, sub) {
+    return '<div class="signal-card">'
+      + '<div class="sc-header"><span class="sc-label">' + label + '</span></div>'
+      + '<div class="sc-value' + (valCls ? ' ' + valCls : '') + '">' + val + '</div>'
+      + '<div class="sc-subline">' + sub + '</div>'
+      + '</div>';
+  }
+
+  function updateHero(bots) {
+    var strip = document.getElementById('bp-summary');
+    if (!strip) return;
+
+    var totalPnl = 0, liveCount = 0, paperCount = 0, runningCount = 0;
+    var bestPnl = -Infinity, bestBot = null;
+    var shadowBot = null;
+
+    for (var i = 0; i < bots.length; i++) {
+      var b = bots[i];
+      var bp = botPnl(b);
+      totalPnl += bp;
+      if (b.live) liveCount++; else paperCount++;
+      if (b.status === 'running') runningCount++;
+      if (bp > bestPnl) { bestPnl = bp; bestBot = b; }
+      if (STRATEGY_REQUIRES_SIGNALS[b.strategyId]) shadowBot = b;
+    }
+
+    var bestVal = bestBot ? fmtPnl(bestPnl) : '—';
+    var bestSub = bestBot
+      ? esc(bestBot.displayName) + ' · ' + esc(bestBot.coin)
+      : 'no bots yet';
+
+    var shadowVal, shadowSub;
+    if (shadowBot) {
+      var sp = shadowBot.position;
+      var sSide = (sp && sp.side && sp.side !== 'flat') ? sp.side.toUpperCase() : 'FLAT';
+      shadowVal = sSide + ' · ' + esc(shadowBot.coin);
+      shadowSub = esc(shadowBot.displayName);
+    } else {
+      shadowVal = '—';
+      shadowSub = 'no shadow bot';
+    }
+
+    strip.innerHTML =
+      summaryTile('Total P&amp;L', fmtPnl(totalPnl), pnlCls(totalPnl), runningCount + ' running') +
+      summaryTile('Fleet', liveCount + ' live', '', paperCount + ' paper') +
+      summaryTile('Bots', String(bots.length), '', runningCount + ' active') +
+      summaryTile('Best Performer', bestVal, bestBot ? pnlCls(bestPnl) : '', bestSub) +
+      summaryTile('Shadow Stance', shadowVal, '', shadowSub);
+  }
+
+  // ── Expand detail helpers (identical to original) ─────────────────────────
+
   function renderStandardDetail(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml) {
-    const signalAgeHtml = b.lastSignalCapturedAt
-      ? `<div class="bc-row"><span class="bc-lbl">Signal age</span><span class="bc-val" style="color:var(--muted)">${timeAgo(b.lastSignalCapturedAt)}</span></div>`
+    var signalAgeHtml = b.lastSignalCapturedAt
+      ? '<div class="bc-row"><span class="bc-lbl">Signal age</span><span class="bc-val" style="color:var(--muted)">' + timeAgo(b.lastSignalCapturedAt) + '</span></div>'
       : '';
-    return `
-      ${entryHtml}
-      <div class="bc-row"><span class="bc-lbl">Current price</span><span class="bc-val">${fmtPrice(b.lastPrice)}</span></div>
-      <div class="bc-row"><span class="bc-lbl">Unrealised P&amp;L</span><span class="bc-val">${upnlHtml}</span></div>
-      ${timePosHtml}
-      <div class="bc-divider"></div>
-      <div class="bc-row"><span class="bc-lbl">Realised P&amp;L</span><span class="bc-val ${pnlCls(b.realisedPnl || 0)}">${fmtPnl(b.realisedPnl || 0)}</span></div>
-      <div class="bc-row"><span class="bc-lbl">${isFunding ? 'Periods' : 'Trades'}</span><span class="bc-val">${b.realisedTrades || 0}</span></div>
-      ${signalAgeHtml}
-      <div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">${fmtRate(b.fundingRate)}</span></div>
-      ${isFunding && b.fundingDirection ? `
-      <div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:var(--t-label)">${esc(b.fundingDirection)}</span></div>
-      <div class="bc-row"><span class="bc-lbl">Direction flips</span><span class="bc-val">${b.fundingFlips ?? 0}</span></div>
-      <div class="bc-row" style="margin-top:var(--sp-1)">
-        <span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">
-          Paper sim only — short-spot leg is not executable on Hyperliquid alone.
-        </span>
-      </div>` : ''}
-      <div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">${timeAgo(b.startedAt)}</span></div>`;
+    return entryHtml
+      + '<div class="bc-row"><span class="bc-lbl">Current price</span><span class="bc-val">' + fmtPrice(b.lastPrice) + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Unrealised P&amp;L</span><span class="bc-val">' + upnlHtml + '</span></div>'
+      + timePosHtml
+      + '<div class="bc-divider"></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Realised P&amp;L</span><span class="bc-val ' + pnlCls(b.realisedPnl || 0) + '">' + fmtPnl(b.realisedPnl || 0) + '</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">' + (isFunding ? 'Periods' : 'Trades') + '</span><span class="bc-val">' + (b.realisedTrades || 0) + '</span></div>'
+      + signalAgeHtml
+      + '<div class="bc-row"><span class="bc-lbl">Funding rate</span><span class="bc-val">' + fmtRate(b.fundingRate) + '</span></div>'
+      + (isFunding && b.fundingDirection ? '<div class="bc-row"><span class="bc-lbl">Current legs</span><span class="bc-val" style="font-size:var(--t-label)">' + esc(b.fundingDirection) + '</span></div>'
+        + '<div class="bc-row"><span class="bc-lbl">Direction flips</span><span class="bc-val">' + (b.fundingFlips || 0) + '</span></div>'
+        + '<div class="bc-row" style="margin-top:var(--sp-1)"><span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">Paper sim only — short-spot leg is not executable on Hyperliquid alone.</span></div>' : '')
+      + '<div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">' + timeAgo(b.startedAt) + '</span></div>';
   }
 
   function cvHelpers(b) {
@@ -551,8 +579,6 @@
     return { legsHtml: legsHtml, modeBadge: modeBadge, mode: mode, isLive: isLive };
   }
 
-
-
   function renderCrossVenueDetail(b) {
     var cv     = cvHelpers(b);
     var spread = b.currentSpread || 0;
@@ -561,24 +587,18 @@
     var grossFunding = b.capturedFunding || 0;
     var netPnl       = b.sessionPnl || 0;
     var feePaid      = grossFunding - netPnl;
-    var toggleBtn = IS_ADMIN ? '<button class="bc-btn cv-mode-toggle" data-id="' + b.id + '" data-current="' + cv.mode + '" style="font-size:var(--t-label);padding:2px var(--sp-2)">'
-      + (cv.isLive ? 'Switch to PAPER' : 'Switch to LIVE')
-      + '</button>' : '';
+    var toggleBtn = IS_ADMIN
+      ? '<button class="bc-btn cv-mode-toggle" data-id="' + b.id + '" data-current="' + cv.mode + '" style="font-size:var(--t-label);padding:2px var(--sp-2)">'
+        + (cv.isLive ? 'Switch to PAPER' : 'Switch to LIVE') + '</button>'
+      : '';
 
-    return ''
-      + '<div class="bc-row" style="align-items:center">'
+    return '<div class="bc-row" style="align-items:center">'
       +   '<span class="bc-lbl">Mode</span>'
       +   '<span class="bc-val" style="display:flex;align-items:center;gap:6px">' + cv.modeBadge + toggleBtn + '</span>'
       + '</div>'
       + '<div class="bc-row"><span class="bc-lbl">Legs</span><span class="bc-val" style="display:flex;gap:3px;flex-wrap:wrap">' + cv.legsHtml + '</span></div>'
-      + '<div class="bc-row">'
-      +   '<span class="bc-lbl">Spread<span style="font-size:9px;color:var(--muted);margin-left:3px">/hr</span></span>'
-      +   '<span class="bc-val ' + spreadClr + '">' + (spread >= 0 ? '+' : '') + spreadPct + '%</span>'
-      + '</div>'
-      + '<div class="bc-row">'
-      +   '<span class="bc-lbl">Spread (ann.)</span>'
-      +   '<span class="bc-val ' + spreadClr + '">' + (spread >= 0 ? '+' : '') + (spread * 8760 * 100).toFixed(1) + '%</span>'
-      + '</div>'
+      + '<div class="bc-row"><span class="bc-lbl">Spread<span style="font-size:9px;color:var(--muted);margin-left:3px">/hr</span></span><span class="bc-val ' + spreadClr + '">' + (spread >= 0 ? '+' : '') + spreadPct + '%</span></div>'
+      + '<div class="bc-row"><span class="bc-lbl">Spread (ann.)</span><span class="bc-val ' + spreadClr + '">' + (spread >= 0 ? '+' : '') + (spread * 8760 * 100).toFixed(1) + '%</span></div>'
       + '<div class="bc-divider"></div>'
       + '<div class="bc-row"><span class="bc-lbl">Net P&amp;L</span><span class="bc-val ' + pnlCls(netPnl) + '">' + fmtPnl(netPnl) + '</span></div>'
       + '<div class="bc-row"><span class="bc-lbl">Gross funding</span><span class="bc-val ' + pnlCls(grossFunding) + '">' + fmtPnl(grossFunding) + '</span></div>'
@@ -589,111 +609,238 @@
       + '<div class="bc-row"><span class="bc-lbl">Avg flip freq</span><span class="bc-val">' + (b.avgFlipFrequencyHours != null ? b.avgFlipFrequencyHours.toFixed(1) + 'h' : '—') + '</span></div>'
       + '<div class="bc-row"><span class="bc-lbl">Avg hold / dir</span><span class="bc-val">' + (b.avgHeldDurationHours != null ? b.avgHeldDurationHours.toFixed(1) + 'h' : '—') + '</span></div>'
       + '<div class="bc-row"><span class="bc-lbl">7d capture</span><span class="bc-val ' + (b.rolling7dCapturePct != null ? pnlCls(b.rolling7dCapturePct) : '') + '">' + (b.rolling7dCapturePct != null ? (b.rolling7dCapturePct >= 0 ? '+' : '') + b.rolling7dCapturePct.toFixed(3) + '%' : '—') + '</span></div>'
-      + (b.crossVenuePausedReason ? '<div class="bc-row" style="margin-top:var(--sp-1)"><span style="font-size:var(--t-label);color:var(--amber, #d29922);line-height:1.4;font-weight:500">&#9888; ' + esc(b.crossVenuePausedReason) + '</span></div>' : '')
+      + (b.crossVenuePausedReason ? '<div class="bc-row" style="margin-top:var(--sp-1)"><span style="font-size:var(--t-label);color:var(--amber,#d29922);line-height:1.4;font-weight:500">&#9888; ' + esc(b.crossVenuePausedReason) + '</span></div>' : '')
       + '<div class="bc-row" style="margin-top:var(--sp-1)"><span style="font-size:10px;color:var(--muted);font-style:italic;line-height:1.4">'
       + (cv.isLive ? 'LIVE — real orders on HL &amp; dYdX testnet. Flip: +30%, max 1/hr.' : 'PAPER — no real orders. Min spread: 0.005%/hr. Flip: +30%, max 1/hr.')
       + '</span></div>'
       + '<div class="bc-row"><span class="bc-lbl">Started</span><span class="bc-val">' + timeAgo(b.startedAt) + '</span></div>';
   }
 
-  // ── Render cards ──────────────────────────────────────────────────────────
+  // ── Compact card renderer ─────────────────────────────────────────────────
   function renderBot(b) {
-    const pos      = b.position;
-    const hasPos   = pos && pos.side !== 'neutral' && pos.entryPrice > 0;
-    const isNeutral = pos && pos.side === 'neutral';
+    var isCrossVenue = b.strategyId === 'cross-venue-funding-basis';
+    var isFunding    = b.strategyId === 'funding-basis';
+    var isShadow     = !b.live && !!STRATEGY_REQUIRES_SIGNALS[b.strategyId];
+    var isError      = b.status === 'error';
+    var active       = isActive(b);
+    var isPaused     = b.status === 'paused';
 
-    let posBadge;
+    // Face badges
+    var modeBadge = isShadow
+      ? '<span class="bc2-badge bc2-shadow">SHADOW</span>'
+      : (b.live ? '<span class="bc2-badge bc2-live">LIVE</span>' : '<span class="bc2-badge bc2-paper">PAPER</span>');
+    var statusBadge = isError
+      ? '<span class="bc2-badge bc2-error-b">Error</span>'
+      : (isPaused ? '<span class="bc2-badge bc2-paused-b">Paused</span>' : '<span class="bc2-badge bc2-running">Running</span>');
+
+    // P&L
+    var pnl = botPnl(b);
+
+    // Trade count label
+    var metaStr = isCrossVenue
+      ? (b.tradeCount || 0) + ' periods'
+      : (b.realisedTrades || 0) + ' trades';
+
+    // Pause/resume on face (standard bots only)
+    var canPauseResume = IS_ADMIN && !isFunding && !isCrossVenue && !isError;
+    var pauseBtn = '';
+    if (canPauseResume) {
+      if (isPaused) {
+        pauseBtn = '<button class="bc2-ctrl bc2-ctrl-accent" data-action="resume" data-id="' + b.id + '" title="Resume">&#9654;</button>';
+      } else {
+        pauseBtn = '<button class="bc2-ctrl" data-action="pause" data-id="' + b.id + '" title="Pause">&#9646;&#9646;</button>';
+      }
+    }
+
+    // Card classes
+    var cls = 'bc2';
+    if (!active && !isCrossVenue) cls += ' bc2-idle';
+    else if (isPaused)            cls += ' bc2-paused';
+
+    // Reconcile / error banners in face (single-line truncated)
+    var errLine = isError
+      ? '<div class="bc2-err-msg">&#9888; ' + esc(b.error || 'Error') + '</div>'
+      : '';
+
+    // ── Expand: full detail rows ──────────────────────────────────────────
+    var pos       = b.position;
+    var hasPos    = pos && pos.side !== 'neutral' && pos.entryPrice > 0;
+    var isNeutral = pos && pos.side === 'neutral';
+
+    var posBadge;
     if (isNeutral) {
       posBadge = '<span class="pos-badge pos-neutral">NEUTRAL</span>';
     } else if (hasPos) {
-      const cls = pos.side === 'long' ? 'pos-long' : 'pos-short';
-      posBadge  = `<span class="pos-badge ${cls}">${pos.side.toUpperCase()}</span>`;
+      var pSide = pos.side === 'long' ? 'pos-long' : 'pos-short';
+      posBadge = '<span class="pos-badge ' + pSide + '">' + pos.side.toUpperCase() + '</span>';
     } else {
       posBadge = '<span class="pos-badge pos-flat">FLAT</span>';
     }
 
-    let upnlHtml = '<span class="text-muted">—</span>';
+    var upnlHtml = '<span class="text-muted">—</span>';
     if (hasPos || isNeutral) {
-      const upnl    = b.unrealisedPnl;
-      const notional = pos ? pos.size * pos.entryPrice : 0;
-      const upnlPct  = notional > 0 ? (upnl / notional) * 100 : 0;
-      upnlHtml = `<span class="${pnlCls(upnl)}">${fmtPnl(upnl)} <span style="font-size:11px">(${fmtPct(upnlPct)})</span></span>`;
+      var upnl     = b.unrealisedPnl;
+      var notional = pos ? pos.size * pos.entryPrice : 0;
+      var upnlPct  = notional > 0 ? (upnl / notional) * 100 : 0;
+      upnlHtml = '<span class="' + pnlCls(upnl) + '">' + fmtPnl(upnl) + ' <span style="font-size:11px">(' + fmtPct(upnlPct) + ')</span></span>';
     }
-
-    const entryHtml = hasPos
-      ? `<div class="bc-row"><span class="bc-lbl">Entry</span><span class="bc-val">${fmtPrice(pos.entryPrice)}</span></div>`
+    var entryHtml = hasPos
+      ? '<div class="bc-row"><span class="bc-lbl">Entry</span><span class="bc-val">' + fmtPrice(pos.entryPrice) + '</span></div>'
       : '';
-    const timePosHtml = (hasPos || isNeutral)
-      ? `<div class="bc-row"><span class="bc-lbl">Time in pos</span><span class="bc-val">${timeSince(pos.entryTime)}</span></div>`
-      : '';
-
-    const liveBadge    = b.live ? '<span class="bc-live">LIVE</span>' : '';
-    const isShadow     = !b.live && !!STRATEGY_REQUIRES_SIGNALS[b.strategyId];
-    const shadowBadge  = isShadow ? '<span class="bc-shadow">SHADOW</span>' : '';
-    const statusLabel = b.status === 'running' ? 'Running' : b.status === 'error' ? 'Error' : 'Paused';
-    const statusCls   = b.status === 'running' ? 'running' : b.status === 'error' ? 'error' : 'paused';
-    const tfBadge     = b.timeframe !== '—' ? `<span class="bc-tf">${b.timeframe}</span>` : '';
-    const isFunding    = b.strategyId === 'funding-basis';
-    const isCrossVenue = b.strategyId === 'cross-venue-funding-basis';
-    const isError      = b.status === 'error';
-
-    const pauseBtn = (!IS_ADMIN || isFunding || isCrossVenue || isError) ? '' : (b.status === 'running'
-      ? `<button class="bc-btn" data-action="pause" data-id="${b.id}">Pause</button>`
-      : `<button class="bc-btn primary" data-action="resume" data-id="${b.id}">Resume</button>`);
-    const deleteBtn = (!IS_ADMIN || isFunding || isCrossVenue) ? '' :
-      `<button class="bc-btn danger" data-action="delete" data-id="${b.id}" style="margin-left:auto">Delete</button>`;
-    const resetHistoryBtn = IS_ADMIN
-      ? `<button class="bc-btn" data-action="reset-history" data-id="${b.id}" title="Delete all trade rows for this bot and zero its P&L counters">Reset History</button>`
-      : '';
-    const errorBanner = isError
-      ? `<div class="bc-error-msg">&#9888; ${esc(b.error || 'Unknown error')}</div>`
-      : '';
-    const reconcileBanner = (!isError && b.hadRecentMismatch && b.lastReconcileEvent)
-      ? `<div class="bc-reconcile-warn">⚠ <span><strong>State reconciled</strong> — ${esc(b.lastReconcileEvent)}</span></div>`
-      : '';
-    const orphanBanner = (IS_ADMIN && b.orphanedOpens && b.orphanedOpens > 0)
-      ? `<div class="bc-orphan-warn">&#9432; ${b.orphanedOpens} orphaned open row(s) in DB — closes missing (reconciled on next restart)</div>`
+    var timePosHtml = (hasPos || isNeutral)
+      ? '<div class="bc-row"><span class="bc-lbl">Time in pos</span><span class="bc-val">' + timeSince(pos.entryTime) + '</span></div>'
       : '';
 
-    var pnl = isCrossVenue ? (b.sessionPnl || 0) : (b.realisedPnl || 0);
-    var bodyHtml = isCrossVenue
+    var detailHtml = isCrossVenue
       ? renderCrossVenueDetail(b)
       : renderStandardDetail(b, isFunding, posBadge, entryHtml, upnlHtml, timePosHtml);
 
-    return `<div class="bot-card${b.status === 'paused' ? ' paused' : ''}" data-id="${b.id}">
-      <div class="bc-header">
-        <span class="bc-name">${b.displayName}</span>
-        <span class="bc-coin">${b.coin}</span>
-        ${tfBadge}${liveBadge}${shadowBadge}
-        <span class="bc-status ${statusCls}">${statusLabel}</span>
-      </div>
-      ${errorBanner}${reconcileBanner}${orphanBanner}
-      ${renderPnlLead(pnl)}
-      <div class="bc-body">${bodyHtml}</div>
-      <div class="bc-footer">${pauseBtn}${resetHistoryBtn}${deleteBtn}</div>
-    </div>`;
-  }
+    // Reconcile banner in expand
+    var reconcileBanner = (!isError && b.hadRecentMismatch && b.lastReconcileEvent)
+      ? '<div style="font-size:var(--t-label);color:var(--amber,#d29922);padding:var(--sp-2) var(--sp-4);border-bottom:1px solid var(--border);line-height:1.4">&#9888; <strong>Reconciled</strong> — ' + esc(b.lastReconcileEvent) + '</div>'
+      : '';
+    var orphanBanner = (IS_ADMIN && b.orphanedOpens && b.orphanedOpens > 0)
+      ? '<div style="font-size:var(--t-label);color:var(--muted);padding:var(--sp-2) var(--sp-4);border-bottom:1px solid var(--border)">&#9432; ' + b.orphanedOpens + ' orphaned open row(s) — closes missing</div>'
+      : '';
 
-  function updateHero(bots) {
-    var pnlEl   = document.getElementById('acct-pnl');
-    var statsEl = document.getElementById('acct-stats');
-    if (!pnlEl) return;
-
-    var totalPnl = 0;
-    var liveCount = 0;
-    for (var i = 0; i < bots.length; i++) {
-      totalPnl += (bots[i].realisedPnl || bots[i].sessionPnl || 0);
-      if (bots[i].status === 'running') liveCount++;
+    // Expand control buttons
+    var ctrlHtml = '';
+    if (IS_ADMIN) {
+      if (canPauseResume) {
+        if (isPaused) {
+          ctrlHtml += '<button class="bc-btn primary" data-action="resume" data-id="' + b.id + '">Resume</button>';
+        } else {
+          ctrlHtml += '<button class="bc-btn" data-action="pause" data-id="' + b.id + '">Pause</button>';
+        }
+      }
+      ctrlHtml += '<button class="bc-btn" data-action="reset-history" data-id="' + b.id + '" title="Zero P&L and trade history">Reset History</button>';
+      if (!isFunding && !isCrossVenue) {
+        ctrlHtml += '<button class="bc-btn danger" data-action="delete" data-id="' + b.id + '" style="margin-left:auto">Delete</button>';
+      }
     }
 
-    pnlEl.textContent = fmtPnl(totalPnl);
-    pnlEl.className   = 'acct-hero-pnl ' + pnlCls(totalPnl);
-
-    var statsHtml = '<span class="acct-hero-stat">Bots live<span class="ahs-val">' + liveCount + '</span></span>';
-    statsHtml += '<span class="acct-hero-stat">Total<span class="ahs-val">' + bots.length + '</span></span>';
-    statsEl.innerHTML = statsHtml;
+    return '<div class="' + cls + '" data-id="' + b.id + '">'
+      + '<div class="bc2-face">'
+      +   '<div class="bc2-top">'
+      +     '<span class="bc2-name">' + esc(b.displayName) + ' &middot; <span class="bc2-coin">' + esc(b.coin) + '</span></span>'
+      +     '<div class="bc2-badges">' + modeBadge + statusBadge + '</div>'
+      +   '</div>'
+      +   '<div class="bc2-bottom">'
+      +     '<span class="bc2-pnl ' + pnlCls(pnl) + '">' + fmtPnl(pnl) + '</span>'
+      +     '<span class="bc2-meta">' + metaStr + '</span>'
+      +     '<div class="bc2-face-btns">'
+      +       pauseBtn
+      +       '<button class="bc2-ctrl bc2-more" data-id="' + b.id + '" title="Expand">&#xB7;&#xB7;&#xB7;</button>'
+      +     '</div>'
+      +   '</div>'
+      +   errLine
+      + '</div>'
+      + '<div class="bc2-expand" style="display:none">'
+      +   reconcileBanner + orphanBanner
+      +   '<div class="bc-body">' + detailHtml + '</div>'
+      +   (ctrlHtml ? '<div class="bc-footer">' + ctrlHtml + '</div>' : '')
+      + '</div>'
+      + '</div>';
   }
 
+  // ── Wire events after render ──────────────────────────────────────────────
+  function wireGridEvents() {
+    // Face click → toggle expand (ignore button clicks)
+    grid.querySelectorAll('.bc2-face').forEach(function (face) {
+      face.addEventListener('click', function (e) {
+        if (e.target.closest('button')) return;
+        var card   = face.closest('.bc2');
+        var expand = card.querySelector('.bc2-expand');
+        if (expand) expand.style.display = expand.style.display === 'none' ? '' : 'none';
+      });
+    });
+
+    // ⋯ button → toggle expand
+    grid.querySelectorAll('.bc2-more').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var card   = btn.closest('.bc2');
+        var expand = card.querySelector('.bc2-expand');
+        if (expand) expand.style.display = expand.style.display === 'none' ? '' : 'none';
+      });
+    });
+
+    // Action buttons (pause / resume / delete / reset-history)
+    grid.querySelectorAll('[data-action]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var action = btn.dataset.action;
+        var id     = btn.dataset.id;
+        btn.disabled = true;
+
+        (async function () {
+          if (action === 'delete') {
+            if (!confirm('Delete bot "' + id + '"? This cannot be undone.')) {
+              btn.disabled = false; return;
+            }
+            try { await fetch('/api/bots/' + encodeURIComponent(id), { method: 'DELETE' }); }
+            catch (err) { console.error(err); }
+          } else if (action === 'reset-history') {
+            if (!confirm('Reset trade history for bot "' + id + '"?\n\nThis deletes all DB trade rows for this bot and zeroes its realised P&L counters. Cannot be undone.')) {
+              btn.disabled = false; return;
+            }
+            try {
+              var r = await fetch('/api/bots/' + encodeURIComponent(id) + '/history', { method: 'DELETE' });
+              var d = await r.json();
+              if (!r.ok) {
+                alert('Error: ' + (d.error || r.statusText));
+              } else {
+                var msg = d.periodsCleared != null
+                  ? 'Reset complete — ' + d.periodsCleared + ' accrual period(s) cleared, equity → $' + (d.notional || 0).toFixed(0) + '.'
+                  : 'Reset complete — ' + (d.deleted || 0) + ' trade row(s) deleted, equity zeroed.';
+                var flash = document.createElement('div');
+                flash.textContent = msg;
+                flash.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);color:var(--text);font-size:12px;padding:0.6rem 1rem;border-radius:6px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+                document.body.appendChild(flash);
+                setTimeout(function () { flash.remove(); }, 4000);
+              }
+            } catch (err) { console.error(err); }
+          } else {
+            try { await fetch('/api/bots/' + encodeURIComponent(id) + '/' + action, { method: 'POST' }); }
+            catch (err) { console.error(err); }
+          }
+          await load();
+        })();
+      });
+    });
+
+    // CV mode toggle
+    grid.querySelectorAll('.cv-mode-toggle').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var current = btn.dataset.current;
+        var next    = current === 'live' ? 'paper' : 'live';
+        if (next === 'live') {
+          if (!confirm(
+            'Switch to LIVE mode?\n\n'
+            + 'Real orders will be placed on Hyperliquid testnet and dYdX testnet.\n'
+            + 'DYDX_TESTNET_MNEMONIC must be set in .env.\n\n'
+            + 'Existing paper positions will be reset.'
+          )) return;
+        }
+        btn.disabled = true;
+        (async function () {
+          try {
+            var resp = await fetch('/api/bots/' + encodeURIComponent(btn.dataset.id) + '/mode', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({ mode: next }),
+            });
+            var data = await resp.json();
+            if (!resp.ok) alert('Error: ' + (data.error || resp.statusText));
+          } catch (err) { console.error(err); }
+          await load();
+        })();
+      });
+    });
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
   function render(bots) {
     updateHero(bots);
 
@@ -701,83 +848,91 @@
       grid.innerHTML = '<div class="bots-empty">No bots yet — click <strong>+ Add Bot</strong> to create one.</div>';
       return;
     }
-    grid.innerHTML = bots.map(renderBot).join('');
 
-    grid.querySelectorAll('[data-action]').forEach(btn => {
-      btn.addEventListener('click', async function () {
-        const action = this.dataset.action;
-        const id     = this.dataset.id;
-        this.disabled = true;
-        if (action === 'delete') {
-          if (!confirm(`Delete bot "${id}"? This cannot be undone.`)) {
-            this.disabled = false; return;
-          }
-          try { await fetch('/api/bots/' + encodeURIComponent(id), { method: 'DELETE' }); }
-          catch (e) { console.error(e); }
-        } else if (action === 'reset-history') {
-          if (!confirm(`Reset trade history for bot "${id}"?\n\nThis deletes all DB trade rows for this bot and zeroes its realised P&L counters. Cannot be undone.`)) {
-            this.disabled = false; return;
-          }
-          try {
-            const r = await fetch('/api/bots/' + encodeURIComponent(id) + '/history', { method: 'DELETE' });
-            const d = await r.json();
-            if (!r.ok) {
-              alert('Error: ' + (d.error || r.statusText));
-            } else {
-              var msg = d.periodsCleared != null
-                ? 'Reset complete — ' + d.periodsCleared + ' accrual period(s) cleared, equity → $' + (d.notional || 0).toFixed(0) + '.'
-                : 'Reset complete — ' + (d.deleted || 0) + ' trade row(s) deleted, equity zeroed.';
-              var flash = document.createElement('div');
-              flash.textContent = msg;
-              flash.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);color:var(--text);font-size:12px;padding:0.6rem 1rem;border-radius:6px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.4)';
-              document.body.appendChild(flash);
-              setTimeout(function () { flash.remove(); }, 4000);
-            }
-          }
-          catch (e) { console.error(e); }
+    // Group by family
+    var groups = {};
+    for (var i = 0; i < bots.length; i++) {
+      var fam = familyOf(bots[i]);
+      if (!groups[fam]) groups[fam] = [];
+      groups[fam].push(bots[i]);
+    }
+
+    var html = '';
+    for (var fi = 0; fi < FAM_ORDER.length; fi++) {
+      var fam   = FAM_ORDER[fi];
+      var blist = groups[fam];
+      if (!blist || !blist.length) continue;
+
+      // Active bots first, then idle
+      blist.sort(function (ba, bb) { return isActive(bb) - isActive(ba); });
+
+      var famPnl = 0;
+      for (var j = 0; j < blist.length; j++) famPnl += botPnl(blist[j]);
+
+      html += '<div class="bg-section">'
+        + '<div class="bg-header">'
+        +   '<span class="bg-label">' + FAM_LABELS[fam] + '</span>'
+        +   '<span class="bg-pnl ' + pnlCls(famPnl) + '">' + fmtPnl(famPnl) + '</span>'
+        +   '<span class="bg-count">' + blist.length + (blist.length === 1 ? ' bot' : ' bots') + '</span>'
+        + '</div>'
+        + '<div class="bg-grid">'
+        + blist.map(renderBot).join('')
+        + '</div>'
+        + '</div>';
+    }
+
+    grid.innerHTML = html;
+    wireGridEvents();
+
+    // Orphans
+    (async function () {
+      try {
+        var or = await fetch('/api/orphans');
+        if (!or.ok) return;
+        var orphans = await or.json();
+        var panel = document.getElementById('orphans-panel');
+        var list  = document.getElementById('orphans-list');
+        if (!panel || !list) return;
+        if (!orphans.length) {
+          panel.style.display = 'none';
         } else {
-          try { await fetch('/api/bots/' + encodeURIComponent(id) + '/' + action, { method: 'POST' }); }
-          catch (e) { console.error(e); }
-        }
-        await load();
-      });
-    });
+          panel.style.display = 'block';
+          list.innerHTML = orphans.map(function (o) {
+            var age  = Math.round((Date.now() - o.detectedAt) / 60000);
+            var upnl = o.unrealisedPnl >= 0 ? '+$' + o.unrealisedPnl.toFixed(2) : '-$' + Math.abs(o.unrealisedPnl).toFixed(2);
+            var uClr = o.unrealisedPnl >= 0 ? 'var(--green)' : 'var(--red)';
+            return '<div class="orphan-row">'
+              + '<span class="orphan-coin">' + esc(o.coin) + '</span>'
+              + '<span class="orphan-detail">' + o.side.toUpperCase() + ' ' + o.size.toFixed(5) + ' @ $' + o.entryPrice.toFixed(2) + ' mark $' + o.markPrice.toFixed(2) + ' &nbsp;<span style="color:' + uClr + '">' + upnl + '</span></span>'
+              + '<span class="orphan-age">' + age + 'm ago</span>'
+              + (IS_ADMIN ? '<button class="btn-close-orphan" data-coin="' + esc(o.coin) + '">Close position</button>' : '')
+              + '</div>';
+          }).join('');
 
-    // Cross-venue execution mode toggle
-    grid.querySelectorAll('.cv-mode-toggle').forEach(btn => {
-      btn.addEventListener('click', async function () {
-        const current = this.dataset.current;
-        const next    = current === 'live' ? 'paper' : 'live';
-        if (next === 'live') {
-          if (!confirm(
-            'Switch to LIVE mode?\n\n' +
-            'Real orders will be placed on Hyperliquid testnet and dYdX testnet.\n' +
-            'DYDX_TESTNET_MNEMONIC must be set in .env.\n\n' +
-            'Existing paper positions will be reset.'
-          )) return;
-        }
-        this.disabled = true;
-        try {
-          const resp = await fetch('/api/bots/' + encodeURIComponent(this.dataset.id) + '/mode', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ mode: next }),
+          list.querySelectorAll('.btn-close-orphan').forEach(function (btn) {
+            btn.addEventListener('click', async function () {
+              var coin = btn.dataset.coin;
+              if (!confirm('Close orphaned ' + coin + ' position on the exchange?\n\nThis places a real reduce-only order.')) return;
+              btn.disabled = true;
+              try {
+                var resp = await fetch('/api/orphans/' + encodeURIComponent(coin) + '/close', { method: 'POST' });
+                var data = await resp.json();
+                if (!resp.ok) alert('Error: ' + (data.error || resp.statusText));
+                else await load();
+              } catch (err) { alert('Error: ' + err.message); }
+            });
           });
-          const data = await resp.json();
-          if (!resp.ok) { alert('Error: ' + (data.error || resp.statusText)); }
-        } catch (e) { console.error(e); }
-        await load();
-      });
-    });
-
+        }
+      } catch (_) { /* non-critical */ }
+    })();
   }
 
   // ── Data fetch ────────────────────────────────────────────────────────────
-  const riskIndicator = document.getElementById('risk-indicator');
+  var riskIndicator = document.getElementById('risk-indicator');
 
   async function load() {
     try {
-      const resp = await fetch('/api/bots');
+      var resp = await fetch('/api/bots');
       if (!resp.ok) throw new Error(resp.statusText);
       allBots   = await resp.json();
       lastFetch = Date.now();
@@ -786,74 +941,28 @@
     } catch (err) {
       badge.textContent = 'Error: ' + err.message;
     }
-    // Update portfolio risk indicator (non-blocking)
     try {
-      const rr = await fetch('/api/portfolio-risk');
+      var rr = await fetch('/api/portfolio-risk');
       if (rr.ok && riskIndicator) {
-        const rd = await rr.json();
-        const pct = rd.openRiskPct.toFixed(1);
-        const cap = rd.maxConcurrentRiskPct.toFixed(0);
-        const overCap = rd.openRiskPct >= rd.maxConcurrentRiskPct * 0.9;
-        riskIndicator.textContent = `Open risk: ${pct}% / ${cap}% cap`;
-        riskIndicator.style.color    = overCap ? 'var(--amber, #d29922)' : 'var(--muted)';
-        riskIndicator.style.display  = 'inline';
-      }
-    } catch (_) { /* non-critical */ }
-
-    // Orphaned positions (non-blocking)
-    try {
-      const or = await fetch('/api/orphans');
-      if (or.ok) {
-        const orphans = await or.json();
-        const panel = document.getElementById('orphans-panel');
-        const list  = document.getElementById('orphans-list');
-        if (panel && list) {
-          if (!orphans.length) {
-            panel.style.display = 'none';
-          } else {
-            panel.style.display = 'block';
-            list.innerHTML = orphans.map(o => {
-              const age   = Math.round((Date.now() - o.detectedAt) / 60_000);
-              const upnl  = o.unrealisedPnl >= 0 ? `+$${o.unrealisedPnl.toFixed(2)}` : `-$${Math.abs(o.unrealisedPnl).toFixed(2)}`;
-              const uClr  = o.unrealisedPnl >= 0 ? 'var(--green)' : 'var(--red)';
-              return `<div class="orphan-row">
-                <span class="orphan-coin">${esc(o.coin)}</span>
-                <span class="orphan-detail">
-                  ${o.side.toUpperCase()} ${o.size.toFixed(5)} @ $${o.entryPrice.toFixed(2)} mark $${o.markPrice.toFixed(2)}
-                  &nbsp;<span style="color:${uClr}">${upnl}</span>
-                </span>
-                <span class="orphan-age">${age}m ago</span>
-                ${IS_ADMIN ? `<button class="btn-close-orphan" data-coin="${esc(o.coin)}">Close position</button>` : ''}
-              </div>`;
-            }).join('');
-
-            list.querySelectorAll('.btn-close-orphan').forEach(btn => {
-              btn.addEventListener('click', async function () {
-                const coin = this.dataset.coin;
-                if (!confirm(`Close orphaned ${coin} position on the exchange?\n\nThis places a real reduce-only order.`)) return;
-                this.disabled = true;
-                try {
-                  const resp = await fetch('/api/orphans/' + encodeURIComponent(coin) + '/close', { method: 'POST' });
-                  const data = await resp.json();
-                  if (!resp.ok) alert('Error: ' + (data.error || resp.statusText));
-                  else await load();
-                } catch (e) { alert('Error: ' + e.message); }
-              });
-            });
-          }
-        }
+        var rd  = await rr.json();
+        var pct = rd.openRiskPct.toFixed(1);
+        var cap = rd.maxConcurrentRiskPct.toFixed(0);
+        var overCap = rd.openRiskPct >= rd.maxConcurrentRiskPct * 0.9;
+        riskIndicator.textContent = 'Open risk: ' + pct + '% / ' + cap + '% cap';
+        riskIndicator.style.color   = overCap ? 'var(--amber, #d29922)' : 'var(--muted)';
+        riskIndicator.style.display = 'inline';
       }
     } catch (_) { /* non-critical */ }
   }
 
-  // ── Modal: coin lists (prefetched, cached) ────────────────────────────────
-  let dydxLoading  = false;
+  // ── Modal: coin lists ─────────────────────────────────────────────────────
+  var dydxLoading = false;
 
   async function ensureTopCoins() {
     if (topCoins.length > 0 || coinsLoading) return;
     coinsLoading = true;
     try {
-      const resp = await fetch('/api/funding/top');
+      var resp = await fetch('/api/funding/top');
       if (!resp.ok) return;
       topCoins = await resp.json();
     } catch (_) {
@@ -864,10 +973,10 @@
     if (dydxCoins.length > 0 || dydxLoading) return;
     dydxLoading = true;
     try {
-      const resp = await fetch('/api/dydx-markets');
+      var resp = await fetch('/api/dydx-markets');
       if (!resp.ok) return;
-      const data = await resp.json();
-      if (Array.isArray(data)) dydxCoins = data; // ["BTC","ETH",...]
+      var data = await resp.json();
+      if (Array.isArray(data)) dydxCoins = data;
     } catch (_) {
     } finally { dydxLoading = false; }
   }
@@ -876,10 +985,15 @@
     return document.getElementById('m-strategy').value === 'cross-venue-funding-basis';
   }
 
+  function updateStrategyDesc() {
+    var id = document.getElementById('m-strategy').value;
+    mDesc.textContent = STRATEGY_SUMMARIES[id] || '';
+  }
+
   function populateCoinDropdown() {
-    const crossVenue = isCrossVenueSelected();
-    const stratId = document.getElementById('m-strategy').value;
-    const requiresSignals = STRATEGY_REQUIRES_SIGNALS[stratId] || false;
+    var crossVenue = isCrossVenueSelected();
+    var stratId    = document.getElementById('m-strategy').value;
+    var requiresSignals = STRATEGY_REQUIRES_SIGNALS[stratId] || false;
 
     if (requiresSignals) {
       mCoin.innerHTML = '<option value="HYPE">HYPE</option>';
@@ -890,60 +1004,59 @@
     }
 
     if (crossVenue) {
-      // Intersection of HL top coins and dYdX universe
-      const hlCoins   = topCoins.map(c => c.coin);
-      const dydxSet   = new Set(dydxCoins);
-      const common    = hlCoins.filter(c => dydxSet.has(c));
+      var hlCoins = topCoins.map(function (c) { return c.coin; });
+      var dydxSet = {};
+      for (var i = 0; i < dydxCoins.length; i++) dydxSet[dydxCoins[i]] = true;
+      var common = hlCoins.filter(function (c) { return dydxSet[c]; });
       if (!common.length) {
         mCoin.innerHTML = '<option value="" disabled selected>Loading HL∩dYdX coins…</option>';
         return;
       }
-      // Build options from topCoins for the HL metadata (displayName, rate), filter to common
-      const topMap = Object.fromEntries(topCoins.map(c => [c.coin, c]));
-      mCoin.innerHTML = common.map(coin => {
-        const c = topMap[coin];
-        const label = c ? `${c.displayName || coin} · HL ${(c.annualizedRate * 100).toFixed(1)}% ann` : coin;
-        return `<option value="${coin}">${label}</option>`;
+      var topMap = {};
+      for (var j = 0; j < topCoins.length; j++) topMap[topCoins[j].coin] = topCoins[j];
+      mCoin.innerHTML = common.map(function (coin) {
+        var c = topMap[coin];
+        var label = c ? (c.displayName || coin) + ' · HL ' + (c.annualizedRate * 100).toFixed(1) + '% ann' : coin;
+        return '<option value="' + coin + '">' + label + '</option>';
       }).join('');
-      mCoin.value = common[0] ?? '';
-      mCoinH.textContent = `${common.length} coins available on both Hyperliquid and dYdX`;
+      mCoin.value = common[0] || '';
+      mCoinH.textContent = common.length + ' coins available on both Hyperliquid and dYdX';
     } else {
-      // Full HL top-coins list
       if (!topCoins.length) {
         mCoin.innerHTML = '<option value="" disabled selected>Failed to load coins</option>';
         return;
       }
-      mCoin.innerHTML = topCoins.map(c =>
-        `<option value="${c.coin}">${c.displayName || c.coin} · ${(c.annualizedRate * 100).toFixed(1)}% ann</option>`
-      ).join('');
-      mCoin.value = topCoins[0]?.coin ?? '';
+      mCoin.innerHTML = topCoins.map(function (c) {
+        return '<option value="' + c.coin + '">' + (c.displayName || c.coin) + ' · ' + (c.annualizedRate * 100).toFixed(1) + '% ann</option>';
+      }).join('');
+      mCoin.value = topCoins[0] ? topCoins[0].coin : '';
       updateCoinHint();
     }
     checkLiveConflict();
   }
 
   function updateCoinHint() {
-    if (isCrossVenueSelected()) return; // hint already set by populateCoinDropdown
-    const coin = mCoin.value;
-    const data = topCoins.find(c => c.coin === coin);
+    if (isCrossVenueSelected()) return;
+    var coin = mCoin.value;
+    var data = null;
+    for (var i = 0; i < topCoins.length; i++) {
+      if (topCoins[i].coin === coin) { data = topCoins[i]; break; }
+    }
     if (data) {
-      mCoinH.textContent = `Current: ${(data.currentRate * 100).toFixed(4)}%/hr  ·  24h avg: ${(data.avgRate24h * 100).toFixed(4)}%/hr`;
+      mCoinH.textContent = 'Current: ' + (data.currentRate * 100).toFixed(4) + '%/hr  ·  24h avg: ' + (data.avgRate24h * 100).toFixed(4) + '%/hr';
     } else {
       mCoinH.textContent = '';
     }
   }
 
   async function onStrategyChange() {
-    const crossVenue = isCrossVenueSelected();
+    var crossVenue = isCrossVenueSelected();
+    mTfField.style.display     = crossVenue ? 'none' : '';
+    mNotionalF.style.display   = crossVenue ? '' : 'none';
+    mAcctEquityF.style.display = crossVenue ? 'none' : '';
 
-    // ── Show / hide conditional fields ────────────────────────────────────
-    mTfField.style.display      = crossVenue ? 'none' : '';
-    mNotionalF.style.display    = crossVenue ? '' : 'none';
-    mAcctEquityF.style.display  = crossVenue ? 'none' : '';
-
-    // ── Live mode hint text / lock for signal strategies ─────────────────
-    const stratId = document.getElementById('m-strategy').value;
-    const requiresSignals = STRATEGY_REQUIRES_SIGNALS[stratId] || false;
+    var stratId = document.getElementById('m-strategy').value;
+    var requiresSignals = STRATEGY_REQUIRES_SIGNALS[stratId] || false;
     if (requiresSignals) {
       mLive.checked  = false;
       mLive.disabled = true;
@@ -953,21 +1066,19 @@
     } else if (crossVenue) {
       mLive.disabled = false;
       mLiveW.style.display = 'none';
-      mLiveH.textContent =
-        'Switch to LIVE mode (places real orders on Hyperliquid and dYdX testnet — requires DYDX_TESTNET_MNEMONIC)';
+      mLiveH.textContent = 'Switch to LIVE mode (places real orders on Hyperliquid and dYdX testnet — requires DYDX_TESTNET_MNEMONIC)';
     } else {
       mLive.disabled = false;
       mLiveW.style.display = 'none';
       mLiveH.textContent = 'Switch to LIVE mode (places real testnet orders on Hyperliquid)';
     }
 
-    // ── Account equity display (candle strategies only) ───────────────────
     if (!crossVenue && mAcctDisp) {
       mAcctDisp.value = 'Loading…';
       try {
-        const r = await fetch('/api/portfolio-risk');
+        var r = await fetch('/api/portfolio-risk');
         if (r.ok) {
-          const d = await r.json();
+          var d = await r.json();
           mAcctDisp.value = d.currentBalance != null
             ? '$' + Number(d.currentBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
             : 'Unknown';
@@ -975,7 +1086,6 @@
       } catch (_) { mAcctDisp.value = 'Unavailable'; }
     }
 
-    // ── Repopulate coin dropdown for the new strategy ─────────────────────
     if (crossVenue) {
       if (!dydxCoins.length) {
         mCoin.innerHTML = '<option value="" disabled selected>Loading…</option>';
@@ -988,24 +1098,27 @@
     populateCoinDropdown();
   }
 
-  // ── Modal: live-conflict guard ────────────────────────────────────────────
   function checkLiveConflict() {
-    const stratId = document.getElementById('m-strategy').value;
-    // Signal strategies are always paper — don't let the coin-conflict check re-enable live
+    var stratId = document.getElementById('m-strategy').value;
     if (STRATEGY_REQUIRES_SIGNALS[stratId]) return;
-    const coin      = mCoin.value;
-    const hasLive   = allBots.some(function (b) { return b.coin === coin && b.live && b.status === 'running'; });
-    mLive.disabled  = hasLive;
+    var coin    = mCoin.value;
+    var hasLive = false;
+    for (var i = 0; i < allBots.length; i++) {
+      if (allBots[i].coin === coin && allBots[i].live && allBots[i].status === 'running') {
+        hasLive = true; break;
+      }
+    }
+    mLive.disabled = hasLive;
     if (hasLive) {
-      mLive.checked      = false;
-      mLiveW.textContent = coin + ' already has a live bot — only one per coin.';
+      mLive.checked        = false;
+      mLiveW.textContent   = coin + ' already has a live bot — only one per coin.';
       mLiveW.style.display = 'block';
     } else {
       mLiveW.style.display = 'none';
     }
   }
 
-  // ── Modal: open / close ───────────────────────────────────────────────────
+  // ── Modal open / close / submit ───────────────────────────────────────────
   async function openModal() {
     mErr.style.display   = 'none';
     mLiveW.style.display = 'none';
@@ -1013,12 +1126,9 @@
     mLive.checked        = false;
     mLive.disabled       = false;
     document.getElementById('m-notional').value = '1000';
-
     modal.style.display = 'flex';
     document.getElementById('m-strategy').focus();
     updateStrategyDesc();
-
-    // Trigger strategy-specific field logic for whatever is currently selected
     await onStrategyChange();
   }
 
@@ -1028,46 +1138,25 @@
     mErr.style.display  = 'none';
   }
 
-  // ── Modal: submit ─────────────────────────────────────────────────────────
   async function submitModal() {
-    const strategyId = document.getElementById('m-strategy').value;
-    const coin       = mCoin.value;
-    const live       = mLive.checked && !mLive.disabled;
-    const crossVenue = isCrossVenueSelected();
-
+    var strategyId = document.getElementById('m-strategy').value;
+    var coin       = mCoin.value;
+    var live       = mLive.checked && !mLive.disabled;
+    var crossVenue = isCrossVenueSelected();
     mErr.style.display = 'none';
     if (!coin) {
       mErr.textContent   = 'Select a coin.';
       mErr.style.display = 'block';
       return;
     }
-
     mSubmit.disabled    = true;
     mSubmit.textContent = 'Adding…';
-
     try {
-      const body = crossVenue
-        ? {
-            strategyId,
-            coin,
-            timeframe: '—',
-            live,
-            notional: parseFloat(document.getElementById('m-notional').value) || 1000,
-          }
-        : {
-            strategyId,
-            coin,
-            timeframe: document.getElementById('m-tf').value,
-            live,
-            // startingEquity omitted: percentage-based sizing uses account equity
-          };
-
-      const resp = await fetch('/api/bots', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
-      });
-      const data = await resp.json();
+      var body = crossVenue
+        ? { strategyId: strategyId, coin: coin, timeframe: '—', live: live, notional: parseFloat(document.getElementById('m-notional').value) || 1000 }
+        : { strategyId: strategyId, coin: coin, timeframe: document.getElementById('m-tf').value, live: live };
+      var resp = await fetch('/api/bots', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      var data = await resp.json();
       if (!resp.ok) throw new Error(data.error || resp.statusText);
       closeModal();
       await load();
@@ -1081,25 +1170,19 @@
   }
 
   // ── Event wiring ──────────────────────────────────────────────────────────
-  document.getElementById('btn-add-bot')?.addEventListener('click', openModal);
+  document.getElementById('btn-add-bot') && document.getElementById('btn-add-bot').addEventListener('click', openModal);
   document.getElementById('modal-x').addEventListener('click', closeModal);
   document.getElementById('modal-cancel').addEventListener('click', closeModal);
   mSubmit.addEventListener('click', submitModal);
-  mCoin.addEventListener('change', () => { updateCoinHint(); checkLiveConflict(); });
-  document.getElementById('m-strategy').addEventListener('change', () => { updateStrategyDesc(); void onStrategyChange(); });
-
-  // Close on backdrop click (not on modal box itself)
-  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
-
-  // Close on Escape
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && modal.style.display !== 'none') closeModal();
-  });
+  mCoin.addEventListener('change', function () { updateCoinHint(); checkLiveConflict(); });
+  document.getElementById('m-strategy').addEventListener('change', function () { updateStrategyDesc(); void onStrategyChange(); });
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && modal.style.display !== 'none') closeModal(); });
 
   // ── Ticker ────────────────────────────────────────────────────────────────
-  setInterval(() => {
+  setInterval(function () {
     if (lastFetch) {
-      const s = Math.floor((Date.now() - lastFetch) / 1000);
+      var s = Math.floor((Date.now() - lastFetch) / 1000);
       badge.textContent = 'Updated ' + s + 's ago';
     }
   }, 1000);
@@ -1107,8 +1190,8 @@
   // ── Init ──────────────────────────────────────────────────────────────────
   load();
   setInterval(load, 4000);
-  ensureTopCoins();  // prefetch so modal opens instantly
-  ensureDydxCoins(); // prefetch dYdX universe for cross-venue coin intersection
+  ensureTopCoins();
+  ensureDydxCoins();
 
 })();
 </script>
