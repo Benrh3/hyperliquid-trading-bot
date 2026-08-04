@@ -795,7 +795,7 @@ export function createRouter(
       .filter((e) => e.module === "strategy" && e.level === "info" && e.data)
       .flatMap((e) => {
         try {
-          const sig = JSON.parse(e.data as string) as { side: string; timestamp: number };
+          const sig = JSON.parse(e.data as string) as { side: string; timestamp: number; reason?: string; coin?: string; paper?: boolean };
           const timeSecs = snapToCandle(Math.floor(sig.timestamp / 1000));
           return [{
             time:     timeSecs,
@@ -803,6 +803,10 @@ export function createRouter(
             color:    sig.side === "long" ? "#3fb950" : "#f85149",
             shape:    sig.side === "long" ? "arrowUp" : "arrowDown",
             text:     sig.side === "long" ? "L" : "S",
+            side:     sig.side,
+            reason:   sig.reason ?? "",
+            ts:       sig.timestamp,
+            paper:    sig.paper ?? false,
           }];
         } catch {
           return [];
@@ -874,12 +878,13 @@ export function createRouter(
       .filter((e) => e.module === "strategy" && e.level === "info" && e.data)
       .flatMap((e) => {
         try {
-          const sig = JSON.parse(e.data as string) as { side: string; timestamp: number };
+          const sig = JSON.parse(e.data as string) as { side: string; timestamp: number; reason?: string; coin?: string; paper?: boolean };
           const timeSecs = snapToCandle(Math.floor(sig.timestamp / 1000));
           return [{ time: timeSecs, position: sig.side === "long" ? "belowBar" : "aboveBar",
             color: sig.side === "long" ? "#3fb950" : "#f85149",
             shape: sig.side === "long" ? "arrowUp" : "arrowDown",
-            text:  sig.side === "long" ? "L" : "S" }];
+            text:  sig.side === "long" ? "L" : "S",
+            side:  sig.side, reason: sig.reason ?? "", ts: sig.timestamp, paper: sig.paper ?? false }];
         } catch { return []; }
       })
       .sort((a, b) => (a.time as number) - (b.time as number));
@@ -990,20 +995,24 @@ export function createRouter(
     let hypeHlRate:   number | null = null;
     let hypeDydxRate: number | null = null;
     let hypeSpread:   number | null = null;
+    let hypeMarkPrice: number | null = null;
     const matrix = fundingMatrix?.getMatrix();
     if (matrix) {
-      const hypeEntry = matrix.coins.find((c: { coin: string }) => c.coin === "HYPE");
+      const hypeEntry = matrix.coins.find((c: { coin: string }) => c.coin === "HYPE") as
+        { rates?: { hyperliquid?: number; dydx?: number }; spread?: number; markPriceUsd?: number } | undefined;
       if (hypeEntry) {
-        hypeHlRate   = (hypeEntry.rates?.hyperliquid   ?? null) as number | null;
-        hypeDydxRate = (hypeEntry.rates?.dydx          ?? null) as number | null;
-        hypeSpread   = (hypeEntry.spread               ?? null) as number | null;
+        hypeHlRate    = (hypeEntry.rates?.hyperliquid   ?? null) as number | null;
+        hypeDydxRate  = (hypeEntry.rates?.dydx          ?? null) as number | null;
+        hypeSpread    = (hypeEntry.spread               ?? null) as number | null;
+        hypeMarkPrice = hypeEntry.markPriceUsd          ?? null;
       }
     }
     const DEFAULT_RATE = 0.0001; // 0.01 %/hr
     const xDefault = hypeHlRate !== null ? hypeHlRate / DEFAULT_RATE : null;
 
-    // HYPE price — prefer HYPE if WS-tracked, fall back to primary coin if it IS HYPE
-    const hypePrice = state.lastPrices["HYPE"]?.mid
+    // HYPE price — funding matrix has markPriceUsd for all matrix coins (always includes HYPE)
+    const hypePrice = hypeMarkPrice
+      ?? state.lastPrices["HYPE"]?.mid
       ?? (coins[0] === "HYPE" ? state.lastPrices[coins[0]]?.mid : null)
       ?? null;
 

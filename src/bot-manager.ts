@@ -1319,14 +1319,23 @@ export class BotManager {
   resetBotHistory(id: string): { deleted: number } {
     const bot = this.bots.get(id);
     if (!bot) throw new Error(`Bot ${id} not found`);
-    const deleted = this.logger?.deleteTradesForBot(id) ?? 0;
+    const bc = bot.config;
+    // Delete trade rows — include legacy NULL-bot_id rows that match strategy+coin
+    const deleted = this.logger?.deleteTradesForBot(id, bc.strategyId, bc.coin) ?? 0;
+    // Reset in-memory P&L counters
     bot.realisedPnl    = 0;
     bot.realisedTrades = 0;
     bot.hlClosedPnl    = undefined;
     bot.orphanedOpens  = undefined;
-    console.log(`[bot-manager] resetBotHistory ${id}: deleted ${deleted} trade row(s)`);
+    // Reset equity to the configured starting balance so the equity curve step-downs correctly
+    bot.equity = bc.startingEquity ?? INITIAL_EQUITY;
+    bot.sessionPnl = 0;
+    // Snapshot the new (corrected) total equity immediately so the curve shows the drop
+    const newTotal = [...this.bots.values()].reduce((s, b) => s + (b.equity ?? 0), 0);
+    void this.logger?.snapshotEquity(newTotal);
+    console.log(`[bot-manager] resetBotHistory ${id}: deleted ${deleted} trade row(s), equity reset to $${bot.equity}`);
     this.logger?.logEvent("bot-manager", "warn",
-      `Trade history reset for bot ${id} (${bot.config.coin}): deleted ${deleted} rows`,
+      `Trade history reset for bot ${id} (${bc.coin}): deleted ${deleted} rows, equity reset to $${bot.equity}`,
       { id, deleted },
     );
     return { deleted };

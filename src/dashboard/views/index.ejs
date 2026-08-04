@@ -376,7 +376,8 @@
       <div class="chart-card eq-side-card">
         <div class="chart-card-toolbar">
           <span class="chart-card-title">Equity Curve</span>
-          <div class="tf-group" id="eq-range-group">
+          <span class="shadow-badge" style="font-size:9px;margin-left:4px">PAPER</span>
+          <div class="tf-group" id="eq-range-group" style="margin-left:auto">
             <button class="tf active" data-eq="24h">24h</button>
             <button class="tf"        data-eq="7d">7d</button>
             <button class="tf"        data-eq="30d">30d</button>
@@ -512,8 +513,23 @@
       }
       var xdefEl = document.getElementById('tile-hype-xdef');
       if (xdefEl && d.hype.xDefault != null) {
-        xdefEl.textContent = (d.hype.xDefault >= 0 ? '+' : '') + d.hype.xDefault.toFixed(1) + '× default';
+        var xd = d.hype.xDefault;
+        xdefEl.textContent = (xd >= 0 ? '+' : '') + xd.toFixed(2) + '× default';
         xdefEl.style.display = 'inline-block';
+        // Threshold coloring: ≥3× → near short entry; ≤−1× → near long entry
+        if (xd >= 3) {
+          xdefEl.style.background = 'rgba(248,81,73,0.15)';
+          xdefEl.style.color = 'var(--down)';
+          xdefEl.title = 'Near short entry threshold (≥3× default)';
+        } else if (xd <= -1) {
+          xdefEl.style.background = 'rgba(63,185,80,0.15)';
+          xdefEl.style.color = 'var(--up)';
+          xdefEl.title = 'Near long entry threshold (≤−1× default)';
+        } else {
+          xdefEl.style.background = '';
+          xdefEl.style.color = '';
+          xdefEl.title = '';
+        }
       }
 
       /* 2. Bots tile */
@@ -690,8 +706,20 @@
   let candleSeries = null, volSeries = null, spreadSeries = null, rsiSeries = null;
   let volMap = new Map(), rsiMap = new Map();
   let latestCandle = null;
+  let chartMarkers = [];
   const legend = document.getElementById('ohlc-legend');
   const timeScaleOpts = { borderColor: '#30363d', timeVisible: true, secondsVisible: false };
+
+  // Marker tooltip div
+  const markerTooltip = document.createElement('div');
+  markerTooltip.style.cssText = [
+    'position:absolute', 'display:none', 'z-index:10',
+    'background:var(--surface)', 'border:1px solid var(--border)',
+    'border-radius:5px', 'padding:5px 8px', 'font-size:11px',
+    'line-height:1.5', 'pointer-events:none', 'max-width:220px',
+    'box-shadow:0 2px 8px rgba(0,0,0,.4)', 'white-space:pre-wrap',
+  ].join(';');
+  document.getElementById('chart-candles')?.appendChild(markerTooltip);
 
   function mountCharts() {
     if (candleChart) return;
@@ -766,6 +794,26 @@
         const bar = param.seriesData.get(candleSeries);
         if (bar) renderLegend(bar);
       } else if (latestCandle) { renderLegend(latestCandle); }
+      // Marker tooltip
+      const m = param.time ? chartMarkers.find((mk) => mk.time === param.time) : null;
+      if (m && param.point && markerTooltip) {
+        const side = String(m.side || '').toUpperCase();
+        const paper = m.paper ? ' (paper)' : '';
+        const reason = m.reason ? m.reason : '';
+        markerTooltip.innerHTML =
+          '<span style="color:' + (m.side === 'long' ? 'var(--up)' : 'var(--down)') + ';font-weight:700">' +
+          side + paper + '</span>' + (reason ? '\n' + reason : '');
+        const chartEl = document.getElementById('chart-candles');
+        const rect = chartEl ? chartEl.getBoundingClientRect() : null;
+        markerTooltip.style.display = 'block';
+        const ttW = 160, ttH = 60;
+        const x = Math.min(param.point.x + 12, (rect ? rect.width : 400) - ttW - 4);
+        const y = Math.max(param.point.y - ttH - 4, 4);
+        markerTooltip.style.left = x + 'px';
+        markerTooltip.style.top  = y + 'px';
+      } else if (markerTooltip) {
+        markerTooltip.style.display = 'none';
+      }
     });
     if (latestCandle) renderLegend(latestCandle);
   }
@@ -775,6 +823,8 @@
     candleChart = volChart = rsiChart = null;
     candleSeries = volSeries = spreadSeries = rsiSeries = null;
     volMap.clear(); rsiMap.clear();
+    chartMarkers = [];
+    if (markerTooltip) markerTooltip.style.display = 'none';
   }
 
   function renderLegend(bar) {
@@ -870,7 +920,8 @@
         return;
       }
       candleSeries.setData(data.candles);
-      candleSeries.setMarkers(data.markers || []);
+      chartMarkers = data.markers || [];
+      candleSeries.setMarkers(chartMarkers);
       volSeries.setData(data.volume);
       if (data.rsi    && data.rsi.length    > 0) rsiSeries.setData(data.rsi);
       if (data.spread && data.spread.length > 0) spreadSeries.setData(data.spread);
@@ -1043,7 +1094,7 @@
   var container  = document.getElementById('eq-chart');
   var rangeGroup = document.getElementById('eq-range-group');
   var updatedEl  = document.getElementById('eq-updated');
-  var chart = null, series = null;
+  var chart = null, series = null, sessionLine = null;
 
   function initChart() {
     if (chart) { try { chart.remove(); } catch (_) {} chart = null; }
@@ -1058,6 +1109,7 @@
       lineWidth:   2,
       priceFormat: { type: 'custom', formatter: function (v) { return FMT.usd(v); } },
     });
+    sessionLine = null;
   }
 
   async function load(range) {
@@ -1081,7 +1133,25 @@
       });
       series.setData(pts);
       chart.timeScale().fitContent();
-      if (updatedEl) updatedEl.textContent = rows.length + ' pts';
+
+      // Session-start reference line at the first point's value
+      if (sessionLine) { try { series.removePriceLine(sessionLine); } catch (_) {} sessionLine = null; }
+      var startVal = pts[0].value;
+      sessionLine = series.createPriceLine({
+        price: startVal,
+        color: 'rgba(129,140,248,0.4)',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: 'start',
+      });
+
+      // % change label
+      var endVal = pts[pts.length - 1].value;
+      var pct = startVal > 0 ? ((endVal - startVal) / startVal * 100) : 0;
+      var pctStr = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+      var pctCol = pct >= 0 ? 'var(--up)' : 'var(--down)';
+      if (updatedEl) updatedEl.innerHTML = '<span style="color:' + pctCol + ';font-weight:600">' + pctStr + '</span> · ' + rows.length + ' pts';
     } catch (e) {
       clearState(container);
       container.querySelectorAll('.an-state-overlay').forEach(function (el) { el.remove(); });

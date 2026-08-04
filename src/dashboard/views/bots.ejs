@@ -721,7 +721,16 @@
           try {
             const r = await fetch('/api/bots/' + encodeURIComponent(id) + '/history', { method: 'DELETE' });
             const d = await r.json();
-            if (!r.ok) alert('Error: ' + (d.error || r.statusText));
+            if (!r.ok) {
+              alert('Error: ' + (d.error || r.statusText));
+            } else {
+              var msg = 'Reset complete — ' + (d.deleted || 0) + ' trade row(s) deleted, equity zeroed.';
+              var flash = document.createElement('div');
+              flash.textContent = msg;
+              flash.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);color:var(--text);font-size:12px;padding:0.6rem 1rem;border-radius:6px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+              document.body.appendChild(flash);
+              setTimeout(function () { flash.remove(); }, 4000);
+            }
           }
           catch (e) { console.error(e); }
         } else {
@@ -979,12 +988,15 @@
 
   // ── Modal: live-conflict guard ────────────────────────────────────────────
   function checkLiveConflict() {
+    const stratId = document.getElementById('m-strategy').value;
+    // Signal strategies are always paper — don't let the coin-conflict check re-enable live
+    if (STRATEGY_REQUIRES_SIGNALS[stratId]) return;
     const coin      = mCoin.value;
-    const hasLive   = allBots.some(b => b.coin === coin && b.live && b.status === 'running');
+    const hasLive   = allBots.some(function (b) { return b.coin === coin && b.live && b.status === 'running'; });
     mLive.disabled  = hasLive;
     if (hasLive) {
       mLive.checked      = false;
-      mLiveW.textContent = `${coin} already has a live bot — only one per coin.`;
+      mLiveW.textContent = coin + ' already has a live bot — only one per coin.';
       mLiveW.style.display = 'block';
     } else {
       mLiveW.style.display = 'none';

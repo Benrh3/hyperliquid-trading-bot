@@ -313,11 +313,17 @@ export class Logger {
 
   /**
    * Delete all trades rows for the given bot_id and return the deleted count.
-   * Used by the admin "reset history" action to purge testnet-economics fiction.
+   * Also deletes legacy rows where bot_id IS NULL but strategy+coin match
+   * (written before the bot_id column existed) so the P&L stays zeroed after restart.
    */
-  deleteTradesForBot(botId: string): number {
-    const result = this.db.prepare("DELETE FROM trades WHERE bot_id = ?").run(botId);
-    return result.changes;
+  deleteTradesForBot(botId: string, strategy?: string, coin?: string): number {
+    let deleted = this.db.prepare("DELETE FROM trades WHERE bot_id = ?").run(botId).changes;
+    if (strategy && coin) {
+      deleted += this.db.prepare(
+        "DELETE FROM trades WHERE bot_id IS NULL AND strategy = ? AND coin = ?",
+      ).run(strategy, coin).changes;
+    }
+    return deleted;
   }
 
   /**
