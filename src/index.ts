@@ -23,7 +23,7 @@ import { Feed } from "./feed.js";
 import { FundingRateStrategy } from "./strategy/funding-rate.js";
 import { BotManager } from "./bot-manager.js";
 import { DydxFundingPoller } from "./dydx-funding.js";
-import { FundingMatrixPoller } from "./funding-matrix.js";
+import { FundingMatrixPoller, getFundingDataNetwork, getFundingDataUrls } from "./funding-matrix.js";
 import { MarketStore } from "./market/store.js";
 import { loadCustomDefs, customDefToRegistryEntry } from "./strategy/custom-strategy.js";
 import { STRATEGY_REGISTRY } from "./strategy/registry.js";
@@ -105,7 +105,13 @@ signalDb.pragma("journal_mode = WAL");
 signalDb.pragma("busy_timeout = 5000");
 const signalProvider = new LiveSignalProvider(signalDb);
 
-const laneManager = new BotManager(hlVenue, dydxVenue, logger, cvStateStore, signalProvider);
+// Read-only HL venue pointed at the same data network as FundingMatrixPoller (default: mainnet).
+// Cross-venue bots read funding rates through this venue so paper accrual uses real market data
+// rather than testnet fantasy rates, regardless of which execution network is configured.
+const { hlIsTestnet: hlDataIsTestnet } = getFundingDataUrls(getFundingDataNetwork());
+const hlReadVenue = new HyperliquidVenue(null, hlDataIsTestnet);
+
+const laneManager = new BotManager(hlVenue, dydxVenue, logger, cvStateStore, signalProvider, hlReadVenue);
 
 // 6. dYdX funding poller (cross-exchange comparison on Strategies page)
 const dydxPoller = new DydxFundingPoller();

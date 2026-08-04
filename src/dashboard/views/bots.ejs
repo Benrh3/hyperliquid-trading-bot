@@ -724,7 +724,9 @@
             if (!r.ok) {
               alert('Error: ' + (d.error || r.statusText));
             } else {
-              var msg = 'Reset complete — ' + (d.deleted || 0) + ' trade row(s) deleted, equity zeroed.';
+              var msg = d.periodsCleared != null
+                ? 'Reset complete — ' + d.periodsCleared + ' accrual period(s) cleared, equity → $' + (d.notional || 0).toFixed(0) + '.'
+                : 'Reset complete — ' + (d.deleted || 0) + ' trade row(s) deleted, equity zeroed.';
               var flash = document.createElement('div');
               flash.textContent = msg;
               flash.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);color:var(--text);font-size:12px;padding:0.6rem 1rem;border-radius:6px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.4)';

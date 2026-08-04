@@ -217,6 +217,28 @@ export class CrossVenueFundingBasis {
 
   getExecutionMode(): ExecutionMode { return this.executionMode; }
 
+  /**
+   * Zero all accounting accumulators and write the cleared state to cv_bot_state.
+   * Position legs are left untouched — the bot stays open/flat as-is.
+   */
+  reset(): { periodsCleared: number; notional: number } {
+    const periodsCleared  = this.periods;
+    this.capturedFunding  = 0;
+    this.totalFees        = 0;
+    this.equity           = this.notional;
+    this.dailyStartEquity = this.notional;
+    this.periods          = 0;
+    this.flipCount        = 0;
+    this.totalLegHoldMs   = 0;
+    this.hourlyAccruals   = [];
+    this.startedAt        = Date.now();
+    this.lastBucket       = Math.floor(Date.now() / HOUR_MS);
+    this.lastFlipAt       = 0;
+    this.persistState();
+    console.log(`[cross-venue] reset ${this.botId} — cleared ${periodsCleared} periods, equity → $${this.notional}`);
+    return { periodsCleared, notional: this.notional };
+  }
+
   // ── State for dashboard ───────────────────────────────────────────────────
 
   getBotState(): BotState {

@@ -216,13 +216,16 @@ export class BotManager {
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   /** Live signal provider for shadow (requiresSignals paper) bots. */
   private readonly signalProvider?: LiveSignalProvider;
+  /** Read-only venue used as venueA for cross-venue rate reads (defaults to this.venue). */
+  private readonly dataVenue?: Venue;
 
-  constructor(venue?: Venue, dydxVenue?: Venue, logger?: Logger, cvStateStore?: CvStateStore, signalProvider?: LiveSignalProvider) {
+  constructor(venue?: Venue, dydxVenue?: Venue, logger?: Logger, cvStateStore?: CvStateStore, signalProvider?: LiveSignalProvider, dataVenue?: Venue) {
     this.venue          = venue;
     this.dydxVenue      = dydxVenue;
     this.logger         = logger;
     this.cvStateStore   = cvStateStore;
     this.signalProvider = signalProvider;
+    this.dataVenue      = dataVenue;
     // Data clients always use mainnet: candle prices and funding rates must be real.
     // Live execution uses this.venue (injected from index.ts), which has its own isTestnet flag.
     this.info = new InfoClient({ transport: new HttpTransport({ isTestnet: false }) });
@@ -289,7 +292,7 @@ export class BotManager {
         const notional = bc.notional ?? INITIAL_EQUITY;
         // Reuse existing instance to preserve accumulated state; otherwise rehydrate from SQLite
         const cv = old?.crossVenue ?? new CrossVenueFundingBasis(
-          this.venue!, this.dydxVenue!, bc.coin, notional, this.logger,
+          (this.dataVenue ?? this.venue)!, this.dydxVenue!, bc.coin, notional, this.logger,
           this.cvStateStore, bc.id,
         );
         // Sync mode from config
@@ -1208,7 +1211,7 @@ export class BotManager {
       this.botsFile.bots.push(bc);
       this.saveFile();
 
-      const cv = new CrossVenueFundingBasis(this.venue, this.dydxVenue, coin, notional, this.logger, this.cvStateStore, id);
+      const cv = new CrossVenueFundingBasis(this.dataVenue ?? this.venue, this.dydxVenue, coin, notional, this.logger, this.cvStateStore, id);
       cv.setExecutionMode(live ? "live" : "paper");
       const runtime: BotRuntime = {
         config: bc, displayName: "Cross-Venue Funding Basis",
@@ -1316,10 +1319,30 @@ export class BotManager {
    * reset the in-memory realised-P&L / trade-count counters to zero.
    * Leaves bot config, position, and session stats untouched.
    */
-  resetBotHistory(id: string): { deleted: number } {
+  resetBotHistory(id: string): { deleted: number; periodsCleared?: number; notional?: number } {
     const bot = this.bots.get(id);
     if (!bot) throw new Error(`Bot ${id} not found`);
     const bc = bot.config;
+
+    // Cross-venue bots: zero cv_bot_state accumulators; no rows in trades table
+    if (bot.crossVenue) {
+      const { periodsCleared, notional } = bot.crossVenue.reset();
+      // Snapshot with updated equity (cv bot now returns notional from getBotState())
+      const newTotal = [...this.bots.values()].reduce((s, b) => {
+        if (b.crossVenue) return s + (b.crossVenue.getBotState().equity ?? 0);
+        return s + (b.equity ?? 0);
+      }, 0);
+      void this.logger?.snapshotEquity(newTotal);
+      console.log(
+        `[bot-manager] resetBotHistory ${id}: cross-venue — cleared ${periodsCleared} periods, equity → $${notional}`,
+      );
+      this.logger?.logEvent("bot-manager", "warn",
+        `Cross-venue history reset for bot ${id} (${bc.coin}): cleared ${periodsCleared} accrual periods`,
+        { id, periodsCleared, notional },
+      );
+      return { deleted: 0, periodsCleared, notional };
+    }
+
     // Delete trade rows — include legacy NULL-bot_id rows that match strategy+coin
     const deleted = this.logger?.deleteTradesForBot(id, bc.strategyId, bc.coin) ?? 0;
     // Reset in-memory P&L counters
