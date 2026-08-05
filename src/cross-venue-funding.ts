@@ -234,6 +234,9 @@ export class CrossVenueFundingBasis {
     this.startedAt        = Date.now();
     this.lastBucket       = Math.floor(Date.now() / HOUR_MS);
     this.lastFlipAt       = 0;
+    this.paused           = false;
+    this.pausedReason     = "";
+    this.lastError        = "";
     this.persistState();
     console.log(`[cross-venue] reset ${this.botId} — cleared ${periodsCleared} periods, equity → $${this.notional}`);
     return { periodsCleared, notional: this.notional };
