@@ -53,7 +53,11 @@ npm run build
 
 # ── 4. Restart pm2 ───────────────────────────────────────────────────────────
 echo "[deploy] Restarting pm2 process..."
-pm2 restart hl-trading-bot --update-env
+if [ "${HL_ENV:-}" = "live" ]; then
+  pm2 restart hl-trading-bot-live --update-env
+else
+  pm2 restart hl-trading-bot --update-env
+fi
 
 echo ""
 echo "[deploy] Deployed successfully."
