@@ -9,6 +9,7 @@
   <div class="nav-links" id="nav-links">
     <a href="/"       class="nav-link<%= _p === 'bot'    ? ' active' : '' %>">Trading Bot</a>
     <a href="/market"  class="nav-link<%= _p === 'market' ? ' active' : '' %>">Market</a>
+    <% if (locals.isAdmin) { %><a href="/logout" class="nav-link nav-mobile-auth" style="display:none">Logout</a><% } else if (locals.authConfigured) { %><a href="/login" class="nav-link nav-mobile-auth" style="display:none">Login</a><% } %>
   </div>
   <div class="nav-right">
     <span class="dot"></span>

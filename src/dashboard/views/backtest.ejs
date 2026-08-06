@@ -322,10 +322,30 @@
     .wf-tiles-row { grid-template-columns: 1fr 1fr 1fr; }
     .wf-tiles-row .signal-card:first-child .wf-hero-val { font-size: var(--t-value); }
   }
+  @media (max-width: 900px) {
+    .bt-page { padding: var(--sp-3); }
+    /* Sidebar: full-width, remove sticky scroll */
+    .bt-sidebar { max-height: none; overflow-y: visible; position: static; }
+    /* Scroll hint when sidebar is stacked above results */
+    .bt-mobile-hint {
+      display: flex; align-items: center; justify-content: center;
+      gap: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+      font-size: var(--t-label); color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+  }
   @media (max-width: 600px) {
-    .bt-page { padding: var(--sp-4) var(--sp-3); }
+    .bt-page { padding: var(--sp-2) var(--sp-3); }
+    .bt-pnl-grid { grid-template-columns: 1fr 1fr; }
+    .wf-tiles-row { grid-template-columns: 1fr 1fr; }
+    .wf-tiles-row .signal-card:first-child .wf-hero-val { font-size: var(--t-value); }
+    /* WF table: horizontal scroll within container */
+    .wf-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  }
+  @media (max-width: 420px) {
     .bt-pnl-grid { grid-template-columns: 1fr; }
     .wf-tiles-row { grid-template-columns: 1fr; }
+    .bt-stat-grid { grid-template-columns: 1fr 1fr; }
   }
 </style>
 
@@ -453,6 +473,9 @@
       <button class="btn-run-bt" id="bt-run">Run Backtest</button>
       <span class="bt-status" id="bt-status"></span>
     </div>
+    <div class="bt-mobile-hint" style="display:none" id="bt-mobile-hint">
+      <a href="#bt-results" style="color:var(--accent);text-decoration:none;font-weight:600">&#8595; Scroll to results</a>
+    </div>
 
   </aside><!-- /.bt-sidebar -->
 
@@ -473,7 +496,7 @@
       <div id="wf-headline"></div>
 
       <!-- WF window table -->
-      <div class="table-wrap" style="margin-bottom:var(--sp-4)">
+      <div class="table-wrap wf-table-scroll" style="margin-bottom:var(--sp-4)">
         <table class="wf-table" id="wf-table">
           <thead>
             <tr>
@@ -539,7 +562,7 @@
       </div>
     </div>
 
-  </div><!-- /.bt-results -->
+  </div><!-- /.bt-results --><a id="bt-results" style="display:block;position:relative;top:-60px;visibility:hidden"></a>
 </div><!-- /.bt-layout -->
 
 <!-- Funding basis (full-width below layout) -->
@@ -573,6 +596,14 @@
   var paramsEl = document.getElementById('bt-params-section');
   var runBtn   = document.getElementById('bt-run');
   var statusEl = document.getElementById('bt-status');
+
+  // ── Mobile hint (shows "Results below ↓" on narrow screens after a run) ──
+  function showMobileHint() {
+    var hint = document.getElementById('bt-mobile-hint');
+    if (hint && window.innerWidth <= 900) {
+      hint.style.display = 'flex';
+    }
+  }
 
   // ── Formatters ────────────────────────────────────────────────────────────
   function fmtTime(ms) { return new Date(ms).toLocaleString(); }
@@ -923,6 +954,7 @@
 
       statusEl.textContent = result.runConfig.fetchedCandles.toLocaleString() + ' candles · ' + interval;
       document.getElementById('bt-placeholder').style.display = 'none';
+      showMobileHint();
 
       renderRunConfig(result.runConfig);
       renderStats(result);
@@ -1016,6 +1048,7 @@
       statusEl.textContent = data.windows.length + ' OOS windows completed';
       document.getElementById('bt-placeholder').style.display = 'none';
       document.getElementById('wf-results').style.display = '';
+      showMobileHint();
 
       // ── WF headline: signal-card tiles ─────────────────────────────────
       var agg  = data.aggregate;
@@ -1164,6 +1197,17 @@
 
   // ── Init ──────────────────────────────────────────────────────────────────
   loadCoins();
+
+  // On mobile, collapse less-essential sidebar sections so the sidebar is shorter
+  if (window.innerWidth <= 900) {
+    document.querySelectorAll('.bt-sidebar .bt-section').forEach(function (el) {
+      if (el.tagName !== 'DETAILS') return;
+      var hd = el.querySelector('.bt-sec-hd');
+      // Keep Setup open; collapse Strategy Parameters and Mode & Walk-Forward
+      var txt = hd ? hd.textContent.trim() : '';
+      if (txt !== 'Setup') el.removeAttribute('open');
+    });
+  }
 
 })();
 </script>

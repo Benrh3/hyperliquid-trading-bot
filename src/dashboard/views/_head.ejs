@@ -289,8 +289,19 @@
     @media (max-width: 768px) {
       .container { padding: 1rem 0.75rem; }
 
-      /* Hamburger visible, links hidden by default */
-      .hamburger { display: block; }
+      /* ── Top nav: brand(flex-1) | dot | theme | hamburger ── */
+      .nav-top { overflow: visible; }
+      .nav-brand { flex: 1; margin-right: 0; }
+
+      /* Push hamburger to far right via order */
+      .hamburger { display: flex; align-items: center; order: 10; margin-left: 0.25rem; }
+
+      /* Nav-right: shrink, keep only dot + theme-btn; hide login/logout */
+      .nav-right { order: 9; gap: 0.4rem; font-size: 11px; }
+      .nav-right .nav-link { display: none; }          /* hide login/logout from top bar */
+      .nav-right .text-muted { display: none; }
+
+      /* Pillar nav-links: dropdown below the top bar */
       .nav-links {
         display: none;
         position: absolute;
@@ -304,33 +315,48 @@
         padding: 0.5rem 0;
       }
       .nav-links.open { display: flex; }
+
+      /* Mobile-only auth link inside hamburger dropdown */
+      .nav-mobile-auth { display: flex !important; }
+
+      /* Sub-nav: horizontal scroll strip */
       .nav-sub { overflow-x: auto; -webkit-overflow-scrolling: touch; height: auto; padding: 0 0.5rem; }
       .nav-sub .nav-links { display: flex; position: static; flex-direction: row; border-bottom: none; padding: 0; background: none; }
-      .nav-link {
+
+      /* Nav-link row items in dropdown */
+      .nav-top .nav-links .nav-link {
         height: auto;
         padding: 0.6rem 1.25rem;
         border-bottom: none;
         border-left: 2px solid transparent;
         width: 100%;
       }
-      .nav-link.active { border-left-color: var(--blue); border-bottom: none; }
-      .nav-sub .nav-link.active { border-left-color: var(--accent); }
+      .nav-top .nav-links .nav-link.active { border-left-color: var(--blue); border-bottom: none; }
 
-      /* Cards: single column */
-      .grid {
-        grid-template-columns: 1fr 1fr;
-      }
+      /* Sub-nav link sizing */
+      .nav-sub .nav-link { height: auto; padding: 0.5rem 0.75rem; font-size: 11px; white-space: nowrap; }
+      .nav-sub .nav-link.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+
+      /* Cards: two column */
+      .grid { grid-template-columns: 1fr 1fr; }
       .card-funding { grid-column: span 2; }
       .card-value { font-size: 1.3rem; }
-
-      /* Nav right: compact */
-      .nav-right { gap: 0.25rem; font-size: 11px; }
-      .nav-right .text-muted { display: none; }
     }
 
     @media (max-width: 480px) {
       .grid { grid-template-columns: 1fr; }
       .card-funding { grid-column: span 1; }
+    }
+
+    /* ── Signal-card font scaling on mobile ── */
+    @media (max-width: 600px) {
+      .signal-card { padding: var(--sp-3); min-height: 90px; }
+      .sc-value { font-size: 20px; }
+      .sc-subline { font-size: 11px; }
+    }
+    @media (max-width: 400px) {
+      .sc-value { font-size: 16px; overflow-wrap: break-word; word-break: break-word; }
+      .sc-label { font-size: 10px; }
     }
 
     /* ═══════════════════════════════════════════════════════════════════════
