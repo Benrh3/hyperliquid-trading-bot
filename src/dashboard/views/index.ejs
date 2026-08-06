@@ -232,6 +232,7 @@
         <div class="sc-header"><span class="sc-label">Bots</span></div>
         <div class="sc-value" id="tile-bots-value"><span style="color:var(--muted)">—</span></div>
         <div class="sc-subline" id="tile-bots-sub"></div>
+        <div class="sc-subline" id="tile-bots-balance" style="color:var(--muted)"></div>
         <div class="sc-badges" id="tile-bots-badges"></div>
       </div>
     </a>
@@ -627,6 +628,20 @@
 
   refreshOverview();
   setInterval(refreshOverview, 10000);
+
+  async function refreshBalance() {
+    try {
+      var d = await fetch('/api/balance').then(function (r) { return r.json(); });
+      var balEl = document.getElementById('tile-bots-balance');
+      if (balEl) {
+        balEl.textContent = d.available != null
+          ? '$' + Number(d.available).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' avail'
+          : '';
+      }
+    } catch (e) { /* balance endpoint optional — fail silently */ }
+  }
+  refreshBalance();
+  setInterval(refreshBalance, 30000);
 
   /* ── HYPE sparkline (24h HL funding history) ── */
   (function () {

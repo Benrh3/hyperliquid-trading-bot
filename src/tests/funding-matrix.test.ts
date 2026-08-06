@@ -299,6 +299,108 @@ describe("retention / rollup", () => {
 
 import { Logger } from "../logger.js";
 
+// ── getSpreadHistoryGaps ─────────────────────────────────────────────────────
+
+describe("getSpreadHistoryGaps", () => {
+  const GAP_THRESHOLD = 5 * 60_000; // 5 min, matching the poller constant
+  const POLL_INTERVAL = 45_000;
+
+  it("returns empty array when table is empty", () => {
+    const logger = new Logger(":memory:");
+    expect(logger.getSpreadHistoryGaps(0, GAP_THRESHOLD)).toEqual([]);
+  });
+
+  it("returns empty array for a single row", () => {
+    const logger = new Logger(":memory:");
+    const ts     = Date.now();
+    logger.writeSpreadHistory(ts, [
+      { coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 },
+    ]);
+    expect(logger.getSpreadHistoryGaps(0, GAP_THRESHOLD)).toEqual([]);
+  });
+
+  it("returns empty array when all gaps are within threshold", () => {
+    const logger = new Logger(":memory:");
+    const base   = Date.now() - 10_000;
+    for (let i = 0; i < 5; i++) {
+      logger.writeSpreadHistory(base + i * POLL_INTERVAL, [
+        { coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 },
+      ]);
+    }
+    expect(logger.getSpreadHistoryGaps(0, GAP_THRESHOLD)).toEqual([]);
+  });
+
+  it("detects a single gap exceeding the threshold", () => {
+    const logger   = new Logger(":memory:");
+    const t0     = 1_700_000_000_000; // fixed epoch for determinism
+    const gapEnd = t0 + 30 * 60_000;  // 30-minute outage
+    logger.writeSpreadHistory(t0,      [{ coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 }]);
+    logger.writeSpreadHistory(gapEnd,  [{ coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 }]);
+
+    const gaps = logger.getSpreadHistoryGaps(0, GAP_THRESHOLD);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].from).toBe(t0);
+    expect(gaps[0].to).toBe(gapEnd);
+    expect(gaps[0].gapMs).toBe(gapEnd - t0);
+  });
+
+  it("detects multiple gaps and ignores sub-threshold spacing", () => {
+    const logger = new Logger(":memory:");
+    const base   = 1_700_000_000_000;
+    // write 3 normal ticks, then a 24-min gap, then 2 normal ticks, then a 10-min gap
+    const ticks: number[] = [];
+    for (let i = 0; i < 3; i++) ticks.push(base + i * POLL_INTERVAL);
+    const gap1End = ticks[2] + 24 * 60_000;
+    ticks.push(gap1End);
+    ticks.push(gap1End + POLL_INTERVAL);
+    const gap2End = ticks[4] + 10 * 60_000;
+    ticks.push(gap2End);
+
+    for (const ts of ticks) {
+      logger.writeSpreadHistory(ts, [
+        { coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 },
+      ]);
+    }
+
+    const gaps = logger.getSpreadHistoryGaps(0, GAP_THRESHOLD);
+    expect(gaps).toHaveLength(2);
+    expect(gaps[0].from).toBe(ticks[2]);
+    expect(gaps[0].to).toBe(gap1End);
+    expect(gaps[1].from).toBe(ticks[4]);
+    expect(gaps[1].to).toBe(gap2End);
+  });
+
+  it("respects the sinceMs cutoff — ignores rows before it", () => {
+    const logger    = new Logger(":memory:");
+    const oldGapEnd = 1_700_000_000_000; // old timestamps
+    logger.writeSpreadHistory(oldGapEnd - 30 * 60_000, [{ coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 }]);
+    logger.writeSpreadHistory(oldGapEnd,               [{ coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 }]);
+
+    // auditing only from "now" — old rows are outside the window
+    const gaps = logger.getSpreadHistoryGaps(Date.now() - 60_000, GAP_THRESHOLD);
+    expect(gaps).toHaveLength(0);
+  });
+
+  it("deduplicates timestamps from multi-coin writes", () => {
+    const logger = new Logger(":memory:");
+    const t0     = 1_700_000_000_000;
+    const t1     = t0 + 30 * 60_000; // 30-min gap
+    // Each poll writes multiple coins at the same ts — DISTINCT ts should not double-count
+    logger.writeSpreadHistory(t0, [
+      { coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 },
+      { coin: "ETH", hlFunding: 0.002, dydxFunding: 0.001,  spreadAbs: 0.001,  spreadDir: "hl>dydx", hlOiUsd: 5e8 },
+    ]);
+    logger.writeSpreadHistory(t1, [
+      { coin: "BTC", hlFunding: 0.001, dydxFunding: 0.0005, spreadAbs: 0.0005, spreadDir: "hl>dydx", hlOiUsd: 1e9 },
+      { coin: "ETH", hlFunding: 0.002, dydxFunding: 0.001,  spreadAbs: 0.001,  spreadDir: "hl>dydx", hlOiUsd: 5e8 },
+    ]);
+
+    const gaps = logger.getSpreadHistoryGaps(0, GAP_THRESHOLD);
+    expect(gaps).toHaveLength(1); // one gap, not two (one per coin)
+    expect(gaps[0].gapMs).toBe(t1 - t0);
+  });
+});
+
 describe("writeSpreadHistory", () => {
   it("writes one row per coin per refresh, queryable by coin + time range", () => {
     const logger = new Logger(":memory:");

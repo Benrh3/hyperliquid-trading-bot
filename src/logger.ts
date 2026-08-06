@@ -47,6 +47,67 @@ const HOUR_MS          = 3_600_000;
 export interface EquityHistoryRow { ts: number; equity_usd: number }
 export interface FundingSampleRow { ts: number; coin: string; venue: string; rate_hourly: number }
 export interface FundingSampleHourlyRow { ts_hour: number; coin: string; venue: string; avg_rate_hourly: number; sample_count: number }
+export interface SpreadHistoryGap { from: number; to: number; gapMs: number }
+
+// ── Bot archive ───────────────────────────────────────────────────────────────
+
+export interface ArchivedBotRow {
+  id:                     string;
+  strategy_id:            string;
+  display_name:           string;
+  coin:                   string;
+  timeframe:              string;
+  live:                   number;
+  execution_mode:         string | null;
+  started_at:             number;
+  retired_at:             number;
+  starting_equity:        number;
+  realised_pnl:           number;
+  trade_count:            number;
+  win_rate:               number | null;
+  max_drawdown_pct:       number | null;
+  lifetime_hours:         number;
+  annualized_return_pct:  number | null;
+  realized_sharpe:        number | null;
+  wf_strategy_id:         string | null;
+  wf_coin:                string | null;
+  wf_mean_oos_sharpe:     number | null;
+  wf_mean_oos_return_pct: number | null;
+  wf_pct_beat_bh:         number | null;
+  wf_run_at:              number | null;
+}
+
+export interface ArchiveBotInput {
+  id:                   string;
+  strategyId:           string;
+  displayName:          string;
+  coin:                 string;
+  timeframe:            string;
+  live:                 boolean;
+  executionMode:        string | null;
+  startedAt:            number;
+  retiredAt:            number;
+  startingEquity:       number;
+  realisedPnl:          number;
+  tradeCount:           number;
+  winRate:              number | null;
+  maxDrawdownPct:       number | null;
+  lifetimeHours:        number;
+  annualizedReturnPct:  number | null;
+  realizedSharpe:       number | null;
+  wfStrategyId:         string | null;
+  wfCoin:               string | null;
+  wfMeanOosSharpe:      number | null;
+  wfMeanOosReturnPct:   number | null;
+  wfPctBeatBh:          number | null;
+  wfRunAt:              number | null;
+}
+
+export interface BotMetrics {
+  winRate:        number | null;
+  maxDrawdownPct: number | null;
+  realizedSharpe: number | null;
+}
 
 export class Logger {
   private db: Database.Database;
@@ -63,7 +124,7 @@ export class Logger {
     this.db.pragma("busy_timeout = 5000");
 
     // Load all migrations in order
-    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql", "009_trades_fees.sql", "010_spread_history_hourly.sql"]) {
+    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql", "009_trades_fees.sql", "010_spread_history_hourly.sql", "012_bot_archive.sql"]) {
       const p = join(process.cwd(), "migrations", file);
       if (existsSync(p)) {
         try { this.db.exec(readFileSync(p, "utf-8")); }
@@ -442,6 +503,34 @@ export class Logger {
     return raw;
   }
 
+  /**
+   * Scan the raw funding_spread_history table for consecutive-timestamp gaps
+   * larger than `thresholdMs`.  Only raw rows (≤7 days) are examined — the
+   * hourly rollup can't detect sub-hour gaps, so there's nothing useful to check
+   * beyond the raw retention window.
+   *
+   * Returns one entry per gap, sorted chronologically.
+   */
+  getSpreadHistoryGaps(sinceMs: number, thresholdMs: number): SpreadHistoryGap[] {
+    const rows = this.db
+      .prepare(
+        "SELECT DISTINCT ts FROM funding_spread_history " +
+        "WHERE ts >= ? ORDER BY ts ASC",
+      )
+      .all(sinceMs) as Array<{ ts: number }>;
+
+    if (rows.length < 2) return [];
+
+    const gaps: SpreadHistoryGap[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const gapMs = rows[i].ts - rows[i - 1].ts;
+      if (gapMs > thresholdMs) {
+        gaps.push({ from: rows[i - 1].ts, to: rows[i].ts, gapMs });
+      }
+    }
+    return gaps;
+  }
+
   // ── Retention / rollup ───────────────────────────────────────────────────────
 
   /**
@@ -543,6 +632,90 @@ export class Logger {
       if (result.changes < batch) break;
     }
     if (total > 0) console.log(`[logger] Retention: pruned ${total} rows from ${table}`);
+  }
+
+  // ── Bot archive ─────────────────────────────────────────────────────────────
+
+  archiveBot(data: ArchiveBotInput): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO bot_archive (
+        id, strategy_id, display_name, coin, timeframe, live, execution_mode,
+        started_at, retired_at, starting_equity,
+        realised_pnl, trade_count, win_rate, max_drawdown_pct,
+        lifetime_hours, annualized_return_pct, realized_sharpe,
+        wf_strategy_id, wf_coin, wf_mean_oos_sharpe, wf_mean_oos_return_pct,
+        wf_pct_beat_bh, wf_run_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?
+      )
+    `).run(
+      data.id, data.strategyId, data.displayName, data.coin, data.timeframe,
+      data.live ? 1 : 0, data.executionMode,
+      data.startedAt, data.retiredAt, data.startingEquity,
+      data.realisedPnl, data.tradeCount, data.winRate ?? null, data.maxDrawdownPct ?? null,
+      data.lifetimeHours, data.annualizedReturnPct ?? null, data.realizedSharpe ?? null,
+      data.wfStrategyId, data.wfCoin, data.wfMeanOosSharpe ?? null,
+      data.wfMeanOosReturnPct ?? null, data.wfPctBeatBh ?? null, data.wfRunAt ?? null,
+    );
+  }
+
+  getArchivedBots(): ArchivedBotRow[] {
+    return this.db
+      .prepare("SELECT * FROM bot_archive ORDER BY retired_at DESC")
+      .all() as ArchivedBotRow[];
+  }
+
+  getArchivedBot(id: string): ArchivedBotRow | null {
+    return this.db
+      .prepare("SELECT * FROM bot_archive WHERE id = ?")
+      .get(id) as ArchivedBotRow | null;
+  }
+
+  /**
+   * Compute trade-level metrics for a bot at retire time.
+   * Reads the bot's closed trade rows (pnl IS NOT NULL) sorted chronologically.
+   * Returns null fields when the bot has fewer than 2 closed trades (not enough data).
+   */
+  computeBotMetrics(botId: string, startingEquity: number): BotMetrics {
+    const trades = this.db.prepare(
+      "SELECT pnl, price, size FROM trades WHERE bot_id = ? AND success = 1 AND pnl IS NOT NULL ORDER BY created_at ASC",
+    ).all(botId) as Array<{ pnl: number; price: number; size: number }>;
+
+    if (trades.length === 0) return { winRate: null, maxDrawdownPct: null, realizedSharpe: null };
+
+    // Win rate
+    const wins    = trades.filter((t) => t.pnl > 0).length;
+    const winRate = wins / trades.length;
+
+    // Max drawdown from running equity curve
+    let equity       = startingEquity;
+    let peak         = startingEquity;
+    let maxDrawdownPct = 0;
+    for (const t of trades) {
+      equity += t.pnl;
+      if (equity > peak) peak = equity;
+      if (peak > 0) {
+        const dd = (peak - equity) / peak * 100;
+        if (dd > maxDrawdownPct) maxDrawdownPct = dd;
+      }
+    }
+
+    // Realized Sharpe (mirrors backtest.ts formula — trade-level returns)
+    if (trades.length < 2) {
+      return { winRate, maxDrawdownPct, realizedSharpe: null };
+    }
+    const returns  = trades.map((t) => t.pnl / Math.max(t.price * t.size, 1e-9));
+    const mean     = returns.reduce((s, r) => s + r, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+    const std      = Math.sqrt(variance);
+    const realizedSharpe = std > 1e-10 ? (mean / std) * Math.sqrt(returns.length) : null;
+
+    return { winRate, maxDrawdownPct, realizedSharpe };
   }
 
   close(): void {

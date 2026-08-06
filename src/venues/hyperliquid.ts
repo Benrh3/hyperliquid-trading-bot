@@ -170,6 +170,13 @@ export class HyperliquidVenue implements Venue {
     return Number.isFinite(equity) && equity > 0 ? equity : null;
   }
 
+  async getAvailableBalance(): Promise<number | null> {
+    if (!this.walletAddress) return null;
+    const state = await this.info.clearinghouseState({ user: this.walletAddress as `0x${string}` });
+    const v = parseFloat(state.withdrawable);
+    return Number.isFinite(v) && v >= 0 ? v : null;
+  }
+
   async getAllPositions(): Promise<import("../venue.js").VenuePosition[]> {
     if (!this.walletAddress) return [];
     const state = await this.info.clearinghouseState({ user: this.walletAddress as `0x${string}` });

@@ -17,6 +17,7 @@
     "maxConcurrentRiskPercent": 10.0,
     "maxDailyLossPercent": 5,
     "maxLeverage": 5,
+    "balanceGateMaxLeverage": 5,
     "stopLossPercent": 2,
     "orphanEmergencyCloseLossPct": 5.0
   },

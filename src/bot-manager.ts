@@ -11,14 +11,14 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { bus } from "./events.js";
 import { config, coins } from "./config.js";
-import { computePositionSize } from "./position-sizing.js";
+import { computePositionSize, checkBalanceGate } from "./position-sizing.js";
 import { STRATEGY_REGISTRY, getStrategyEntry } from "./strategy/registry.js";
 import { CrossVenueFundingBasis } from "./cross-venue-funding.js";
 import type { ExecutionMode } from "./cross-venue-funding.js";
 import type { Strategy } from "./strategy/base.js";
 import type { Candle, Signal, TradeResult } from "./events.js";
 import type { Venue } from "./venue.js";
-import type { Logger } from "./logger.js";
+import type { Logger, ArchiveBotInput } from "./logger.js";
 import type { CvStateStore } from "./cv-state-store.js";
 import { LiveSignalProvider } from "./market/live-signal-provider.js";
 
@@ -113,6 +113,16 @@ export interface BotState {
   lastSignalCapturedAt?: number;
   /** Number of DB open rows without a matching close row, updated at startup. */
   orphanedOpens?: number;
+}
+
+/** Walk-forward cache snapshot passed to retireBot for archiving alongside the bot metrics. */
+export interface WfSnapshot {
+  strategyId:         string;
+  coin:               string;
+  meanOosSharpe:      number;
+  meanOosReturnPct?:  number;
+  pctBeatBH:          number;
+  runAt:              number;
 }
 
 // ── Orphaned position (on exchange, no live bot owns it) ──────────────────────
@@ -343,6 +353,11 @@ export class BotManager {
 
   getOrphanedPositions(): OrphanedPosition[] {
     return [...this.orphans.values()];
+  }
+
+  /** Withdrawable (free) balance from the HL venue; null when unavailable. */
+  async getAvailableBalance(): Promise<number | null> {
+    return this.venue?.getAvailableBalance?.() ?? null;
   }
 
   getBotStates(): BotState[] {
@@ -1069,7 +1084,19 @@ export class BotManager {
       if (bot.deleted) return; // deleted while awaiting mark price
       if (markPrice === 0) throw new Error(`No mark price for ${coin}`);
 
-      const sizing  = computePositionSize(accountEquity, markPrice);
+      const sizing = computePositionSize(accountEquity, markPrice);
+
+      // ── Balance gate ──────────────────────────────────────────────────────
+      const available = await this.venue!.getAvailableBalance?.() ?? null;
+      if (bot.deleted) return;
+      const gate = checkBalanceGate(available, sizing.notionalUsd, config.risk.balanceGateMaxLeverage);
+      if (!gate.ok) {
+        const msg = `abstained (${coin}): ${gate.reason}`;
+        console.warn(`[bot-manager] BALANCE GATE: ${msg}`);
+        this.logger?.logEvent("bot-manager", "warn", msg, { botId: bot.config.id, coin });
+        return;
+      }
+
       const receipt = await this.venue!.openPosition(coin, signal.side, sizing.notionalUsd);
 
       if (bot.deleted) {
@@ -1507,6 +1534,91 @@ export class BotManager {
         console.warn(`[bot-manager] LEAK SUSPECTED: bus("${ev}") has ${n} listeners after deleting ${id}`);
       }
     }
+  }
+
+  /**
+   * Retire a bot: snapshot its state to bot_archive, then tear it down.
+   * Unlike deleteBot, this preserves all trade/cv rows — only the active-bot
+   * registry entry is removed.
+   *
+   * @param wfSnapshot  Walk-forward cache entry — pass only when strategyId matches.
+   */
+  async retireBot(id: string, wfSnapshot?: WfSnapshot): Promise<void> {
+    const idx = this.botsFile.bots.findIndex((b) => b.id === id);
+    if (idx === -1) throw new Error(`Bot ${id} not found`);
+    const bc      = this.botsFile.bots[idx];
+    const runtime = this.bots.get(id);
+    const isCv    = bc.strategyId === "cross-venue-funding-basis";
+
+    const startingEquity = isCv ? (bc.notional ?? INITIAL_EQUITY) : (bc.startingEquity ?? INITIAL_EQUITY);
+    const startedAt      = runtime?.startedAt ?? Date.now();
+    const retiredAt      = Date.now();
+    const lifetimeHours  = Math.max((retiredAt - startedAt) / 3_600_000, 0.001);
+
+    // Durable P&L from trade log (candle bots); CV bots use in-memory accumulated state
+    const durableStats = this.logger?.getBotRealisedStats(bc.strategyId, bc.coin, id)
+      ?? { tradeCount: 0, realisedPnl: 0 };
+
+    let realisedPnl: number;
+    let tradeCount:  number;
+    let displayName: string;
+    let executionMode: string | null = null;
+
+    if (isCv) {
+      const cvState = runtime?.crossVenue?.getBotState();
+      realisedPnl   = cvState?.capturedFunding ?? durableStats.realisedPnl;
+      tradeCount    = cvState?.tradeCount      ?? durableStats.tradeCount;
+      displayName   = runtime?.displayName ?? "Cross-Venue Funding Basis";
+      executionMode = bc.live ? "live" : "paper";
+    } else {
+      realisedPnl = durableStats.realisedPnl;
+      tradeCount  = durableStats.tradeCount;
+      displayName = runtime?.displayName ?? bc.strategyId;
+    }
+
+    const lifetimeReturnPct   = startingEquity > 0 ? (realisedPnl / startingEquity) * 100 : null;
+    const annualizedReturnPct = lifetimeReturnPct !== null && lifetimeHours > 0
+      ? lifetimeReturnPct * (8760 / lifetimeHours)
+      : null;
+
+    const metrics = (!isCv && this.logger)
+      ? this.logger.computeBotMetrics(id, startingEquity)
+      : { winRate: null, maxDrawdownPct: null, realizedSharpe: null };
+
+    const wfMatch = wfSnapshot && wfSnapshot.strategyId === bc.strategyId;
+    const archiveInput: ArchiveBotInput = {
+      id:                  bc.id,
+      strategyId:          bc.strategyId,
+      displayName,
+      coin:                bc.coin,
+      timeframe:           bc.timeframe,
+      live:                bc.live,
+      executionMode,
+      startedAt,
+      retiredAt,
+      startingEquity,
+      realisedPnl,
+      tradeCount,
+      winRate:             metrics.winRate,
+      maxDrawdownPct:      metrics.maxDrawdownPct,
+      lifetimeHours,
+      annualizedReturnPct,
+      realizedSharpe:      metrics.realizedSharpe,
+      wfStrategyId:        wfMatch ? wfSnapshot.strategyId         : null,
+      wfCoin:              wfMatch ? wfSnapshot.coin                : null,
+      wfMeanOosSharpe:     wfMatch ? wfSnapshot.meanOosSharpe       : null,
+      wfMeanOosReturnPct:  wfMatch ? (wfSnapshot.meanOosReturnPct ?? null) : null,
+      wfPctBeatBh:         wfMatch ? wfSnapshot.pctBeatBH           : null,
+      wfRunAt:             wfMatch ? wfSnapshot.runAt                : null,
+    };
+
+    this.logger?.archiveBot(archiveInput);
+    console.log(
+      `[bot-manager] retireBot ${id}: archived — ` +
+      `${realisedPnl >= 0 ? "+" : ""}$${realisedPnl.toFixed(2)} over ${lifetimeHours.toFixed(1)}h`,
+    );
+
+    await this.deleteBot(id);
   }
 
   /** Check immediately after a bot delete whether the coin now has an orphaned

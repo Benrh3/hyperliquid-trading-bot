@@ -1,5 +1,33 @@
 import { config } from "./config.js";
 
+export interface BalanceGateResult {
+  ok:     boolean;
+  reason: string | null; // populated only when ok=false
+}
+
+/**
+ * Check whether the available (withdrawable) balance is sufficient for an order.
+ *
+ * Gate condition: available < notionalUsd / gateMaxLeverage → abstain.
+ * Returns ok=true (fail-open) when available is null — venues that do not
+ * support balance queries should not block execution.
+ */
+export function checkBalanceGate(
+  available:       number | null,
+  notionalUsd:     number,
+  gateMaxLeverage: number,
+): BalanceGateResult {
+  if (available === null) return { ok: true, reason: null };
+  const required = notionalUsd / gateMaxLeverage;
+  if (available < required) {
+    return {
+      ok:     false,
+      reason: `$${notionalUsd.toFixed(0)} order needs $${required.toFixed(0)} margin at ${gateMaxLeverage}× but only $${available.toFixed(0)} available`,
+    };
+  }
+  return { ok: true, reason: null };
+}
+
 export interface SizingResult {
   /** USD notional of the position (size × entryPrice) */
   notionalUsd: number;

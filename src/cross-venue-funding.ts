@@ -2,6 +2,8 @@ import type { Venue } from "./venue.js";
 import type { BotState } from "./bot-manager.js";
 import type { Logger } from "./logger.js";
 import type { CvStateStore, CvPersistedState } from "./cv-state-store.js";
+import { config } from "./config.js";
+import { checkBalanceGate } from "./position-sizing.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -709,15 +711,19 @@ export class CrossVenueFundingBasis {
       return `No mark price on ${shortVenueId} for ${this.coin} — venue may be unreachable`;
     }
 
-    // 3. Verify the short venue has sufficient margin
-    let shortEquity: number | null = null;
+    // 3. Verify the short venue has sufficient available margin for this notional
+    let shortAvailable: number | null = null;
     try {
-      shortEquity = await shortVenue.getAccountEquity();
+      shortAvailable = shortVenue.getAvailableBalance
+        ? await shortVenue.getAvailableBalance()
+        : await shortVenue.getAccountEquity();
     } catch (e) {
-      return `Could not fetch ${shortVenueId} account equity: ${(e as Error).message}`;
+      return `Could not fetch ${shortVenueId} account balance: ${(e as Error).message}`;
     }
-    if (shortEquity !== null && shortEquity < this.notional) {
-      return `Insufficient margin on ${shortVenueId}: have $${shortEquity.toFixed(2)}, need $${this.notional.toFixed(2)}`;
+    const balGate = checkBalanceGate(shortAvailable, this.notional, config.risk.balanceGateMaxLeverage);
+    if (!balGate.ok) {
+      console.warn(`[cross-venue] BALANCE GATE: ${balGate.reason}`);
+      return `Balance gate: ${balGate.reason}`;
     }
 
     // 4. Verify dYdX has a mark price (confirms the coin exists on the long venue too)
@@ -733,7 +739,7 @@ export class CrossVenueFundingBasis {
 
     console.log(
       `[cross-venue] Pre-flight passed — ` +
-      `${shortVenueId} mark=$${shortMark.toFixed(2)} equity=$${shortEquity?.toFixed(2) ?? "?"} ` +
+      `${shortVenueId} mark=$${shortMark.toFixed(2)} available=$${shortAvailable?.toFixed(2) ?? "?"} ` +
       `${longVenueId} mark=$${longMark.toFixed(2)} notional=$${this.notional}`,
     );
     return null;

@@ -4,9 +4,22 @@ import type { Logger } from "./logger.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 45_000;
-const FETCH_TIMEOUT_MS = 12_000;
-const DEFAULT_TOP_N    = 25;
+const POLL_INTERVAL_MS     = 45_000;
+const FETCH_TIMEOUT_MS     = 12_000;
+const DEFAULT_TOP_N        = 25;
+
+// dYdX retry-with-backoff (5xx responses only — not timeouts or client errors)
+const DYDX_MAX_RETRIES     = 3;             // up to 3 retries → max delay 1+2+4 = 7s
+const DYDX_BACKOFF_BASE_MS = 1_000;
+
+// Gap audit run once at startup: warn on consecutive timestamps > 5 min apart.
+// 5 min ≈ 7 missed poll cycles — filters normal poll jitter (< 1 missed cycle expected).
+const GAP_AUDIT_WINDOW_MS  = 7 * 24 * 3_600_000; // match raw-row retention (7 days)
+const GAP_THRESHOLD_MS     = 5 * 60_000;          // 5 minutes
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
+}
 
 /**
  * Maximum magnitude for annualised funding display (±300 %/yr).
@@ -211,6 +224,33 @@ export class FundingMatrixPoller {
     await this.poll(); // initial fill before the timer fires
     this.timer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
     console.log(`[funding-matrix] Poller started (${this.topN} coins, ${POLL_INTERVAL_MS / 1000}s interval)`);
+    this.runStartupGapAudit();
+  }
+
+  private runStartupGapAudit(): void {
+    if (!this.logger) return;
+    try {
+      const since = Date.now() - GAP_AUDIT_WINDOW_MS;
+      const gaps  = this.logger.getSpreadHistoryGaps(since, GAP_THRESHOLD_MS);
+      if (gaps.length === 0) {
+        console.log(`[funding-matrix] Gap audit: ✓ no gaps > ${GAP_THRESHOLD_MS / 60_000}min in spread history (last 7d)`);
+        return;
+      }
+      const totalMins = gaps.reduce((s, g) => s + g.gapMs, 0) / 60_000;
+      console.warn(
+        `[funding-matrix] Gap audit: ${gaps.length} gap(s) > ${GAP_THRESHOLD_MS / 60_000}min found ` +
+        `in last 7d  (~${totalMins.toFixed(0)}min total missing)`,
+      );
+      for (const g of gaps) {
+        console.warn(
+          `  ${new Date(g.from).toISOString().slice(0, 16)} → ` +
+          `${new Date(g.to).toISOString().slice(0, 16)}  ` +
+          `(${(g.gapMs / 60_000).toFixed(1)}min)`,
+        );
+      }
+    } catch (e) {
+      console.warn(`[funding-matrix] Gap audit failed: ${(e as Error).message}`);
+    }
   }
 
   stop(): void {
@@ -313,40 +353,55 @@ export class FundingMatrixPoller {
   }
 
   private async fetchDydx(): Promise<Map<string, VenueCoinData>> {
-    const resp = await fetch(`${this.dydxIndexer}/perpetualMarkets`, {
-      headers: { Accept: "application/json" },
-      signal:  AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!resp.ok) throw new Error(`dYdX HTTP ${resp.status}`);
-
     type MktEntry = {
-      status?:         string;
+      status?:          string;
       nextFundingRate?: string;
-      oraclePrice?:    string;
-      indexPrice?:     string;
-      openInterest?:   string;
+      oraclePrice?:     string;
+      indexPrice?:      string;
+      openInterest?:    string;
     };
-    const data = await resp.json() as { markets?: Record<string, MktEntry> };
-    const out  = new Map<string, VenueCoinData>();
 
-    for (const [ticker, mkt] of Object.entries(data.markets ?? {})) {
-      if (mkt.status !== "ACTIVE") continue;
-
-      // Convert "BTC-USD" → "BTC"
-      const coin = ticker.replace(/-USD$/, "");
-
-      const rate   = safeNum(mkt.nextFundingRate);
-      const price  = safeNum(mkt.oraclePrice ?? mkt.indexPrice);
-      const oiBase = safeNum(mkt.openInterest);
-
-      if (rate === null || price === null || oiBase === null) continue;
-
-      out.set(coin, {
-        rateHourly:      rate,
-        markPriceUsd:    price,
-        openInterestUsd: oiBase * price,
+    for (let attempt = 0; ; attempt++) {
+      const resp = await fetch(`${this.dydxIndexer}/perpetualMarkets`, {
+        headers: { Accept: "application/json" },
+        signal:  AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
+
+      if (!resp.ok) {
+        if (resp.status >= 500 && attempt < DYDX_MAX_RETRIES) {
+          const delayMs = DYDX_BACKOFF_BASE_MS * Math.pow(2, attempt);
+          console.warn(
+            `[funding-matrix] dYdX HTTP ${resp.status} — ` +
+            `retry ${attempt + 1}/${DYDX_MAX_RETRIES} in ${delayMs}ms`,
+          );
+          await sleep(delayMs);
+          continue;
+        }
+        throw new Error(`dYdX HTTP ${resp.status}`);
+      }
+
+      const data = await resp.json() as { markets?: Record<string, MktEntry> };
+      const out  = new Map<string, VenueCoinData>();
+
+      for (const [ticker, mkt] of Object.entries(data.markets ?? {})) {
+        if (mkt.status !== "ACTIVE") continue;
+
+        // Convert "BTC-USD" → "BTC"
+        const coin = ticker.replace(/-USD$/, "");
+
+        const rate   = safeNum(mkt.nextFundingRate);
+        const price  = safeNum(mkt.oraclePrice ?? mkt.indexPrice);
+        const oiBase = safeNum(mkt.openInterest);
+
+        if (rate === null || price === null || oiBase === null) continue;
+
+        out.set(coin, {
+          rateHourly:      rate,
+          markPriceUsd:    price,
+          openInterestUsd: oiBase * price,
+        });
+      }
+      return out;
     }
-    return out;
   }
 }

@@ -23,6 +23,13 @@ export interface BotConfig {
     maxConcurrentRiskPercent:      number;
     maxDailyLossPercent:           number;
     maxLeverage:                   number;
+    /**
+     * Hard balance gate: abstain from opening if available (withdrawable) balance
+     * cannot support the order at this leverage cap.  Must be ≥ maxLeverage —
+     * a lower value silently makes the sizer's upper range unreachable.
+     * Default 5 (matches maxLeverage). Validated at startup.
+     */
+    balanceGateMaxLeverage:        number;
     stopLossPercent:               number;
     /**
      * If an orphaned position's unrealised loss exceeds this % of its notional,
@@ -98,6 +105,28 @@ if ((config.risk as Record<string, unknown>)["maxPositionSizeUsd"] !== undefined
     "Position sizing now derives from riskPerTradePercent (default 2%) — see config/default.json.",
   );
 }
+
+/**
+ * Assert that the balance gate cannot make the sizer's upper range unreachable.
+ * Exported so tests can call it with arbitrary values without triggering a full
+ * module-level config load.
+ */
+export function assertBalanceGateInvariant(
+  balanceGateMaxLeverage: number,
+  maxLeverage: number,
+): void {
+  if (balanceGateMaxLeverage < maxLeverage) {
+    throw new Error(
+      `[config] FATAL: risk.balanceGateMaxLeverage (${balanceGateMaxLeverage}) < risk.maxLeverage (${maxLeverage}). ` +
+      `A gate set below the sizer cap silently blocks all positions in the ` +
+      `${balanceGateMaxLeverage}×–${maxLeverage}× range. ` +
+      `Set balanceGateMaxLeverage >= ${maxLeverage} in config/default.json and restart.`,
+    );
+  }
+}
+
+// Hard fail at startup — misconfiguration here silently re-introduces the dead-sizer-range bug
+assertBalanceGateInvariant(config.risk.balanceGateMaxLeverage, config.risk.maxLeverage);
 
 // Validate critical env vars
 export function getPrivateKey(): `0x${string}` {

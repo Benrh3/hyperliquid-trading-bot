@@ -90,6 +90,15 @@ export interface Venue {
   getAccountEquity(): Promise<number | null>;
 
   /**
+   * Returns the withdrawable (free, unencumbered) balance in USD — account
+   * equity minus margin locked in open positions.  Used by the balance gate
+   * before every live order to ensure new positions do not over-leverage the
+   * remaining free collateral.  Optional: venues that do not support this
+   * query omit the method; the gate fails open (allows the order) in that case.
+   */
+  getAvailableBalance?(): Promise<number | null>;
+
+  /**
    * Verifies the venue is fully configured for live order placement.
    * Throws a descriptive error if trading is not possible (missing credentials,
    * client initialization failure, etc.).  A no-op if trading is ready.

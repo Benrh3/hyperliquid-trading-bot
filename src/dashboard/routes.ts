@@ -17,7 +17,7 @@ import type { BotState } from "./server.js";
 import type { Strategy } from "../strategy/base.js";
 import type { Feed } from "../feed.js";
 import type { Executor } from "../executor.js";
-import type { BotManager, BotsFile, OrphanedPosition } from "../bot-manager.js";
+import type { BotManager, BotsFile, OrphanedPosition, WfSnapshot } from "../bot-manager.js";
 import type { DydxFundingPoller } from "../dydx-funding.js";
 import type { FundingMatrixPoller } from "../funding-matrix.js";
 import type { MarketStore } from "../market/store.js";
@@ -209,12 +209,13 @@ function formatUptime(seconds: number): string {
 const WF_CACHE_PATH = "data/wf-cache.json";
 
 type WfCache = {
-  strategyId:    string;
-  strategyName:  string;
-  coin:          string;
-  meanOosSharpe: number;
-  pctBeatBH:     number;
-  runAt:         number;
+  strategyId:          string;
+  strategyName:        string;
+  coin:                string;
+  meanOosSharpe:       number;
+  meanOosReturnPct:    number;
+  pctBeatBH:           number;
+  runAt:               number;
 };
 
 function loadWfCache(): WfCache | null {
@@ -482,6 +483,24 @@ export function createRouter(
     }
   });
 
+  router.post("/api/bots/:id/retire", async (req, res) => {
+    if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
+    try {
+      // Build WF snapshot from the in-memory cache — pass only if strategy matches
+      const bots     = laneManager.getBotStates();
+      const bot      = bots.find((b) => b.id === req.params.id);
+      const wf       = lastWalkForward;
+      const wfSnap: WfSnapshot | undefined = (wf && bot && wf.strategyId === bot.strategyId)
+        ? { strategyId: wf.strategyId, coin: wf.coin, meanOosSharpe: wf.meanOosSharpe,
+            meanOosReturnPct: wf.meanOosReturnPct, pctBeatBH: wf.pctBeatBH, runAt: wf.runAt }
+        : undefined;
+      await laneManager.retireBot(req.params.id, wfSnap);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   router.delete("/api/bots/:id", async (req, res) => {
     if (!laneManager) { res.status(503).json({ error: "Bot manager not initialised" }); return; }
     try {
@@ -636,6 +655,27 @@ export function createRouter(
       // Live mode is blocked in addBot() for requiresSignals entries.
       registry: STRATEGY_REGISTRY.filter(e => e.isCandleStrategy || e.id === "cross-venue-funding-basis"),
     });
+  });
+
+  // ── Bot History (admin-only — 404 for anonymous visitors, zero trace) ────────
+
+  router.get("/bot-history", (req, res) => {
+    if (!res.locals.isAdmin) { res.status(404).end(); return; }
+    res.render("bot-history", { network: config.exchange.network });
+  });
+
+  router.get("/api/bot-history", (_req, res) => {
+    if (!res.locals.isAdmin) { res.status(404).json({ error: "Not found" }); return; }
+    const bots = logger.getArchivedBots();
+    res.json({ bots });
+  });
+
+  router.get("/api/bot-history/:id/trades", (req, res) => {
+    if (!res.locals.isAdmin) { res.status(404).json({ error: "Not found" }); return; }
+    const archived = logger.getArchivedBot(req.params.id);
+    if (!archived) { res.status(404).json({ error: "Not found" }); return; }
+    const { trades } = logger.getFilteredTrades({ botId: req.params.id, limit: 500 });
+    res.json({ trades, archived });
   });
 
   router.get("/builder", (_req, res) => {
@@ -1109,6 +1149,11 @@ export function createRouter(
     }
   });
 
+  router.get("/api/balance", async (_req, res) => {
+    const available = await laneManager?.getAvailableBalance() ?? null;
+    res.json({ available });
+  });
+
   router.get("/api/safety-status", async (_req, res) => {
     const { execSync } = await import("child_process");
     const { existsSync } = await import("fs");
@@ -1373,10 +1418,11 @@ export function createRouter(
         bhOosReturnPct: number;
         beatsBH: boolean;
       }>;
-      const meanIsSharpe  = wr.reduce((s, r) => s + r.isMetrics.sharpeRatio,  0) / wr.length;
-      const meanOosSharpe = wr.reduce((s, r) => s + r.oosMetrics.sharpeRatio, 0) / wr.length;
-      const pctBeatBH     = wr.filter(r => r.beatsBH).length / wr.length * 100;
-      const curveFit      = meanIsSharpe > 0 && meanOosSharpe < meanIsSharpe * 0.5;
+      const meanIsSharpe     = wr.reduce((s, r) => s + r.isMetrics.sharpeRatio,  0) / wr.length;
+      const meanOosSharpe    = wr.reduce((s, r) => s + r.oosMetrics.sharpeRatio, 0) / wr.length;
+      const meanOosReturnPct = wr.reduce((s, r) => s + r.oosMetrics.returnPct,   0) / wr.length;
+      const pctBeatBH        = wr.filter(r => r.beatsBH).length / wr.length * 100;
+      const curveFit         = meanIsSharpe > 0 && meanOosSharpe < meanIsSharpe * 0.5;
 
       res.json({
         windows: windowResults,
@@ -1394,7 +1440,7 @@ export function createRouter(
       // Cache for the overview tile — persisted to disk, survives restarts
       lastWalkForward = {
         strategyId, strategyName: entry.displayName, coin: coin.toUpperCase(),
-        meanOosSharpe, pctBeatBH, runAt: Date.now(),
+        meanOosSharpe, meanOosReturnPct, pctBeatBH, runAt: Date.now(),
       };
       saveWfCache(lastWalkForward);
     } catch (err) {

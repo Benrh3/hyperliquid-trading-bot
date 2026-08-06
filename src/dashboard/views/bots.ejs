@@ -715,7 +715,8 @@
         }
       }
       ctrlHtml += '<button class="bc-btn" data-action="reset-history" data-id="' + b.id + '" title="Zero P&L and trade history">Reset History</button>';
-      if (!isFunding && !isCrossVenue) {
+      ctrlHtml += '<button class="bc-btn" data-action="retire" data-id="' + b.id + '" title="Archive this bot without erasing trade history">Retire</button>';
+      if (!isFunding) {
         ctrlHtml += '<button class="bc-btn danger" data-action="delete" data-id="' + b.id + '" style="margin-left:auto">Delete</button>';
       }
     }
@@ -789,6 +790,23 @@
             }
             try { await fetch('/api/bots/' + encodeURIComponent(id), { method: 'DELETE' }); }
             catch (err) { console.error(err); }
+          } else if (action === 'retire') {
+            if (!confirm('Retire bot "' + id + '"?\n\nThis stops the bot and archives a performance snapshot. Trade history is preserved and viewable in Bot History.\n\nThis cannot be undone.')) {
+              btn.disabled = false; return;
+            }
+            try {
+              var rr = await fetch('/api/bots/' + encodeURIComponent(id) + '/retire', { method: 'POST' });
+              var rd = await rr.json();
+              if (!rr.ok) {
+                alert('Error: ' + (rd.error || rr.statusText));
+              } else {
+                var flash = document.createElement('div');
+                flash.textContent = 'Bot "' + id + '" retired and archived.';
+                flash.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);color:var(--text);font-size:12px;padding:0.6rem 1rem;border-radius:6px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.4)';
+                document.body.appendChild(flash);
+                setTimeout(function () { flash.remove(); }, 4000);
+              }
+            } catch (err) { console.error(err); }
           } else if (action === 'reset-history') {
             if (!confirm('Reset trade history for bot "' + id + '"?\n\nThis deletes all DB trade rows for this bot and zeroes its realised P&L counters. Cannot be undone.')) {
               btn.disabled = false; return;

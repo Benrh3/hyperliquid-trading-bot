@@ -1,0 +1,619 @@
+<%- include('_head', { title: 'Bot History' }) %>
+
+<style>
+  .bh-page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: var(--sp-4) var(--sp-6);
+  }
+
+  .bh-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-5);
+  }
+  .bh-title {
+    font-size: var(--t-value-sm);
+    font-weight: 700;
+    color: var(--text);
+  }
+  .bh-subtitle {
+    font-size: var(--t-label);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .bh-count {
+    margin-left: auto;
+    font-size: var(--t-label);
+    color: var(--muted);
+  }
+
+  /* ── Table ── */
+  .bh-table-wrap { overflow-x: auto; }
+  .bh-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--t-body);
+  }
+  .bh-table th {
+    font-size: var(--t-label);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    text-align: left;
+    cursor: pointer;
+    user-select: none;
+  }
+  .bh-table th:hover { color: var(--text); }
+  .bh-table th .sort-arrow { margin-left: 4px; opacity: 0.4; font-size: 10px; }
+  .bh-table th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
+
+  .bh-table td {
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid rgba(129,140,248,0.07);
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  .bh-table tr.bh-row { cursor: pointer; }
+  .bh-table tr.bh-row:hover td { background: var(--surface); }
+  .bh-table tr.bh-expanded td { background: var(--surface); }
+
+  .bh-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'SFMono-Regular', Consolas, monospace; }
+  .text-up    { color: var(--up); }
+  .text-down  { color: var(--down); }
+  .text-muted { color: var(--muted); }
+  .text-amber { color: var(--yellow); }
+
+  .bh-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 99px;
+  }
+  .bh-badge-live  { background: rgba(240,136,62,.15); color: #f0883e; border: 1px solid rgba(240,136,62,.3); }
+  .bh-badge-paper { background: rgba(129,140,248,.12); color: var(--muted); border: 1px solid var(--border); }
+  .bh-badge-cv    { background: rgba(88,166,255,.12); color: #58a6ff; border: 1px solid rgba(88,166,255,.25); }
+
+  /* ── Expand panel ── */
+  .bh-detail-row { display: none; }
+  .bh-detail-row.open { display: table-row; }
+  .bh-detail-cell {
+    padding: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .bh-detail-inner {
+    padding: var(--sp-4);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-4);
+  }
+  @media (max-width: 900px) { .bh-detail-inner { grid-template-columns: 1fr; } }
+
+  /* ── Δ comparison panel ── */
+  .bh-compare {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--sp-3) var(--sp-4);
+  }
+  .bh-compare-title {
+    font-size: var(--t-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    margin-bottom: var(--sp-2);
+  }
+  .bh-cmp-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding: 3px 0;
+    font-size: var(--t-body);
+    border-bottom: 1px solid rgba(129,140,248,0.07);
+  }
+  .bh-cmp-row:last-child { border-bottom: none; }
+  .bh-cmp-lbl { color: var(--muted); font-size: 12px; }
+  .bh-cmp-vals { display: flex; gap: var(--sp-3); font-variant-numeric: tabular-nums; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 12px; }
+  .bh-cmp-realized { color: var(--text); }
+  .bh-cmp-wf       { color: var(--muted); }
+  .bh-cmp-delta-pos { color: var(--up); }
+  .bh-cmp-delta-neg { color: var(--down); }
+  .bh-cmp-nobaseline { color: var(--muted); font-style: italic; font-size: 11px; }
+
+  /* ── Trade history in expand ── */
+  .bh-trade-section {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .bh-trade-title {
+    font-size: var(--t-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+  }
+  .bh-trade-empty {
+    padding: var(--sp-3);
+    color: var(--muted);
+    font-size: 12px;
+    font-style: italic;
+  }
+  .bh-trade-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .bh-trade-table th {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    padding: 4px var(--sp-2);
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+  .bh-trade-table td {
+    padding: 4px var(--sp-2);
+    border-bottom: 1px solid rgba(129,140,248,0.05);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+  }
+  .bh-trade-table tr:last-child td { border-bottom: none; }
+
+  /* ── Equity curve chart ── */
+  .bh-chart-wrap {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .bh-chart-title {
+    font-size: var(--t-label);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+  }
+  .bh-chart-canvas { width: 100%; height: 140px; display: block; }
+
+  .bh-empty {
+    text-align: center;
+    padding: var(--sp-6);
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .bh-detail-stats {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: var(--sp-3) var(--sp-4);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-1) var(--sp-4);
+  }
+  .bh-stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 2px 0; font-size: 12px; }
+  .bh-stat-lbl { color: var(--muted); }
+  .bh-stat-val { font-variant-numeric: tabular-nums; font-family: 'SFMono-Regular', Consolas, monospace; }
+
+  @media (max-width: 600px) {
+    .bh-page { padding: var(--sp-3); }
+    .bh-detail-stats { grid-template-columns: 1fr; }
+  }
+</style>
+
+<%- include('_nav') %>
+
+<div class="bh-page">
+  <div class="bh-header">
+    <span class="bh-title">Bot History</span>
+    <span class="bh-subtitle">Retired bots</span>
+    <span class="bh-count" id="bh-count"></span>
+  </div>
+
+  <div class="bh-table-wrap" id="bh-wrap">
+    <div class="bh-empty" id="bh-loading">Loading…</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var FMT = window.FMT;
+
+  /* ── Helpers ── */
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtPnl(v) {
+    if (v == null || !isFinite(v)) return '<span class="text-muted">—</span>';
+    var cls = v > 0 ? 'text-up' : v < 0 ? 'text-down' : 'text-muted';
+    return '<span class="' + cls + '">' + (v >= 0 ? '+' : '') + '$' + Math.abs(v).toFixed(2) + '</span>';
+  }
+  function fmtPct(v, decimals) {
+    if (v == null || !isFinite(v)) return '<span class="text-muted">—</span>';
+    var d = decimals != null ? decimals : 1;
+    var cls = v > 0 ? 'text-up' : v < 0 ? 'text-down' : 'text-muted';
+    return '<span class="' + cls + '">' + (v >= 0 ? '+' : '') + v.toFixed(d) + '%</span>';
+  }
+  function fmtSharpe(v) {
+    if (v == null || !isFinite(v)) return '<span class="text-muted">—</span>';
+    var cls = v >= 1 ? 'text-up' : v >= 0 ? 'text-muted' : 'text-down';
+    return '<span class="' + cls + '">' + v.toFixed(2) + '</span>';
+  }
+  function deltaCls(v) {
+    return v > 0 ? 'bh-cmp-delta-pos' : v < 0 ? 'bh-cmp-delta-neg' : 'text-muted';
+  }
+  function deltaStr(v, unit) {
+    if (v == null || !isFinite(v)) return '—';
+    return (v >= 0 ? '+' : '') + v.toFixed(2) + (unit || '');
+  }
+  function timeAgo(ms) {
+    if (!ms) return '—';
+    var d = Date.now() - ms;
+    if (d < 60000)   return 'just now';
+    if (d < 3600000) return Math.floor(d/60000) + 'm ago';
+    if (d < 86400000) return Math.floor(d/3600000) + 'h ago';
+    return Math.floor(d/86400000) + 'd ago';
+  }
+  function fmtHours(h) {
+    if (h == null) return '—';
+    if (h < 1)   return Math.round(h * 60) + 'm';
+    if (h < 24)  return h.toFixed(1) + 'h';
+    return (h / 24).toFixed(1) + 'd';
+  }
+  function fmtDate(ms) {
+    if (!ms) return '—';
+    return new Date(ms).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+  }
+
+  /* ── Sort state ── */
+  var sortCol = 'retired_at';
+  var sortAsc = false;
+
+  /* ── Equity mini-chart ── */
+  function drawEquityCurve(canvas, trades, startingEquity) {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.offsetWidth, h = canvas.offsetHeight;
+    if (!w || !h || !trades || !trades.length) return;
+    canvas.width  = w * dpr;
+    canvas.height = h * dpr;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    var closed = trades.filter(function (t) { return t.pnl != null; });
+    if (closed.length < 2) {
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
+      ctx.textAlign = 'center';
+      ctx.fillText('Not enough data', w/2, h/2);
+      return;
+    }
+
+    var pts = [{ equity: startingEquity }];
+    var running = startingEquity;
+    for (var i = 0; i < closed.length; i++) {
+      running += closed[i].pnl;
+      pts.push({ equity: running });
+    }
+
+    var vals = pts.map(function (p) { return p.equity; });
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    var range = mx - mn || 1;
+    var PAD = 4;
+    var toX = function (i) { return PAD + (i / (pts.length - 1)) * (w - PAD * 2); };
+    var toY = function (v) { return h - PAD - ((v - mn) / range) * (h - PAD * 2); };
+
+    var finalEquity = pts[pts.length - 1].equity;
+    var lineCol = finalEquity >= startingEquity
+      ? getComputedStyle(document.documentElement).getPropertyValue('--up').trim()
+      : getComputedStyle(document.documentElement).getPropertyValue('--down').trim();
+
+    ctx.beginPath();
+    ctx.moveTo(toX(0), toY(pts[0].equity));
+    for (var j = 1; j < pts.length; j++) {
+      ctx.lineTo(toX(j), toY(pts[j].equity));
+    }
+    ctx.strokeStyle = lineCol;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Baseline
+    var baseY = toY(startingEquity);
+    if (baseY >= 0 && baseY <= h) {
+      ctx.beginPath();
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = 'rgba(139,148,158,0.3)';
+      ctx.lineWidth = 1;
+      ctx.moveTo(0, baseY);
+      ctx.lineTo(w, baseY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  /* ── Comparison panel ── */
+  function renderCompare(b) {
+    var hasWf = b.wf_strategy_id != null;
+
+    if (!hasWf) {
+      return '<div class="bh-compare">'
+        + '<div class="bh-compare-title">Realized vs Walk-Forward</div>'
+        + '<div class="bh-cmp-nobaseline">No backtest baseline — run a walk-forward for <strong>'
+        + esc(b.strategy_id) + '</strong> to compare.</div>'
+        + '</div>';
+    }
+
+    var rows = '';
+
+    // Annualized return %
+    var rReal = b.annualized_return_pct;
+    var rWf   = b.wf_mean_oos_return_pct;
+    var rDelta = (rReal != null && rWf != null) ? rReal - rWf : null;
+    rows += '<div class="bh-cmp-row">'
+      + '<span class="bh-cmp-lbl">Ann. return %</span>'
+      + '<span class="bh-cmp-vals">'
+      +   '<span class="bh-cmp-realized">' + (rReal != null ? (rReal >= 0 ? '+' : '') + rReal.toFixed(1) + '% realized' : '—') + '</span>'
+      +   '<span class="bh-cmp-wf">' + (rWf != null ? 'vs ' + (rWf >= 0 ? '+' : '') + rWf.toFixed(1) + '% WF OOS' : '') + '</span>'
+      +   (rDelta != null ? '<span class="' + deltaCls(rDelta) + '">' + deltaStr(rDelta, 'pp') + '</span>' : '')
+      + '</span>'
+      + '</div>';
+
+    // Sharpe
+    var sReal = b.realized_sharpe;
+    var sWf   = b.wf_mean_oos_sharpe;
+    var sDelta = (sReal != null && sWf != null) ? sReal - sWf : null;
+    rows += '<div class="bh-cmp-row">'
+      + '<span class="bh-cmp-lbl">Sharpe</span>'
+      + '<span class="bh-cmp-vals">'
+      +   '<span class="bh-cmp-realized">' + (sReal != null ? sReal.toFixed(2) + ' realized' : '—') + '</span>'
+      +   '<span class="bh-cmp-wf">' + (sWf != null ? 'vs ' + sWf.toFixed(2) + ' WF OOS' : '') + '</span>'
+      +   (sDelta != null ? '<span class="' + deltaCls(sDelta) + '">' + (sDelta >= 0 ? '+' : '') + sDelta.toFixed(2) + '</span>' : '')
+      + '</span>'
+      + '</div>';
+
+    // WF metadata
+    rows += '<div class="bh-cmp-row">'
+      + '<span class="bh-cmp-lbl" style="font-size:10px">WF baseline</span>'
+      + '<span class="bh-cmp-wf" style="font-size:10px">'
+      + esc(b.wf_strategy_id || '') + ' · ' + esc(b.wf_coin || '')
+      + (b.wf_run_at ? ' · ran ' + timeAgo(b.wf_run_at) : '')
+      + '</span>'
+      + '</div>';
+
+    return '<div class="bh-compare"><div class="bh-compare-title">Realized vs Walk-Forward</div>' + rows + '</div>';
+  }
+
+  /* ── Detail panel (fetches trades on demand) ── */
+  var detailCache = {};
+
+  function openDetail(botId, b, detailCell) {
+    if (detailCache[botId]) {
+      renderDetail(b, detailCache[botId], detailCell);
+      return;
+    }
+    detailCell.querySelector('.bh-detail-inner').innerHTML =
+      '<div style="color:var(--muted);font-size:12px;padding:var(--sp-3)">Loading trades…</div><div></div>';
+
+    fetch('/api/bot-history/' + encodeURIComponent(botId) + '/trades')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        detailCache[botId] = d.trades || [];
+        renderDetail(b, detailCache[botId], detailCell);
+      })
+      .catch(function () {
+        detailCell.querySelector('.bh-detail-inner').innerHTML =
+          '<div style="color:var(--down);font-size:12px;padding:var(--sp-3)">Failed to load trades.</div><div></div>';
+      });
+  }
+
+  function renderDetail(b, trades, detailCell) {
+    // Stats panel
+    var isCv = b.strategy_id === 'cross-venue-funding-basis';
+    var statsHtml = '<div class="bh-detail-stats">'
+      + '<div class="bh-stat-row"><span class="bh-stat-lbl">Started</span><span class="bh-stat-val">' + fmtDate(b.started_at) + '</span></div>'
+      + '<div class="bh-stat-row"><span class="bh-stat-lbl">Retired</span><span class="bh-stat-val">' + fmtDate(b.retired_at) + '</span></div>'
+      + '<div class="bh-stat-row"><span class="bh-stat-lbl">Lifetime</span><span class="bh-stat-val">' + fmtHours(b.lifetime_hours) + '</span></div>'
+      + '<div class="bh-stat-row"><span class="bh-stat-lbl">Starting eq.</span><span class="bh-stat-val">$' + (b.starting_equity || 0).toFixed(0) + '</span></div>'
+      + '<div class="bh-stat-row"><span class="bh-stat-lbl">Realised P&L</span><span class="bh-stat-val">' + fmtPnl(b.realised_pnl) + '</span></div>'
+      + '<div class="bh-stat-row"><span class="bh-stat-lbl">Trades</span><span class="bh-stat-val">' + (b.trade_count || 0) + '</span></div>'
+      + (b.win_rate != null ? '<div class="bh-stat-row"><span class="bh-stat-lbl">Win rate</span><span class="bh-stat-val">' + (b.win_rate * 100).toFixed(1) + '%</span></div>' : '')
+      + (b.max_drawdown_pct != null ? '<div class="bh-stat-row"><span class="bh-stat-lbl">Max drawdown</span><span class="bh-stat-val text-down">' + b.max_drawdown_pct.toFixed(1) + '%</span></div>' : '')
+      + '<div class="bh-stat-row"><span class="bh-stat-lbl">Realized Sharpe</span><span class="bh-stat-val">' + fmtSharpe(b.realized_sharpe) + '</span></div>'
+      + '<div class="bh-stat-row"><span class="bh-stat-lbl">Ann. return %</span><span class="bh-stat-val">' + fmtPct(b.annualized_return_pct, 1) + '</span></div>'
+      + (isCv ? '<div class="bh-stat-row" style="grid-column:1/-1"><span class="bh-stat-lbl" style="font-style:italic;font-size:11px">CV metrics: win rate, drawdown, Sharpe derived from trade log — not available for funding-accumulation bots</span></div>' : '')
+      + '</div>';
+
+    // Trade rows
+    var closed = trades.filter(function (t) { return t.pnl != null; });
+    var tradeRows = '';
+    if (closed.length) {
+      for (var i = 0; i < Math.min(closed.length, 100); i++) {
+        var t  = closed[i];
+        var sideCls = t.side === 'long' ? 'text-up' : 'text-down';
+        tradeRows += '<tr>'
+          + '<td>' + (t.created_at || '').replace('T', ' ').slice(0, 16) + '</td>'
+          + '<td class="' + sideCls + '">' + esc(t.side) + '</td>'
+          + '<td>' + esc(t.coin) + '</td>'
+          + '<td class="num">$' + (t.price || 0).toFixed(2) + '</td>'
+          + '<td class="num">' + fmtPnl(t.pnl) + '</td>'
+          + '</tr>';
+      }
+    }
+
+    var tradeHtml = '<div class="bh-trade-section">'
+      + '<div class="bh-trade-title">Trade log' + (closed.length > 100 ? ' (first 100 of ' + closed.length + ')' : ' · ' + closed.length + ' trades') + '</div>'
+      + (closed.length
+          ? '<div style="max-height:200px;overflow-y:auto"><table class="bh-trade-table">'
+            + '<thead><tr><th>Date</th><th>Side</th><th>Coin</th><th>Price</th><th>P&L</th></tr></thead>'
+            + '<tbody>' + tradeRows + '</tbody></table></div>'
+          : '<div class="bh-trade-empty">' + (isCv ? 'CV bots accumulate funding — no individual trade rows.' : 'No closed trades.') + '</div>')
+      + '</div>';
+
+    var chartHtml = '<div class="bh-chart-wrap">'
+      + '<div class="bh-chart-title">Equity curve</div>'
+      + '<canvas class="bh-chart-canvas" id="bh-chart-' + esc(b.id) + '"></canvas>'
+      + '</div>';
+
+    detailCell.querySelector('.bh-detail-inner').innerHTML =
+      '<div>' + statsHtml + '<div style="margin-top:var(--sp-3)">' + renderCompare(b) + '</div></div>'
+      + '<div>' + chartHtml + '<div style="margin-top:var(--sp-3)">' + tradeHtml + '</div></div>';
+
+    // Draw chart after DOM insertion
+    requestAnimationFrame(function () {
+      var canvas = document.getElementById('bh-chart-' + b.id);
+      if (canvas) drawEquityCurve(canvas, trades, b.starting_equity || 1000);
+    });
+  }
+
+  /* ── Table render ── */
+  var allBots = [];
+  var expandedId = null;
+
+  function renderTable() {
+    var wrap = document.getElementById('bh-wrap');
+    if (!allBots.length) {
+      wrap.innerHTML = '<div class="bh-empty">No retired bots yet. Use the Retire button on a bot card to archive a bot without erasing its trade history.</div>';
+      return;
+    }
+
+    // Sort
+    var sorted = allBots.slice().sort(function (a, b) {
+      var av = a[sortCol], bv = b[sortCol];
+      if (av == null) av = sortAsc ? Infinity : -Infinity;
+      if (bv == null) bv = sortAsc ? Infinity : -Infinity;
+      if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return sortAsc ? av - bv : bv - av;
+    });
+
+    var thead = '<thead><tr>'
+      + thCol('retired_at',          'Retired')
+      + thCol('display_name',        'Bot')
+      + thCol('coin',                'Coin')
+      + thCol('lifetime_hours',      'Lifetime')
+      + thCol('realised_pnl',        'P&L', 'num')
+      + thCol('annualized_return_pct','Ann. Rtn%', 'num')
+      + thCol('realized_sharpe',     'Sharpe', 'num')
+      + thCol('win_rate',            'Win%', 'num')
+      + thCol('max_drawdown_pct',    'MaxDD%', 'num')
+      + thCol('trade_count',         'Trades', 'num')
+      + '<th></th>'
+      + '</tr></thead>';
+
+    var rows = '';
+    for (var i = 0; i < sorted.length; i++) {
+      var b    = sorted[i];
+      var isCv = b.strategy_id === 'cross-venue-funding-basis';
+      var isLive = b.live;
+      var modeBadge = isCv
+        ? '<span class="bh-badge bh-badge-cv">CV</span>'
+        : (isLive ? '<span class="bh-badge bh-badge-live">LIVE</span>' : '<span class="bh-badge bh-badge-paper">PAPER</span>');
+      var hasWf = b.wf_strategy_id != null;
+      var wfIndicator = hasWf ? ' <span title="Walk-forward baseline available" style="color:var(--accent);font-size:10px">WF</span>' : '';
+
+      rows += '<tr class="bh-row' + (expandedId === b.id ? ' bh-expanded' : '') + '" data-id="' + esc(b.id) + '">'
+        + '<td>' + fmtDate(b.retired_at) + ' <span class="text-muted" style="font-size:11px">' + timeAgo(b.retired_at) + '</span></td>'
+        + '<td>' + modeBadge + ' ' + esc(b.display_name) + ' · <span class="text-muted" style="font-size:11px">' + esc(b.strategy_id) + '</span>' + wfIndicator + '</td>'
+        + '<td>' + esc(b.coin) + '</td>'
+        + '<td>' + fmtHours(b.lifetime_hours) + '</td>'
+        + '<td class="num">' + fmtPnl(b.realised_pnl) + '</td>'
+        + '<td class="num">' + fmtPct(b.annualized_return_pct, 1) + '</td>'
+        + '<td class="num">' + fmtSharpe(b.realized_sharpe) + '</td>'
+        + '<td class="num">' + (b.win_rate != null ? (b.win_rate * 100).toFixed(0) + '%' : '<span class="text-muted">—</span>') + '</td>'
+        + '<td class="num">' + (b.max_drawdown_pct != null ? '<span class="text-down">' + b.max_drawdown_pct.toFixed(1) + '%</span>' : '<span class="text-muted">—</span>') + '</td>'
+        + '<td class="num">' + (b.trade_count || 0) + '</td>'
+        + '<td style="color:var(--muted);font-size:11px">&#9654;</td>'
+        + '</tr>'
+        + '<tr class="bh-detail-row' + (expandedId === b.id ? ' open' : '') + '" data-detail-id="' + esc(b.id) + '">'
+        + '<td class="bh-detail-cell" colspan="11"><div class="bh-detail-inner"></div></td>'
+        + '</tr>';
+    }
+
+    wrap.innerHTML = '<div class="bh-table-wrap"><table class="bh-table">' + thead + '<tbody>' + rows + '</tbody></table></div>';
+    document.getElementById('bh-count').textContent = sorted.length + ' archived';
+
+    // Restore open detail panel
+    if (expandedId) {
+      var detailRow = wrap.querySelector('[data-detail-id="' + expandedId + '"]');
+      var bot = allBots.find(function (b) { return b.id === expandedId; });
+      if (detailRow && bot && detailCache[expandedId] !== undefined) {
+        var cell = detailRow.querySelector('.bh-detail-cell');
+        renderDetail(bot, detailCache[expandedId], cell);
+      }
+    }
+
+    wireTable();
+  }
+
+  function thCol(col, label, cls) {
+    var isSorted = sortCol === col;
+    var arrow    = sortAsc ? '&#9650;' : '&#9660;';
+    return '<th class="' + (cls || '') + (isSorted ? ' sorted' : '') + '" data-col="' + col + '">'
+      + label + ' <span class="sort-arrow">' + (isSorted ? arrow : '&#9660;') + '</span></th>';
+  }
+
+  function wireTable() {
+    // Sort headers
+    document.querySelectorAll('.bh-table th[data-col]').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var col = th.dataset.col;
+        if (sortCol === col) { sortAsc = !sortAsc; }
+        else { sortCol = col; sortAsc = false; }
+        renderTable();
+      });
+    });
+
+    // Row click → expand
+    document.querySelectorAll('.bh-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        var id       = row.dataset.id;
+        var bot      = allBots.find(function (b) { return b.id === id; });
+        var detailRow = document.querySelector('[data-detail-id="' + id + '"]');
+        if (!detailRow || !bot) return;
+        var opening = !detailRow.classList.contains('open');
+        // Close any other open row
+        document.querySelectorAll('.bh-detail-row.open').forEach(function (r) { r.classList.remove('open'); });
+        document.querySelectorAll('.bh-row.bh-expanded').forEach(function (r) { r.classList.remove('bh-expanded'); });
+        if (opening) {
+          detailRow.classList.add('open');
+          row.classList.add('bh-expanded');
+          expandedId = id;
+          openDetail(id, bot, detailRow.querySelector('.bh-detail-cell'));
+        } else {
+          expandedId = null;
+        }
+      });
+    });
+  }
+
+  /* ── Bootstrap ── */
+  fetch('/api/bot-history')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      allBots = d.bots || [];
+      renderTable();
+    })
+    .catch(function () {
+      document.getElementById('bh-wrap').innerHTML =
+        '<div class="bh-empty" style="color:var(--down)">Failed to load bot history.</div>';
+    });
+
+})();
+</script>
