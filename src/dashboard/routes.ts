@@ -282,10 +282,11 @@ export function createRouter(
   });
 
   router.get("/trades", (_req, res) => {
-    const { trades, total } = logger.getFilteredTrades({ limit: 200 });
-    const stats   = logger.getTradeStats();
-    const options = logger.getTradeFilterOptions();
-    res.render("trades", { trades, total, stats, options });
+    const { trades, total } = logger.getFilteredTrades({ success: 1, limit: 200 });
+    const stats        = logger.getTradeStats();
+    const options      = logger.getTradeFilterOptions();
+    const activeBotIds = (laneManager?.getBotStates() ?? []).map((b) => b.id);
+    res.render("trades", { trades, total, stats, options, activeBotIds });
   });
 
   router.get("/api/trades", (req, res) => {
@@ -295,11 +296,13 @@ export function createRouter(
     const strategy = typeof req.query.strategy === "string" ? req.query.strategy : undefined;
     const coin     = typeof req.query.coin     === "string" ? req.query.coin     : undefined;
     const success  = typeof req.query.success  === "string" ? parseInt(req.query.success) : undefined;
+    const live     = typeof req.query.live     === "string" ? parseInt(req.query.live)    : undefined;
 
-    const { trades, total } = logger.getFilteredTrades({ botId, strategy, coin, success, limit, offset });
-    const stats   = logger.getTradeStats({ botId, strategy, coin });
-    const options = logger.getTradeFilterOptions();
-    res.json({ trades, total, stats, options, hasMore: offset + trades.length < total });
+    const { trades, total } = logger.getFilteredTrades({ botId, strategy, coin, success, live, limit, offset });
+    const stats        = logger.getTradeStats({ botId, strategy, coin, live });
+    const options      = logger.getTradeFilterOptions();
+    const activeBotIds = (laneManager?.getBotStates() ?? []).map((b) => b.id);
+    res.json({ trades, total, stats, options, activeBotIds, hasMore: offset + trades.length < total });
   });
 
   router.get("/backtest", (_req, res) => {

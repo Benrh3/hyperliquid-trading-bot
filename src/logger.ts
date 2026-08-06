@@ -20,6 +20,7 @@ export interface TradeRow {
   error: string | null;
   created_at: string;
   bot_id: string | null;
+  live: number | null;
 }
 
 interface EventRow {
@@ -124,7 +125,7 @@ export class Logger {
     this.db.pragma("busy_timeout = 5000");
 
     // Load all migrations in order
-    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql", "009_trades_fees.sql", "010_spread_history_hourly.sql", "012_bot_archive.sql"]) {
+    for (const file of ["001_init.sql", "002_funding_matrix.sql", "006_funding_spread_history.sql", "008_trades_bot_id.sql", "009_trades_fees.sql", "010_spread_history_hourly.sql", "012_bot_archive.sql", "013_trades_live.sql"]) {
       const p = join(process.cwd(), "migrations", file);
       if (existsSync(p)) {
         try { this.db.exec(readFileSync(p, "utf-8")); }
@@ -136,8 +137,8 @@ export class Logger {
     }
 
     this.stmtInsertTrade = this.db.prepare(`
-      INSERT INTO trades (order_id, coin, side, size, price, pnl, fees, strategy, success, error, bot_id)
-      VALUES (@orderId, @coin, @side, @size, @price, @pnl, @fees, @strategy, @success, @error, @botId)
+      INSERT INTO trades (order_id, coin, side, size, price, pnl, fees, strategy, success, error, bot_id, live)
+      VALUES (@orderId, @coin, @side, @size, @price, @pnl, @fees, @strategy, @success, @error, @botId, @live)
     `);
 
     this.stmtInsertEvent = this.db.prepare(`
@@ -173,6 +174,7 @@ export class Logger {
         success: result.success ? 1 : 0,
         error: result.error ?? null,
         botId: result.botId ?? null,
+        live: result.live == null ? null : (result.live ? 1 : 0),
       });
     });
 
@@ -234,7 +236,7 @@ export class Logger {
 
   /** Filtered trade query for the enriched Trades view. */
   getFilteredTrades(filters: {
-    botId?: string; strategy?: string; coin?: string; success?: number;
+    botId?: string; strategy?: string; coin?: string; success?: number; live?: number;
     limit?: number; offset?: number;
   }): { trades: TradeRow[]; total: number } {
     const clauses: string[] = [];
@@ -243,6 +245,7 @@ export class Logger {
     if (filters.strategy) { clauses.push("strategy = ?"); params.push(filters.strategy); }
     if (filters.coin)     { clauses.push("coin = ?");     params.push(filters.coin); }
     if (filters.success !== undefined) { clauses.push("success = ?"); params.push(filters.success); }
+    if (filters.live !== undefined)    { clauses.push("live = ?");    params.push(filters.live); }
     const where = clauses.length ? " WHERE " + clauses.join(" AND ") : "";
     const total = (this.db.prepare("SELECT COUNT(*) as n FROM trades" + where).get(...params) as { n: number }).n;
     const limit  = Math.min(filters.limit ?? 200, 500);
@@ -253,15 +256,16 @@ export class Logger {
     return { trades, total };
   }
 
-  /** Summary stats over the current filter for the Trades summary header. */
-  getTradeStats(filters?: { botId?: string; strategy?: string; coin?: string }): {
+  /** Summary stats over closed executed trades only (success=1, pnl IS NOT NULL). */
+  getTradeStats(filters?: { botId?: string; strategy?: string; coin?: string; live?: number }): {
     totalTrades: number; netPnl: number; winRate: number; avgNetPnl: number;
   } {
-    const clauses = ["success = 1"];
-    const params: string[] = [];
+    const clauses = ["success = 1", "pnl IS NOT NULL"];
+    const params: (string | number)[] = [];
     if (filters?.botId)    { clauses.push("bot_id = ?");   params.push(filters.botId); }
     if (filters?.strategy) { clauses.push("strategy = ?"); params.push(filters.strategy); }
     if (filters?.coin)     { clauses.push("coin = ?");     params.push(filters.coin); }
+    if (filters?.live !== undefined) { clauses.push("live = ?"); params.push(filters.live); }
     const where = " WHERE " + clauses.join(" AND ");
 
     const row = this.db.prepare(

@@ -22,6 +22,9 @@
     font-family: 'SFMono-Regular', Consolas, monospace;
     margin-top: var(--sp-1);
   }
+  .ts-stat-note {
+    font-size: 10px; color: var(--muted); margin-top: 2px; font-style: italic;
+  }
 
   /* ── Filters ── */
   .trades-filters {
@@ -54,7 +57,7 @@
   }
   .trades-card-meta { font-size: var(--t-label); color: var(--muted); margin-left: auto; }
   .trades-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .trades-tbl { width: 100%; border-collapse: collapse; min-width: 1000px; }
+  .trades-tbl { width: 100%; border-collapse: collapse; min-width: 1040px; }
   .trades-tbl th {
     font-size: var(--t-label); font-weight: 600; color: var(--muted);
     text-transform: uppercase; letter-spacing: .04em;
@@ -62,14 +65,14 @@
     border-bottom: 1px solid var(--border);
     background: var(--surface); white-space: nowrap;
   }
-  .trades-tbl th:nth-child(-n+5) { text-align: left; }
+  .trades-tbl th:nth-child(-n+6) { text-align: left; }
   .trades-tbl td {
     padding: var(--sp-2) var(--sp-3); font-size: var(--t-label);
     border-bottom: 1px solid var(--border);
     font-variant-numeric: tabular-nums; text-align: right;
     font-family: 'SFMono-Regular', Consolas, monospace;
   }
-  .trades-tbl td:nth-child(-n+5) { text-align: left; font-family: inherit; }
+  .trades-tbl td:nth-child(-n+6) { text-align: left; font-family: inherit; }
   .trades-tbl tbody tr:last-child td { border-bottom: none; }
   .trades-tbl tbody tr:hover td { background: rgba(129,140,248,0.04); }
   .trades-tbl .pre-fee td { opacity: 0.65; }
@@ -79,6 +82,14 @@
     padding: 0 var(--sp-1); margin-left: var(--sp-1);
     vertical-align: middle;
   }
+  .mode-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: .04em;
+    padding: 1px 5px; border-radius: 3px; vertical-align: middle;
+    text-transform: uppercase;
+  }
+  .mode-live  { background: rgba(240,136,62,.15); color: #f0883e; border: 1px solid rgba(240,136,62,.3); }
+  .mode-paper { background: rgba(129,140,248,.10); color: var(--muted); border: 1px solid var(--border); }
+  .bot-deleted { color: var(--muted); font-style: italic; }
   .trades-empty { padding: var(--sp-6); text-align: center; color: var(--muted); font-size: var(--t-body); }
   .trades-load-more {
     padding: var(--sp-3) var(--sp-5);
@@ -109,10 +120,11 @@
     <div class="ts-stat">
       <div class="ts-stat-lbl">Trades</div>
       <div class="ts-stat-val" id="ts-total"><%= stats.totalTrades %></div>
+      <div class="ts-stat-note">closed only</div>
     </div>
     <div class="ts-stat">
       <div class="ts-stat-lbl">Net P&amp;L</div>
-      <div class="ts-stat-val <%= stats.netPnl >= 0 ? 'text-green' : 'text-red' %>" id="ts-net"><%= stats.netPnl >= 0 ? '+' : '' %><%= stats.netPnl.toFixed(2) %></div>
+      <div class="ts-stat-val <%= stats.netPnl >= 0 ? 'text-green' : 'text-red' %>" id="ts-net"><%= stats.netPnl >= 0 ? '+' : '' %>$<%= stats.netPnl.toFixed(2) %></div>
     </div>
     <div class="ts-stat">
       <div class="ts-stat-lbl">Win Rate</div>
@@ -120,7 +132,7 @@
     </div>
     <div class="ts-stat">
       <div class="ts-stat-lbl">Avg Net / Trade</div>
-      <div class="ts-stat-val <%= stats.avgNetPnl >= 0 ? 'text-green' : 'text-red' %>" id="ts-avg"><%= stats.avgNetPnl >= 0 ? '+' : '' %><%= stats.avgNetPnl.toFixed(2) %></div>
+      <div class="ts-stat-val <%= stats.avgNetPnl >= 0 ? 'text-green' : 'text-red' %>" id="ts-avg"><%= stats.avgNetPnl >= 0 ? '+' : '' %>$<%= stats.avgNetPnl.toFixed(2) %></div>
     </div>
   </div>
 
@@ -139,10 +151,15 @@
       <option value="">All coins</option>
       <% for (const c of options.coins) { %><option value="<%= c %>"><%= c %></option><% } %>
     </select>
+    <select class="tf-sel" id="f-mode">
+      <option value="">All modes</option>
+      <option value="0">Paper</option>
+      <option value="1">Live</option>
+    </select>
     <select class="tf-sel" id="f-status">
-      <option value="">All</option>
-      <option value="1">ok</option>
-      <option value="0">failed</option>
+      <option value="1" selected>OK only</option>
+      <option value="">All (incl. failed)</option>
+      <option value="0">Failed only</option>
     </select>
   </div>
 
@@ -161,6 +178,7 @@
           <tr>
             <th>Time</th>
             <th>Bot</th>
+            <th>Mode</th>
             <th>Strategy</th>
             <th>Coin</th>
             <th>Side</th>
@@ -190,9 +208,10 @@
 (function () {
   'use strict';
 
-  var allTrades = <%- JSON.stringify(trades) %>;
+  var allTrades    = <%- JSON.stringify(trades) %>;
   var currentTotal = <%= total %>;
-  var loading = false;
+  var activeBotIds = new Set(<%- JSON.stringify(activeBotIds) %>);
+  var loading      = false;
 
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -201,11 +220,23 @@
   function fmtPnl(v) {
     if (v === null || v === undefined) return '<span style="color:var(--muted)">—</span>';
     var cls = v >= 0 ? 'text-green' : 'text-red';
-    return '<span class="' + cls + '">' + (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '</span>';
+    return '<span class="' + cls + '">' + (v >= 0 ? '+' : '') + '$' + Math.abs(Number(v)).toFixed(2) + '</span>';
   }
 
   function fmtPrice(p) {
     return '$' + Number(p).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function modeBadge(t) {
+    if (t.live === 1)  return '<span class="mode-badge mode-live">LIVE</span>';
+    if (t.live === 0)  return '<span class="mode-badge mode-paper">PAPER</span>';
+    return '<span style="color:var(--muted);font-size:10px">—</span>';
+  }
+
+  function botLabel(t) {
+    if (!t.bot_id) return '<span style="color:var(--muted)">legacy</span>';
+    if (activeBotIds.has(t.bot_id)) return esc(t.bot_id);
+    return '<span class="bot-deleted">' + esc(t.bot_id) + ' <span style="font-size:10px">(retired/deleted)</span></span>';
   }
 
   function renderTable(trades) {
@@ -228,23 +259,20 @@
 
     var html = withCumul.map(function (item) {
       var t = item.trade;
-      var preFee = (t.fees === null || t.fees === undefined);
+      var preFee   = (t.fees === null || t.fees === undefined);
       var grossPnl = t.pnl;
-      var fees = preFee ? null : t.fees;
-      var netPnl = (grossPnl !== null && fees !== null) ? grossPnl : grossPnl;
-      // For rows WITH fees, pnl is already net (deducted at write time).
-      // For pre-fee rows, pnl is gross.
+      var fees     = preFee ? null : t.fees;
       var feesCell = preFee
         ? '<span style="color:var(--muted)">—</span>' + (grossPnl !== null ? '<span class="pre-fee-tag">gross</span>' : '')
         : fmtPnl(-fees);
-      var botLabel = t.bot_id ? esc(t.bot_id) : '<span style="color:var(--muted)">legacy</span>';
       var statusCell = t.success
         ? '<span class="badge badge-info">ok</span>'
         : '<span class="badge badge-error" title="' + esc(t.error || '') + '">failed</span>';
 
       return '<tr class="' + (preFee && grossPnl !== null ? 'pre-fee' : '') + '">'
         + '<td style="white-space:nowrap;color:var(--muted)">' + esc(t.created_at) + '</td>'
-        + '<td style="font-size:var(--t-label)">' + botLabel + '</td>'
+        + '<td style="font-size:var(--t-label)">' + botLabel(t) + '</td>'
+        + '<td>' + modeBadge(t) + '</td>'
         + '<td>' + esc(t.strategy) + '</td>'
         + '<td>' + esc(t.coin) + '</td>'
         + '<td><span class="badge badge-' + esc(t.side) + '">' + esc(t.side) + '</span></td>'
@@ -265,11 +293,11 @@
     if (!stats) return;
     document.getElementById('ts-total').textContent = stats.totalTrades;
     var netEl = document.getElementById('ts-net');
-    netEl.textContent = (stats.netPnl >= 0 ? '+' : '') + stats.netPnl.toFixed(2);
+    netEl.textContent = (stats.netPnl >= 0 ? '+' : '') + '$' + Math.abs(stats.netPnl).toFixed(2);
     netEl.className = 'ts-stat-val ' + (stats.netPnl >= 0 ? 'text-green' : 'text-red');
     document.getElementById('ts-wr').textContent = (stats.winRate * 100).toFixed(1) + '%';
     var avgEl = document.getElementById('ts-avg');
-    avgEl.textContent = (stats.avgNetPnl >= 0 ? '+' : '') + stats.avgNetPnl.toFixed(2);
+    avgEl.textContent = (stats.avgNetPnl >= 0 ? '+' : '') + '$' + Math.abs(stats.avgNetPnl).toFixed(2);
     avgEl.className = 'ts-stat-val ' + (stats.avgNetPnl >= 0 ? 'text-green' : 'text-red');
   }
 
@@ -286,14 +314,16 @@
   // ── Filters ──────────────────────────────────────────────────────────────
   function buildQuery() {
     var parts = [];
-    var bot = document.getElementById('f-bot').value;
-    var strat = document.getElementById('f-strategy').value;
-    var coin = document.getElementById('f-coin').value;
+    var bot    = document.getElementById('f-bot').value;
+    var strat  = document.getElementById('f-strategy').value;
+    var coin   = document.getElementById('f-coin').value;
+    var mode   = document.getElementById('f-mode').value;
     var status = document.getElementById('f-status').value;
-    if (bot)    parts.push('botId=' + encodeURIComponent(bot));
+    if (bot)    parts.push('botId='    + encodeURIComponent(bot));
     if (strat)  parts.push('strategy=' + encodeURIComponent(strat));
-    if (coin)   parts.push('coin=' + encodeURIComponent(coin));
-    if (status) parts.push('success=' + status);
+    if (coin)   parts.push('coin='     + encodeURIComponent(coin));
+    if (mode !== '')   parts.push('live='    + mode);
+    if (status !== '') parts.push('success=' + status);
     return parts.join('&');
   }
 
@@ -302,8 +332,9 @@
     fetch('/api/trades?limit=200' + (q ? '&' + q : ''))
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (d) {
-        allTrades = d.trades;
+        allTrades    = d.trades;
         currentTotal = d.total;
+        if (d.activeBotIds) activeBotIds = new Set(d.activeBotIds);
         renderTable(allTrades);
         updateCountLabel(allTrades.length, d.total);
         updateStats(d.stats);
@@ -317,6 +348,7 @@
   document.getElementById('f-bot').addEventListener('change', applyFilters);
   document.getElementById('f-strategy').addEventListener('change', applyFilters);
   document.getElementById('f-coin').addEventListener('change', applyFilters);
+  document.getElementById('f-mode').addEventListener('change', applyFilters);
   document.getElementById('f-status').addEventListener('change', applyFilters);
 
   // ── Load more ────────────────────────────────────────────────────────────
@@ -335,6 +367,7 @@
       .then(function (d) {
         allTrades = allTrades.concat(d.trades);
         currentTotal = d.total;
+        if (d.activeBotIds) activeBotIds = new Set(d.activeBotIds);
         renderTable(allTrades);
         updateCountLabel(allTrades.length, d.total);
         msg.style.display = 'none';
@@ -345,5 +378,3 @@
 
 })();
 </script>
-</body>
-</html>

@@ -1032,6 +1032,7 @@ export class BotManager {
       reason,
       strategy:  bot.config.strategyId,
       botId:     bot.config.id,
+      live:      false,
     } as TradeResult);
   }
 
@@ -1133,6 +1134,7 @@ export class BotManager {
         reason:    signal.reason,
         strategy:  bot.config.strategyId,
         botId:     bot.config.id,
+        live:      bot.config.live,
       });
     } catch (e) {
       const msg = (e as Error).message;
@@ -1185,6 +1187,7 @@ export class BotManager {
         reason,
         strategy:  bot.config.strategyId,
         botId:     bot.config.id,
+        live:      bot.config.live,
       });
     } catch (e) {
       const msg = (e as Error).message;
@@ -1550,6 +1553,20 @@ export class BotManager {
     const runtime = this.bots.get(id);
     const isCv    = bc.strategyId === "cross-venue-funding-basis";
 
+    // Guard: refuse to archive a bot with no activity — nothing meaningful to record.
+    // For CV bots check funding periods; for candle bots check closed trade count.
+    if (isCv) {
+      const cvState = runtime?.crossVenue?.getBotState();
+      if ((cvState?.tradeCount ?? 0) === 0 && (cvState?.capturedFunding ?? 0) === 0) {
+        throw new Error(`Bot ${id} has no funding captures — Delete it instead of retiring it.`);
+      }
+    } else {
+      const durableCheck = this.logger?.getBotRealisedStats(bc.strategyId, bc.coin, id) ?? { tradeCount: 0, realisedPnl: 0 };
+      if (durableCheck.tradeCount === 0) {
+        throw new Error(`Bot ${id} has no closed trades — Delete it instead of retiring it.`);
+      }
+    }
+
     const startingEquity = isCv ? (bc.notional ?? INITIAL_EQUITY) : (bc.startingEquity ?? INITIAL_EQUITY);
     const startedAt      = runtime?.startedAt ?? Date.now();
     const retiredAt      = Date.now();
@@ -1577,7 +1594,7 @@ export class BotManager {
     }
 
     const lifetimeReturnPct   = startingEquity > 0 ? (realisedPnl / startingEquity) * 100 : null;
-    const annualizedReturnPct = lifetimeReturnPct !== null && lifetimeHours > 0
+    const annualizedReturnPct = lifetimeReturnPct !== null && lifetimeHours >= 24
       ? lifetimeReturnPct * (8760 / lifetimeHours)
       : null;
 
@@ -1746,6 +1763,7 @@ export class BotManager {
             strategy:  bot.config.strategyId,
             botId,
             error:     errTag,
+            live:      bot.config.live,
           } as import("./events.js").TradeResult);
         }
         bot.realisedPnl    += closedPnl;
@@ -1773,6 +1791,7 @@ export class BotManager {
             strategy:  stratId,
             botId,
             error:     "reconciled_unknown",
+            live:      bot?.config.live ?? false,
           } as import("./events.js").TradeResult);
         }
         if (bot) {
@@ -1887,6 +1906,7 @@ export class BotManager {
               reason:    "liquidation (exchange-initiated close)",
               strategy:  bot.config.strategyId,
               botId:     bot.config.id,
+              live:      bot.config.live,
             });
           }
           if (closingFills.length > 0) {
@@ -1945,6 +1965,7 @@ export class BotManager {
         reason:    "adopted_from_exchange",
         strategy:  bot.config.strategyId,
         botId:     bot.config.id,
+        live:      bot.config.live,
       });
       this.logger?.logEvent("reconcile", "warn",
         `Position adopted: ${bot.config.coin} — exchange shows ${exchangePos.side} ${exchangePos.size.toFixed(5)} @ $${exchangePos.entryPrice.toFixed(2)}`,

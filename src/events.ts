@@ -45,6 +45,7 @@ export interface TradeResult {
   reason?:   string;    // e.g. "Stop-loss 2.10%" or signal reason
   strategy?: string;    // strategy id — callers that know it should set this
   botId?:    string;    // originating bot id — for per-bot P&L attribution
+  live?:     boolean;   // true = real order; false = paper simulation; absent = legacy/unknown
 }
 
 export interface OrderbookLevel {
