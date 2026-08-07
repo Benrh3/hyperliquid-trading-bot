@@ -1,0 +1,315 @@
+<%- include('_head', { title: 'Swing Advisor' }) %>
+<%- include('_nav') %>
+
+<style>
+  .sa-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: var(--sp-4) var(--sp-6);
+  }
+  .sa-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-5);
+  }
+  .sa-title {
+    font-size: var(--t-value-sm);
+    font-weight: 700;
+    color: var(--text);
+  }
+  .sa-subtitle {
+    font-size: var(--t-label);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .caveat {
+    font-size: var(--t-label);
+    color: var(--muted);
+    margin-bottom: var(--sp-5);
+    padding: var(--sp-2) var(--sp-3);
+    border-left: 2px solid var(--accent-border);
+  }
+
+  /* ── Horizon cards ── */
+  .sa-horizons {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--sp-4);
+    margin-bottom: var(--sp-6);
+  }
+  .horizon-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: var(--sp-4);
+  }
+  .hc-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-3);
+  }
+  .hc-name {
+    font-size: var(--t-label);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--accent);
+  }
+  .hc-age {
+    font-size: var(--t-label);
+    color: var(--muted);
+    margin-left: auto;
+  }
+  .hc-call {
+    font-size: var(--t-value);
+    font-weight: 700;
+    letter-spacing: .02em;
+    margin-bottom: var(--sp-2);
+  }
+  .hc-call.LONG        { color: var(--up); }
+  .hc-call.SHORT       { color: var(--down); }
+  .hc-call.STAND-ASIDE { color: var(--muted); }
+  .hc-call.conflict    { color: var(--yellow); }
+  .hc-meta {
+    display: flex;
+    gap: var(--sp-3);
+    font-size: var(--t-label);
+    color: var(--muted);
+    margin-bottom: var(--sp-3);
+    flex-wrap: wrap;
+  }
+  .hc-meta span { white-space: nowrap; }
+  .voices-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--sp-1) var(--sp-3);
+  }
+  .voice-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--t-label);
+  }
+  .voice-name {
+    color: var(--muted);
+    width: 80px;
+    flex-shrink: 0;
+    text-transform: capitalize;
+  }
+  .voice-dir {
+    font-weight: 600;
+    width: 46px;
+    flex-shrink: 0;
+  }
+  .voice-dir.LONG    { color: var(--up); }
+  .voice-dir.SHORT   { color: var(--down); }
+  .voice-dir.NEUTRAL { color: var(--muted); }
+  .voice-bar-wrap {
+    flex: 1;
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .voice-bar {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .voice-bar.LONG  { background: var(--up); }
+  .voice-bar.SHORT { background: var(--down); }
+  .no-data {
+    color: var(--muted);
+    font-size: var(--t-body);
+    padding: var(--sp-3) 0;
+  }
+
+  /* ── Flip log table ── */
+  .sa-section-title {
+    font-size: var(--t-label);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: var(--sp-3);
+  }
+  .flip-table-wrap { overflow-x: auto; }
+  table.flip-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--t-label);
+  }
+  .flip-table th {
+    text-align: left;
+    padding: var(--sp-1) var(--sp-2);
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .flip-table td {
+    padding: var(--sp-1) var(--sp-2);
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .flip-table tr:last-child td { border-bottom: none; }
+  .dir-LONG    { color: var(--up);     font-weight: 600; }
+  .dir-SHORT   { color: var(--down);   font-weight: 600; }
+  .dir-STAND   { color: var(--muted);  font-weight: 600; }
+  .fwd-pos { color: var(--up); }
+  .fwd-neg { color: var(--down); }
+  .fwd-pending { color: var(--muted); font-style: italic; }
+</style>
+
+<div class="sa-page">
+  <div class="sa-header">
+    <div class="sa-title">Swing Advisor</div>
+    <div class="sa-subtitle">HYPE · Manual Signal Panel</div>
+  </div>
+  <div class="caveat">All voices are <strong>[unvalidated]</strong> — IC measurement pending. Use for observation only; do not size positions against these signals until IC is stable.</div>
+
+  <!-- ── Horizon cards ── -->
+  <div class="sa-horizons" id="sa-horizons">
+    <div class="no-data">Loading…</div>
+  </div>
+
+  <!-- ── Flip log ── -->
+  <div class="sa-section-title">Flip History</div>
+  <div class="flip-table-wrap">
+    <table class="flip-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Horizon</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Price</th>
+          <th>Regime</th>
+          <th>Agreement</th>
+          <th>Fwd Return</th>
+        </tr>
+      </thead>
+      <tbody id="flip-tbody">
+        <tr><td colspan="8" class="no-data">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function formatAge(ms) {
+  var s = Math.round(ms / 1000);
+  if (s < 120) return s + 's ago';
+  var m = Math.round(s / 60);
+  if (m < 120) return m + 'm ago';
+  var h = Math.round(m / 60);
+  if (h < 48) return h + 'h ago';
+  return Math.round(h / 24) + 'd ago';
+}
+
+function callClass(call, conflict) {
+  if (conflict) return 'conflict';
+  return call.replace(' ', '-');
+}
+
+function dirLabel(call) {
+  if (call === 'STAND ASIDE') return 'ASIDE';
+  return call;
+}
+
+function renderVoices(voices) {
+  if (!voices || !voices.length) return '';
+  return voices.map(function(v) {
+    var pct = Math.round((v.effectiveStrength || 0) * 100);
+    return '<div class="voice-row">' +
+      '<span class="voice-name">' + v.name + '</span>' +
+      '<span class="voice-dir ' + v.direction + '">' + v.direction.slice(0,4) + '</span>' +
+      '<div class="voice-bar-wrap"><div class="voice-bar ' + v.direction + '" style="width:' + pct + '%"></div></div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderHorizonCards(states) {
+  var container = document.getElementById('sa-horizons');
+  if (!states || !states.length) {
+    container.innerHTML = '<div class="no-data">No data yet — swing advisor will compute on next poll cycle.</div>';
+    return;
+  }
+
+  var order = ['daily', 'weekly', 'monthly'];
+  states.sort(function(a, b) { return order.indexOf(a.horizon) - order.indexOf(b.horizon); });
+
+  container.innerHTML = states.map(function(s) {
+    var voices = [];
+    try { voices = JSON.parse(s.voices_json || '[]'); } catch(e) {}
+    var ageMs = Date.now() - (s.last_computed_at || 0);
+    var cls = callClass(s.call, false);
+    var composite = s.composite_score != null ? (s.composite_score * 100).toFixed(1) : '—';
+    var agreement = s.agreement_score != null ? Math.round(s.agreement_score * 100) + '%' : '—';
+
+    return '<div class="horizon-card">' +
+      '<div class="hc-header">' +
+        '<div class="hc-name">' + s.horizon + '</div>' +
+        '<div class="hc-age">' + formatAge(ageMs) + '</div>' +
+      '</div>' +
+      '<div class="hc-call ' + cls + '">' + s.call + '</div>' +
+      '<div class="hc-meta">' +
+        '<span>' + s.regime + '</span>' +
+        '<span>composite ' + composite + '</span>' +
+        '<span>agreement ' + agreement + '</span>' +
+      '</div>' +
+      '<div class="voices-grid">' + renderVoices(voices) + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderFlipLog(flips) {
+  var tbody = document.getElementById('flip-tbody');
+  if (!flips || !flips.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="no-data">No flips recorded yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = flips.map(function(f) {
+    var dt   = new Date(f.created_at).toLocaleString();
+    var fwd  = f.forward_return != null
+      ? '<span class="' + (f.forward_return >= 0 ? 'fwd-pos' : 'fwd-neg') + '">' + (f.forward_return >= 0 ? '+' : '') + (f.forward_return * 100).toFixed(2) + '%</span>'
+      : '<span class="fwd-pending">pending</span>';
+    var callClass = function(c) { return c === 'LONG' ? 'dir-LONG' : c === 'SHORT' ? 'dir-SHORT' : 'dir-STAND'; };
+    return '<tr>' +
+      '<td>' + dt + '</td>' +
+      '<td>' + f.horizon + '</td>' +
+      '<td class="' + callClass(f.old_call) + '">' + f.old_call + '</td>' +
+      '<td class="' + callClass(f.new_call) + '">' + f.new_call + '</td>' +
+      '<td>' + (f.hype_price != null ? '$' + f.hype_price.toFixed(2) : '—') + '</td>' +
+      '<td>' + f.regime + '</td>' +
+      '<td>' + (f.agreement_score != null ? Math.round(f.agreement_score * 100) + '%' : '—') + '</td>' +
+      '<td>' + fwd + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function loadData() {
+  fetch('/api/swing-advisor')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { renderHorizonCards(d.states || []); })
+    .catch(function() {
+      document.getElementById('sa-horizons').innerHTML = '<div class="no-data">Failed to load state.</div>';
+    });
+
+  fetch('/api/swing-advisor/history?limit=100')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { renderFlipLog(d.flips || []); })
+    .catch(function() {
+      document.getElementById('flip-tbody').innerHTML = '<tr><td colspan="8" class="no-data">Failed to load history.</td></tr>';
+    });
+}
+
+loadData();
+setInterval(loadData, 60 * 1000);
+</script>

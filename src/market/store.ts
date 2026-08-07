@@ -8,6 +8,7 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
+import type { HorizonName, Call, Regime, SwingCurrentStateRow, SwingFlipRow } from "../swing-advisor/types.js";
 
 const HOUR_MS = 3_600_000;
 const DEFAULT_RETENTION_RAW_DAYS = 7;
@@ -47,7 +48,7 @@ export class MarketStore {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("busy_timeout = 5000");
 
-    for (const name of ["003_market_snapshots.sql", "004_fix_imposter_spot_pair.sql", "007_cvd_buckets.sql", "011_liq_tracker_buckets.sql"]) {
+    for (const name of ["003_market_snapshots.sql", "004_fix_imposter_spot_pair.sql", "007_cvd_buckets.sql", "011_liq_tracker_buckets.sql", "014_swing_advisor.sql"]) {
       const migration = join(process.cwd(), "migrations", name);
       if (existsSync(migration)) this.db.exec(readFileSync(migration, "utf-8"));
     }
@@ -284,6 +285,71 @@ export class MarketStore {
     }
 
     return { latestSnapshotAgeMs, warmSignalCount };
+  }
+
+  // ── Swing advisor persistence ────────────────────────────────────────────────
+
+  getSwingCurrentState(horizon: HorizonName): SwingCurrentStateRow | null {
+    const row = this.db.prepare(
+      "SELECT * FROM swing_current_state WHERE horizon = ?",
+    ).get(horizon) as SwingCurrentStateRow | undefined;
+    return row ?? null;
+  }
+
+  getAllSwingCurrentStates(): SwingCurrentStateRow[] {
+    return this.db.prepare("SELECT * FROM swing_current_state").all() as SwingCurrentStateRow[];
+  }
+
+  upsertSwingCurrentState(row: SwingCurrentStateRow): void {
+    this.db.prepare(`
+      INSERT INTO swing_current_state
+        (horizon, call, updated_at, last_computed_at, regime, composite_score, agreement_score, voices_json, last_notified_at)
+      VALUES
+        (@horizon, @call, @updated_at, @last_computed_at, @regime, @composite_score, @agreement_score, @voices_json, @last_notified_at)
+      ON CONFLICT(horizon) DO UPDATE SET
+        call             = excluded.call,
+        updated_at       = excluded.updated_at,
+        last_computed_at = excluded.last_computed_at,
+        regime           = excluded.regime,
+        composite_score  = excluded.composite_score,
+        agreement_score  = excluded.agreement_score,
+        voices_json      = excluded.voices_json,
+        last_notified_at = COALESCE(excluded.last_notified_at, swing_current_state.last_notified_at)
+    `).run(row);
+  }
+
+  updateSwingLastNotified(horizon: HorizonName, ts: number): void {
+    this.db.prepare(
+      "UPDATE swing_current_state SET last_notified_at = ? WHERE horizon = ?",
+    ).run(ts, horizon);
+  }
+
+  insertSwingFlip(row: Omit<SwingFlipRow, "id">): number {
+    const result = this.db.prepare(`
+      INSERT INTO swing_flip_log
+        (created_at, horizon, old_call, new_call, hype_price, regime, agreement_score, composite_score, voices_json, forward_return, fill_after_at)
+      VALUES
+        (@created_at, @horizon, @old_call, @new_call, @hype_price, @regime, @agreement_score, @composite_score, @voices_json, @forward_return, @fill_after_at)
+    `).run(row);
+    return Number(result.lastInsertRowid);
+  }
+
+  getSwingFlipLog(limit = 50): SwingFlipRow[] {
+    return this.db.prepare(
+      "SELECT * FROM swing_flip_log ORDER BY created_at DESC LIMIT ?",
+    ).all(limit) as SwingFlipRow[];
+  }
+
+  getUnfilledFlips(now: number): SwingFlipRow[] {
+    return this.db.prepare(
+      "SELECT * FROM swing_flip_log WHERE forward_return IS NULL AND fill_after_at <= ? AND hype_price IS NOT NULL",
+    ).all(now) as SwingFlipRow[];
+  }
+
+  fillFlipForwardReturn(id: number, forwardReturn: number): void {
+    this.db.prepare(
+      "UPDATE swing_flip_log SET forward_return = ? WHERE id = ?",
+    ).run(forwardReturn, id);
   }
 
   close(): void {

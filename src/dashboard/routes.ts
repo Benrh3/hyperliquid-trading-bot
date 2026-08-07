@@ -681,6 +681,28 @@ export function createRouter(
     res.json({ trades, archived });
   });
 
+  // ── Swing Advisor (admin-only) ───────────────────────────────────────────────
+
+  router.get("/swing-advisor", (req, res) => {
+    if (!res.locals.isAdmin) { res.status(404).end(); return; }
+    res.render("swing-advisor", { network: config.exchange.network });
+  });
+
+  router.get("/api/swing-advisor", (_req, res) => {
+    if (!res.locals.isAdmin) { res.status(404).json({ error: "Not found" }); return; }
+    if (!marketStore) { res.status(503).json({ error: "Market store not available" }); return; }
+    const states = marketStore.getAllSwingCurrentStates();
+    res.json({ states });
+  });
+
+  router.get("/api/swing-advisor/history", (req, res) => {
+    if (!res.locals.isAdmin) { res.status(404).json({ error: "Not found" }); return; }
+    if (!marketStore) { res.status(503).json({ error: "Market store not available" }); return; }
+    const limit = Math.min(parseInt(typeof req.query.limit === "string" ? req.query.limit : "100") || 100, 500);
+    const flips = marketStore.getSwingFlipLog(limit);
+    res.json({ flips });
+  });
+
   router.get("/builder", (_req, res) => {
     // Compute IC scores for Market Signal indicators from the live scorecard
     const icBySignal: Record<string, { ic: number | null; horizon_h: number; n: number }> = {};

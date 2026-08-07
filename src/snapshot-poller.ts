@@ -10,6 +10,7 @@ import { resolve } from "path";
 import { config as loadEnv } from "dotenv";
 import { MarketStore } from "./market/store.js";
 import { SnapshotPoller, type SnapshotPollerConfig } from "./market/poller.js";
+import { SwingAdvisorPoller } from "./swing-advisor/poller.js";
 
 loadEnv();
 
@@ -31,13 +32,16 @@ try {
   console.log("[snapshot-poller] No config/snapshot.json found — using defaults (HYPE, 60s)");
 }
 
-const store  = new MarketStore();
-const poller = new SnapshotPoller(store, pollerConfig);
+const store        = new MarketStore();
+const poller       = new SnapshotPoller(store, pollerConfig);
+const swingPoller  = new SwingAdvisorPoller(store);
 
 await poller.start();
+swingPoller.start();
 
 process.on("SIGINT", async () => {
   console.log("\n[snapshot-poller] Shutting down...");
+  swingPoller.stop();
   await poller.stop();
   store.close();
   process.exit(0);
@@ -45,6 +49,7 @@ process.on("SIGINT", async () => {
 
 process.on("SIGTERM", async () => {
   console.log("\n[snapshot-poller] Shutting down...");
+  swingPoller.stop();
   await poller.stop();
   store.close();
   process.exit(0);
