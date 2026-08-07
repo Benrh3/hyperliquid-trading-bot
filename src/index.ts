@@ -35,6 +35,26 @@ import { initNotifications } from "./notifications.js";
 import type { Signal } from "./events.js";
 import type { Strategy } from "./strategy/base.js";
 
+// ─── Startup assertions — log absolute paths so misconfiguration is visible ──
+const _absDb  = resolve(process.cwd(), "data/bot.db");
+const _absCfg = resolve(process.cwd(), "config");
+console.log("[init] cwd:      ", process.cwd());
+console.log("[init] database: ", _absDb);
+console.log("[init] config:   ", _absCfg);
+console.log("[init] network:  ", config.exchange.network);
+if (config.exchange.network === "mainnet" && !_absDb.includes("live")) {
+  console.warn(
+    "[init] WARNING: network=mainnet but database path does not contain 'live' — " +
+    "verify this process is running from the correct deployment directory.",
+  );
+}
+if (config.exchange.network === "testnet" && _absDb.includes("live")) {
+  console.warn(
+    "[init] WARNING: network=testnet but database path contains 'live' — " +
+    "verify this process is running from the correct deployment directory.",
+  );
+}
+
 // ─── Startup banner ───────────────────────────────────────
 console.log(`
 ╔══════════════════════════════════════════╗

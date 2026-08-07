@@ -7,6 +7,10 @@ module.exports = {
     {
       name: live ? "hl-trading-bot-live" : "hl-trading-bot",
       script: "dist/index.js",
+      // cwd MUST be explicit: without it PM2's default cwd is shell-dependent and
+      // drifts across restarts/resurrects, causing all relative file paths
+      // (data/bot.db, config/*.json, .env) to resolve against the wrong directory.
+      cwd: __dirname,
       instances: 1,
       exec_mode: "fork",
       autorestart: true,
@@ -27,6 +31,7 @@ module.exports = {
       // an upstream outage or crash here must never affect hl-trading-bot.
       name: live ? "snapshot-poller-live" : "snapshot-poller",
       script: "dist/snapshot-poller.js",
+      cwd: __dirname,
       instances: 1,
       exec_mode: "fork",
       autorestart: true,

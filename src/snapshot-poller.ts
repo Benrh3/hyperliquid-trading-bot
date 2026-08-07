@@ -13,6 +13,9 @@ import { SnapshotPoller, type SnapshotPollerConfig } from "./market/poller.js";
 
 loadEnv({ override: true });
 
+console.log("[snapshot-poller] cwd:     ", process.cwd());
+console.log("[snapshot-poller] database:", resolve(process.cwd(), "data/bot.db"));
+
 // ── First-run bootstrap ───────────────────────────────────────────────────────
 const configTarget  = resolve(process.cwd(), "config", "snapshot.json");
 const configExample = `${configTarget}.example`;
