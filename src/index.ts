@@ -38,10 +38,12 @@ import type { Strategy } from "./strategy/base.js";
 // ─── Startup assertions — log absolute paths so misconfiguration is visible ──
 const _absDb  = resolve(process.cwd(), "data/bot.db");
 const _absCfg = resolve(process.cwd(), "config");
+const _port   = Number(process.env.DASHBOARD_PORT) || config.dashboard.port || 3002;
 console.log("[init] cwd:      ", process.cwd());
 console.log("[init] database: ", _absDb);
 console.log("[init] config:   ", _absCfg);
 console.log("[init] network:  ", config.exchange.network);
+console.log("[init] port:     ", _port);
 if (config.exchange.network === "mainnet" && !_absDb.includes("live")) {
   console.warn(
     "[init] WARNING: network=mainnet but database path does not contain 'live' — " +

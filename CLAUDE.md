@@ -28,7 +28,7 @@ A Hyperliquid perpetual-futures trading bot with a live web dashboard, built in 
   - bot pillar: `index` (Overview), `strategies`, `bots`, `trades`, `backtest`, `builder`, `learn`, `settings`, `login`
   - `market.ejs` — the Market pillar (large single file; split candidate)
 - `routes.ts` — single Express router; middleware sets `res.locals.pillar` (`bot`/`market`) and `res.locals.currentPath` for the nav
-- `ecosystem.config.cjs` — PM2 apps (`hl-trading-bot`, `snapshot-poller`)
+- `ecosystem.config.cjs` — PM2 apps; `HL_ENV=live` selects the mainnet pair (`hl-trading-bot-live` / `snapshot-poller-live`); default selects the testnet pair (`hl-trading-bot` / `snapshot-poller`)
 - `deploy.sh` — pull → install → build → restart, with `set -euo pipefail` and a dirty-tree guard
 - `scripts/check-ejs-scripts.sh` — the `check:ejs` guard (see gotchas)
 
@@ -47,19 +47,40 @@ Dark-first, defined globally in `_head.ejs`. The per-pillar accent is the only t
 
 - **EJS inline scripts:** use `function`-keyword syntax, not arrow functions that return object literals — the latter break silently. `npm run check:ejs` enforces this.
 - **Views aren't compiled:** `tsc` does not copy `.ejs` files. Copy them after build (`cp -r src/dashboard/views dist/dashboard/views`); in production they are served from `src/`.
-- **Runtime config is gitignored** and managed on the server: `bots.json`, `custom-strategies.json`, `lanes.json`, `config/server.json`.
+- **Runtime config is gitignored** and managed on the server: `bots.json`, `custom-strategies.json`, `lanes.json`. (`config/server.json` does not exist — ignore any references to it.)
 - **Zombie-bot guard:** a deleted bot sets a `runtime.deleted` poison flag that is checked at every `await` boundary, so a stale async continuation can never open a real position after deletion.
 - **Reskins are presentation-only:** never rename element IDs the JS targets, never touch routes or data logic, and always preserve the semantic green/red.
 - **`data/` is irreplaceable:** `bot.db` plus the accumulating Market snapshot history. Never delete it during cleanup.
 - **Backups:** `scripts/backup-db.sh` runs nightly via cron (03:00 UTC). Two paths: (1) local binary `.backup` → `~/backups/bot-db/` with 7-daily + 4-weekly retention for fast restore; (2) SQL `.dump` → `~/howbrook-quant-backups/bot-db.sql` → git push to private `Benrh3/howbrook-quant-backups` repo (text diffs efficiently, won't bloat). Install: `bash scripts/install-backup-cron.sh`. Restore from local: `pm2 stop all && cp ~/backups/bot-db/daily/bot-db-YYYY-MM-DD.db data/bot.db && pm2 start all`. Restore from GitHub: `cd ~/howbrook-quant-backups && git pull && sqlite3 ~/hyperliquid-trading-bot/data/bot.db < bot-db.sql`.
 
+## Port map
+
+This server is shared. Do **not** use a port that belongs to another service.
+
+| Port | Service | Notes |
+|------|---------|-------|
+| 3000 | docker-proxy | |
+| 3001 | rmzcars | |
+| **3002** | **hl-trading-bot-live** | mainnet dashboard (`howbrookquant.benhowbrook.xyz`) |
+| 3004 | next-server | |
+| **3005** | **hl-trading-bot** | testnet dashboard (`testnet.benhowbrook.xyz`) |
+| 3333 | benhowbrook-api | |
+| 4010 | datum | |
+| 7575 | server | |
+
+Ports for this repo are hardcoded in `ecosystem.config.cjs` `env.DASHBOARD_PORT` and must not be changed without updating this table. `dotenv` does not use `override:true`, so `.env` files cannot silently change ports.
+
 ## Deploy
 
 ```sh
-# local
+# local — always run before pushing
 npm test && npm run build && git push
-# server
-cd ~/hyperliquid-trading-bot && ./deploy.sh   # restarts hl-trading-bot
+
+# testnet server (~/hyperliquid-trading-bot)
+cd ~/hyperliquid-trading-bot && ./deploy.sh          # restarts hl-trading-bot (port 3005)
+
+# live server (~/hyperliquid-trading-bot-live)
+cd ~/hyperliquid-trading-bot-live && HL_ENV=live ./deploy.sh   # restarts hl-trading-bot-live (port 3002)
 ```
 
 For view/CSS-only changes, leave the `snapshot-poller` PM2 process untouched. PM2 logs are bounded by `pm2-logrotate`.
