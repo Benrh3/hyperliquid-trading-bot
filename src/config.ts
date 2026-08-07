@@ -2,7 +2,10 @@ import { config as loadEnv } from "dotenv";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-loadEnv({ override: true });
+// No `override` — PM2 env vars (HL_NETWORK, DASHBOARD_PORT) must not be
+// overwritten by .env values. Secrets absent from PM2 env (HL_PRIVATE_KEY,
+// ADMIN_PASSWORD_HASH, SESSION_SECRET) are still set by dotenv correctly.
+loadEnv();
 
 export interface BotConfig {
   exchange: {
@@ -87,6 +90,12 @@ export const config = deepMerge(
   defaults as unknown as Record<string, unknown>,
   networkOverrides as Record<string, unknown>,
 ) as unknown as BotConfig;
+
+// HL_NETWORK is the authority for the runtime network. deepMerge(default.json, ...)
+// leaves config.exchange.network as "testnet" when no network-specific overlay exists,
+// regardless of what HL_NETWORK says. Pin it explicitly so every consumer of
+// config.exchange.network (isTestnet, startup assertion, nav badge) sees the real value.
+config.exchange.network = network as BotConfig["exchange"]["network"];
 
 // Normalise to array; keep config.exchange.coin as the primary string
 export const coins: string[] = Array.isArray(config.exchange.coin)

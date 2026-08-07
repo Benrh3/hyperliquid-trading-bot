@@ -11,7 +11,7 @@ import { config as loadEnv } from "dotenv";
 import { MarketStore } from "./market/store.js";
 import { SnapshotPoller, type SnapshotPollerConfig } from "./market/poller.js";
 
-loadEnv({ override: true });
+loadEnv();
 
 console.log("[snapshot-poller] cwd:     ", process.cwd());
 console.log("[snapshot-poller] database:", resolve(process.cwd(), "data/bot.db"));
