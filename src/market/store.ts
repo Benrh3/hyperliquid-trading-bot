@@ -188,11 +188,16 @@ export class MarketStore {
       ORDER BY sm.captured_at ASC
     `).all(symbol, key) as { capturedAt: number; value: number | null }[];
 
+    // ts_hour is the FLOOR of the bucket (bucket start). Samples in the bucket span
+    // [ts_hour, ts_hour + HOUR_MS). The average is not fully knowable until the bucket
+    // closes, so the correct "available since" timestamp is ts_hour + HOUR_MS.
+    // Emitting ts_hour would let attachSignals assign this row to the candle that
+    // closed at ts_hour, contaminating it with data collected up to 59 min later.
     const hourly = this.db.prepare(`
-      SELECT ts_hour AS capturedAt, avg_value AS value
+      SELECT ts_hour + ${HOUR_MS} AS capturedAt, avg_value AS value
       FROM snapshot_metrics_hourly
       WHERE symbol = ? AND metric_key = ?
-        AND ts_hour < (SELECT COALESCE(MIN(sm.captured_at), 9999999999999) FROM snapshot_metrics sm JOIN snapshots s ON s.id = sm.snapshot_id WHERE s.symbol = ? AND sm.metric_key = ?)
+        AND ts_hour + ${HOUR_MS} <= (SELECT COALESCE(MIN(sm.captured_at), 9999999999999) FROM snapshot_metrics sm JOIN snapshots s ON s.id = sm.snapshot_id WHERE s.symbol = ? AND sm.metric_key = ?)
       ORDER BY ts_hour ASC
     `).all(symbol, key, symbol, key) as { capturedAt: number; value: number | null }[];
 
