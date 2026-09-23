@@ -26,7 +26,8 @@ const N_WINDOWS      = 5;
 const WARMUP_BARS    = 250;
 const INITIAL_EQUITY = 1000;
 const POS_SIZE_USD   = 500;
-const COMMISSION_PCT = 0.0005;   // 5 bps — baseline
+const COMMISSION_PCT = 0.0005;   // 5 bps — baseline commission per fill
+const SLIPPAGE_PCT   = 0.0005;   // mirrors backtest.ts SLIPPAGE constant (used for cost labelling only)
 const STOP_LOSS_PCT  = 6;
 
 // Cost sensitivity target params — adjust after seeing IS majority from wf-audit.ts
@@ -310,9 +311,21 @@ if (!NO_SIGNALS) {
   const settledRows = db.prepare(`
     SELECT hour_ts + ${SETTLED_OFFSET_MS} AS capturedAt, rate AS value
     FROM settled_funding
-    WHERE venue = 'HL' AND coin = 'HYPE'
+    WHERE venue = 'hyperliquid' AND coin = 'HYPE'
     ORDER BY hour_ts ASC
   `).all() as SignalTimeSeries[];
+
+  if (settledRows.length < 1000) {
+    const venueCoins = db.prepare(
+      `SELECT venue, coin, COUNT(*) AS n FROM settled_funding GROUP BY venue, coin`
+    ).all() as { venue: string; coin: string; n: number }[];
+    const summary = venueCoins.map(r => `${r.venue}/${r.coin}(n=${r.n})`).join(", ");
+    throw new Error(
+      `settled_funding returned only ${settledRows.length} rows for venue='hyperliquid'/coin='HYPE'. ` +
+      `Distinct venue/coin in table: [${summary || "none"}]. ` +
+      `Run settled-signal-audit.ts to backfill if the table is empty.`
+    );
+  }
 
   sigSeriesSettled = settledRows;
   console.log(`  Settled signal series:  ${settledRows.length} rows` +
@@ -403,30 +416,40 @@ console.log(`\nIS selections predicted: ${selFixed}`);
 console.log(`IS selections settled:   ${selSettled}`);
 
 // ══ Section B: Cost sensitivity ═══════════════════════════════════════════════
+// Scenarios are labelled by TOTAL cost per side = commission + SLIPPAGE_PCT.
+// SLIPPAGE_PCT mirrors backtest.ts SLIPPAGE (5bps, applied as a price adjustment on
+// entry). Since runBacktest does not accept a runtime slippage param, SLIPPAGE_PCT
+// here is a labelling constant only; the actual execution cost is always
+// commission + 5bps hardcoded slippage per fill.
+//
+// commission = multiplier × BASELINE_TOTAL - SLIPPAGE_PCT
+const BASELINE_TOTAL_PCT = COMMISSION_PCT + SLIPPAGE_PCT;  // 10bps/side = 1×
+
 console.log(`\n\n═══ B. Cost Sensitivity — k=${COST_K}/kl=${COST_KL} (fixed params, no IS re-opt) ═══`);
-console.log("(Backtest SLIPPAGE=5bps is hardcoded in backtest.ts; each scenario adds to commission)");
+console.log(`(Baseline total = ${(BASELINE_TOTAL_PCT * 10000).toFixed(0)}bps/side = commission ${(COMMISSION_PCT*10000).toFixed(0)}bps + slippage ${(SLIPPAGE_PCT*10000).toFixed(0)}bps)`);
 
-const costScenarios: { label: string; commissionPct: number; note: string }[] = [
-  { label: "Baseline",         commissionPct: 0.0005, note: "5bps commission + 5bps slippage (baked in) = 10bps/side" },
-  { label: "2× fees",          commissionPct: 0.001,  note: "10bps commission + 5bps slippage = 15bps/side" },
-  { label: "3× fees",          commissionPct: 0.0015, note: "15bps commission + 5bps slippage = 20bps/side" },
-  { label: "10bps slippage",   commissionPct: 0.001,  note: "extra 5bps slippage modelled as extra commission; total 10bps slip + 5bps commish = 15bps/side" },
-];
+interface CostScenario { label: string; multiplier: number; commissionPct: number }
+const costScenarios: CostScenario[] = ([1, 1.5, 2, 3] as const).map(m => ({
+  label:         `${m}× (${(m * BASELINE_TOTAL_PCT * 10000).toFixed(0)}bps/side)`,
+  multiplier:    m,
+  commissionPct: m * BASELINE_TOTAL_PCT - SLIPPAGE_PCT,
+}));
 
-console.log(`\n${"Scenario".padEnd(20)} ${"Commission".padStart(12)} ${"OOS Trades".padStart(12)} ${"OOS P&L".padStart(12)} ${"OOS Sharpe".padStart(12)} ${"OOS MaxDD".padStart(11)}`);
-console.log("-".repeat(82));
+console.log(`\n${"Scenario".padEnd(24)} ${"Commiss".padStart(9)} ${"Total/side".padStart(12)} ${"OOS Trades".padStart(12)} ${"OOS P&L".padStart(12)} ${"OOS Sharpe".padStart(12)} ${"OOS MaxDD".padStart(11)}`);
+console.log("-".repeat(96));
 
 for (const sc of costScenarios) {
   const { allOos: oosC } = runWF(candlesFix, sc.label, sc.commissionPct, COST_K, COST_KL, true);
-  const pnl = oosC.reduce((s, t) => s + t.pnl, 0);
+  const pnl       = oosC.reduce((s, t) => s + t.pnl, 0);
+  const totalBps  = (sc.multiplier * BASELINE_TOTAL_PCT * 10000).toFixed(0) + "bps";
+  const commBps   = (sc.commissionPct * 10000).toFixed(0) + "bps";
   console.log(
-    `${sc.label.padEnd(20)} ${(sc.commissionPct * 10000).toFixed(1).padStart(9) + "bps"} ` +
+    `${sc.label.padEnd(24)} ${commBps.padStart(9)} ${totalBps.padStart(12)} ` +
     `${String(oosC.length).padStart(12)} ` +
     `${"$" + pnl.toFixed(2).padStart(11)} ` +
     `${oosSharpe(oosC).toFixed(3).padStart(12)} ` +
     `${(maxDD(oosC).toFixed(2) + "%").padStart(11)}`
   );
-  console.log(`  (${sc.note})`);
 }
 
 // ══ Section C: Regime breakdown + robustness ══════════════════════════════════
